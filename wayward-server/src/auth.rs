@@ -9,99 +9,259 @@
 //! ```ignore
 //! use wayward_server::auth::Protected;
 //!
-//! // Define your auth extractor (implements FromRequestParts)
-//! struct AuthUser(pub Uuid);
-//!
 //! // Tag endpoints as protected in the API type
 //! type API = (
 //!     GetEndpoint<TagsPath, TagsResponse>,                           // public
 //!     Protected<AuthUser, GetEndpoint<UserPath, UserResponse>>,      // auth required
-//!     Protected<AuthUser, PostEndpoint<ArticlesPath, Req, Res>>,     // auth required
 //! );
 //!
 //! // Handlers for protected endpoints MUST accept AuthUser as first arg.
-//! // This is enforced at compile time — omitting it is a type error.
 //! async fn get_user(auth: AuthUser, state: State<Db>) -> Json<User> { ... }
-//! ```
 //!
-//! `Protected` also informs the OpenAPI generator to mark the endpoint as
-//! requiring authentication.
+//! // Wire up with bind_auth!():
+//! Server::<API>::new((
+//!     bind!(get_tags),             // public
+//!     bind_auth!(get_user),        // protected — AuthUser enforced
+//! ));
+//! ```
 
+use std::future::Future;
 use std::marker::PhantomData;
+use std::pin::Pin;
 
 use wayward_core::{ApiSpec, ExtractPath, HttpMethod, PathSpec};
 
-use crate::extract::FromRequestParts;
-use crate::handler::{into_boxed_handler, BoxedHandler, Handler};
+use crate::body::BoxBody;
+use crate::extract::{FromRequest, FromRequestParts};
+use crate::handler::{into_boxed_handler, BoxedHandler};
 use crate::handler_for::{BindableEndpoint, BoundHandler};
-use crate::router::Router;
+use crate::response::IntoResponse;
 
 /// An endpoint that requires authentication.
 ///
 /// `Auth` is the authentication extractor type (e.g., `AuthUser`).
 /// `E` is the underlying endpoint type.
 ///
-/// When used in an API type, the compiler ensures the handler's first
-/// argument is `Auth`. Public endpoints use the bare `Endpoint` type;
-/// protected endpoints are wrapped in `Protected`.
+/// Handlers bound to `Protected` endpoints via `bind_auth!()` must accept
+/// `Auth` as their first argument. This is enforced at compile time by
+/// the `AuthHandler` trait — using `bind!()` (without auth) for a
+/// `Protected` endpoint produces a type mismatch.
 pub struct Protected<Auth, E> {
     _marker: PhantomData<(Auth, E)>,
 }
 
-// Protected endpoints are valid API specs if the inner endpoint is.
 impl<Auth, E: ApiSpec> ApiSpec for Protected<Auth, E> {}
 
-// Protected endpoints are bindable — delegate to the inner endpoint.
-impl<Auth, E: BindableEndpoint> BindableEndpoint for Protected<Auth, E> {
-    fn method() -> http::Method {
-        E::method()
-    }
+// NOTE: BindableEndpoint is intentionally NOT implemented for Protected.
+// This means bind!() cannot be used with Protected endpoints — only
+// bind_auth!() works. This is the compile-time enforcement mechanism.
 
-    fn pattern() -> String {
-        E::pattern()
-    }
+// ---------------------------------------------------------------------------
+// AuthHandler trait — enforces Auth as first argument
+// ---------------------------------------------------------------------------
 
-    fn match_fn() -> crate::router::MatchFn {
-        E::match_fn()
+/// A handler that takes `Auth` as its first argument.
+///
+/// This is separate from `Handler<Args>` to ensure that `Protected`
+/// endpoints can only be bound with handlers that accept the auth type.
+/// The trait is implemented for async functions where the first argument
+/// is `Auth: FromRequestParts`.
+pub trait AuthHandler<Auth, Args>: Clone + Send + Sync + 'static {
+    fn call(
+        self,
+        parts: http::request::Parts,
+        body: bytes::Bytes,
+    ) -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>>;
+}
+
+// Auth + no other args
+impl<F, Fut, Res, Auth> AuthHandler<Auth, ()> for F
+where
+    F: FnOnce(Auth) -> Fut + Clone + Send + Sync + 'static,
+    Fut: Future<Output = Res> + Send,
+    Res: IntoResponse,
+    Auth: FromRequestParts + 'static,
+{
+    fn call(
+        self,
+        parts: http::request::Parts,
+        _body: bytes::Bytes,
+    ) -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
+        Box::pin(async move {
+            let auth = match Auth::from_request_parts(&parts) {
+                Ok(v) => v,
+                Err(e) => return e.into_response(),
+            };
+            self(auth).await.into_response()
+        })
     }
 }
 
-/// Bind a handler to a protected endpoint.
+// Generate impls for Auth + N FromRequestParts args
+macro_rules! impl_auth_handler_parts {
+    ([$($T:ident),+], [$($t:ident),+]) => {
+        #[allow(non_snake_case)]
+        impl<F, Fut, Res, Auth, $($T,)+> AuthHandler<Auth, ($($T,)+)> for F
+        where
+            F: FnOnce(Auth, $($T,)+) -> Fut + Clone + Send + Sync + 'static,
+            Fut: Future<Output = Res> + Send,
+            Res: IntoResponse,
+            Auth: FromRequestParts + 'static,
+            $($T: FromRequestParts + 'static,)+
+        {
+            fn call(
+                self,
+                parts: http::request::Parts,
+                _body: bytes::Bytes,
+            ) -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
+                Box::pin(async move {
+                    let auth = match Auth::from_request_parts(&parts) {
+                        Ok(v) => v,
+                        Err(e) => return e.into_response(),
+                    };
+                    $(
+                        let $t = match $T::from_request_parts(&parts) {
+                            Ok(v) => v,
+                            Err(e) => return e.into_response(),
+                        };
+                    )+
+                    self(auth, $($t,)+).await.into_response()
+                })
+            }
+        }
+    };
+}
+
+impl_auth_handler_parts!([T1], [t1]);
+impl_auth_handler_parts!([T1, T2], [t1, t2]);
+impl_auth_handler_parts!([T1, T2, T3], [t1, t2, t3]);
+impl_auth_handler_parts!([T1, T2, T3, T4], [t1, t2, t3, t4]);
+impl_auth_handler_parts!([T1, T2, T3, T4, T5], [t1, t2, t3, t4, t5]);
+impl_auth_handler_parts!([T1, T2, T3, T4, T5, T6], [t1, t2, t3, t4, t5, t6]);
+
+// Generate impls for Auth + N FromRequestParts args + body extractor (last arg)
+macro_rules! impl_auth_handler_with_body {
+    ([], []) => {
+        impl<F, Fut, Res, Auth, B> AuthHandler<Auth, AuthWithBody<(), B>> for F
+        where
+            F: FnOnce(Auth, B) -> Fut + Clone + Send + Sync + 'static,
+            Fut: Future<Output = Res> + Send,
+            Res: IntoResponse,
+            Auth: FromRequestParts + 'static,
+            B: FromRequest + 'static,
+        {
+            fn call(
+                self,
+                parts: http::request::Parts,
+                body: bytes::Bytes,
+            ) -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
+                Box::pin(async move {
+                    let auth = match Auth::from_request_parts(&parts) {
+                        Ok(v) => v,
+                        Err(e) => return e.into_response(),
+                    };
+                    let b = match B::from_request(&parts, body).await {
+                        Ok(v) => v,
+                        Err(e) => return e.into_response(),
+                    };
+                    self(auth, b).await.into_response()
+                })
+            }
+        }
+    };
+    ([$($T:ident),+], [$($t:ident),+]) => {
+        #[allow(non_snake_case)]
+        impl<F, Fut, Res, Auth, $($T,)+ B> AuthHandler<Auth, AuthWithBody<($($T,)+), B>> for F
+        where
+            F: FnOnce(Auth, $($T,)+ B) -> Fut + Clone + Send + Sync + 'static,
+            Fut: Future<Output = Res> + Send,
+            Res: IntoResponse,
+            Auth: FromRequestParts + 'static,
+            $($T: FromRequestParts + 'static,)+
+            B: FromRequest + 'static,
+        {
+            fn call(
+                self,
+                parts: http::request::Parts,
+                body: bytes::Bytes,
+            ) -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
+                Box::pin(async move {
+                    let auth = match Auth::from_request_parts(&parts) {
+                        Ok(v) => v,
+                        Err(e) => return e.into_response(),
+                    };
+                    $(
+                        let $t = match $T::from_request_parts(&parts) {
+                            Ok(v) => v,
+                            Err(e) => return e.into_response(),
+                        };
+                    )+
+                    let b = match B::from_request(&parts, body).await {
+                        Ok(v) => v,
+                        Err(e) => return e.into_response(),
+                    };
+                    self(auth, $($t,)+ b).await.into_response()
+                })
+            }
+        }
+    };
+}
+
+/// Marker for auth handlers with a body extractor as last arg.
+pub struct AuthWithBody<Parts, Body>(PhantomData<(Parts, Body)>);
+
+impl_auth_handler_with_body!([], []);
+impl_auth_handler_with_body!([T1], [t1]);
+impl_auth_handler_with_body!([T1, T2], [t1, t2]);
+impl_auth_handler_with_body!([T1, T2, T3], [t1, t2, t3]);
+impl_auth_handler_with_body!([T1, T2, T3, T4], [t1, t2, t3, t4]);
+impl_auth_handler_with_body!([T1, T2, T3, T4, T5], [t1, t2, t3, t4, t5]);
+
+// ---------------------------------------------------------------------------
+// bind_protected — uses AuthHandler instead of Handler
+// ---------------------------------------------------------------------------
+
+/// Bind a handler to a `Protected<Auth, E>` endpoint.
 ///
-/// The handler's first argument must be `Auth` (the auth extractor).
-/// This is enforced by the `Handler<(Auth, ...)>` bound — if the first
-/// arg doesn't match, the compiler rejects it.
-///
-/// ```ignore
-/// // This compiles:
-/// bind_protected::<AuthUser, GetEndpoint<...>, _, _>(|auth: AuthUser, state: State<Db>| async { ... })
-///
-/// // This fails to compile — missing AuthUser:
-/// bind_protected::<AuthUser, GetEndpoint<...>, _, _>(|state: State<Db>| async { ... })
-/// ```
-pub fn bind_protected<Auth, E, H, Args>(handler: H) -> BoundHandler<Protected<Auth, E>>
+/// The handler's first argument MUST be `Auth`. This is enforced by the
+/// `AuthHandler<Auth, Args>` trait — the compiler rejects handlers that
+/// don't take `Auth` as their first argument.
+/// Trait to extract binding info from the inner endpoint of a Protected type.
+pub trait ProtectedEndpoint {
+    type Auth;
+    type Inner: BindableEndpoint;
+}
+
+impl<Auth, E: BindableEndpoint> ProtectedEndpoint for Protected<Auth, E> {
+    type Auth = Auth;
+    type Inner = E;
+}
+
+pub fn bind_protected<P, H, Args>(handler: H) -> BoundHandler<P>
 where
-    Auth: FromRequestParts + 'static,
-    E: BindableEndpoint,
-    H: Handler<Args>,
+    P: ProtectedEndpoint,
+    P::Auth: FromRequestParts + 'static,
+    P::Inner: BindableEndpoint,
+    H: AuthHandler<P::Auth, Args>,
     Args: 'static,
 {
-    let method = E::method();
-    let pattern = E::pattern();
-    let match_fn = E::match_fn();
+    let method = P::Inner::method();
+    let pattern = P::Inner::pattern();
+    let match_fn = P::Inner::match_fn();
 
-    BoundHandler::new(method, pattern, match_fn, into_boxed_handler(handler))
+    // Type-erase via AuthHandler::call
+    let boxed: BoxedHandler = Box::new(move |parts, body| {
+        let h = handler.clone();
+        h.call(parts, body)
+    });
+
+    BoundHandler::new(method, pattern, match_fn, boxed)
 }
 
 /// Convenience macro for binding protected handlers.
-///
-/// ```ignore
-/// bind_auth!(handler)
-/// // equivalent to: bind_protected::<_, _, _, _>(handler)
-/// ```
 #[macro_export]
 macro_rules! bind_auth {
     ($handler:expr) => {
-        $crate::auth::bind_protected::<_, _, _, _>($handler)
+        $crate::auth::bind_protected::<_, _, _>($handler)
     };
 }

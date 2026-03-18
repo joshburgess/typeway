@@ -1,0 +1,25 @@
+error[E0277]: the trait bound `Protected<AuthUser, Endpoint<Get, HCons<Lit<__lit_hello>, HNil>, NoBody, std::string::String>>: BindableEndpoint` is not satisfied
+  --> tests/compile_fail/protected_missing_auth.rs:28:33
+   |
+28 |     let _ = Server::<API>::new((bind!(no_auth),));
+   |                                 ^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+   = help: the trait `BindableEndpoint` is not implemented for `Protected<AuthUser, Endpoint<Get, HCons<Lit<__lit_hello>, HNil>, NoBody, std::string::String>>`
+help: the trait `BindableEndpoint` is implemented for `Endpoint<M, P, Req, Res, Q>`
+  --> $WORKSPACE/wayward-server/src/handler_for.rs
+   |
+   | / impl<M, P, Req, Res, Q> BindableEndpoint for Endpoint<M, P, Req, Res, Q>
+   | | where
+   | |     M: HttpMethod,
+   | |     P: PathSpec + ExtractPath + Send + 'static,
+   | |     P::Captures: Send,
+   | |______________________^
+note: required by a bound in `wayward::bind`
+  --> $WORKSPACE/wayward-server/src/handler_for.rs
+   |
+   | pub fn bind<E, H, Args>(handler: H) -> BoundHandler<E>
+   |        ---- required by a bound in this function
+   | where
+   |     E: BindableEndpoint,
+   |        ^^^^^^^^^^^^^^^^ required by this bound in `bind`
+   = note: this error originates in the macro `bind` (in Nightly builds, run with -Z macro-backtrace for more info)

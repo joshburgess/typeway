@@ -249,8 +249,8 @@ pub async fn get_profile(
 }
 
 pub async fn follow_profile(
-    path: Path<ProfileFollowPath>,
     auth: AuthUser,
+    path: Path<ProfileFollowPath>,
     state: State<Db>,
 ) -> Result<Json<ProfileResponse>, JsonError> {
     let (username,) = path.0;
@@ -261,8 +261,8 @@ pub async fn follow_profile(
 }
 
 pub async fn unfollow_profile(
-    path: Path<ProfileFollowPath>,
     auth: AuthUser,
+    path: Path<ProfileFollowPath>,
     state: State<Db>,
 ) -> Result<Json<ProfileResponse>, JsonError> {
     let (username,) = path.0;
@@ -413,8 +413,8 @@ pub async fn create_article(
 }
 
 pub async fn update_article(
-    path: Path<ArticlePath>,
     auth: AuthUser,
+    path: Path<ArticlePath>,
     state: State<Db>,
     body: Json<UpdateArticleRequest>,
 ) -> Result<Json<ArticleResponse>, JsonError> {
@@ -464,8 +464,8 @@ pub async fn update_article(
 }
 
 pub async fn delete_article(
-    path: Path<ArticlePath>,
     auth: AuthUser,
+    path: Path<ArticlePath>,
     state: State<Db>,
 ) -> Result<http::StatusCode, JsonError> {
     let (slug,) = path.0;
@@ -494,8 +494,8 @@ pub async fn delete_article(
 // ---------------------------------------------------------------------------
 
 pub async fn favorite_article(
-    path: Path<ArticleFavoritePath>,
     auth: AuthUser,
+    path: Path<ArticleFavoritePath>,
     state: State<Db>,
 ) -> Result<Json<ArticleResponse>, JsonError> {
     let (slug,) = path.0;
@@ -538,8 +538,8 @@ pub async fn favorite_article(
 }
 
 pub async fn unfavorite_article(
-    path: Path<ArticleFavoritePath>,
     auth: AuthUser,
+    path: Path<ArticleFavoritePath>,
     state: State<Db>,
 ) -> Result<Json<ArticleResponse>, JsonError> {
     let (slug,) = path.0;
@@ -631,8 +631,8 @@ pub async fn get_comments(
 }
 
 pub async fn add_comment(
-    path: Path<ArticleCommentsPath>,
     auth: AuthUser,
+    path: Path<ArticleCommentsPath>,
     state: State<Db>,
     body: Json<NewCommentRequest>,
 ) -> Result<Json<CommentResponse>, JsonError> {
@@ -674,8 +674,8 @@ pub async fn add_comment(
 }
 
 pub async fn delete_comment(
-    path: Path<ArticleCommentPath>,
     auth: AuthUser,
+    path: Path<ArticleCommentPath>,
     state: State<Db>,
 ) -> Result<http::StatusCode, JsonError> {
     let (_, comment_id) = path.0;
