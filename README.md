@@ -161,13 +161,117 @@ let user = client.call::<GetEndpoint<UserByIdPath, User>>((42u32,)).await?;
 | `wayward-openapi` | OpenAPI 3.1 spec derivation |
 | `wayward-macros` | Proc macros (`wayward_path!`, `#[handler]`, `#[api_description]`) |
 
+## What Makes Wayward Different
+
+### The API Is the Type
+
+Most Rust web frameworks build the API imperatively — you register routes one at a time with a router, and the relationship between routes, handlers, and documentation exists only in the programmer's head. Wayward inverts this: the API is declared as a single Rust type, and everything else is derived from it.
+
+```rust
+type API = (
+    GetEndpoint<UsersPath, Json<Vec<User>>>,
+    PostEndpoint<UsersPath, Json<CreateUser>, Json<User>>,
+    DeleteEndpoint<UserByIdPath, StatusCode>,
+);
+```
+
+This isn't a DSL or a macro that generates code behind your back. It's a plain Rust type alias. The compiler understands it, IDE tooling works with it, and you can inspect it in `cargo doc`. The server, client, and OpenAPI spec are all projections of this one type.
+
+This is directly inspired by Haskell's [Servant](https://docs.servant.dev/en/stable/), which pioneered the idea of APIs as types. Wayward brings that idea to Rust without requiring nightly features, GATs, or const generics for strings.
+
+### Compile-Time Handler Completeness
+
+In Axum, if you forget to register a handler for a route, you get a 404 at runtime. In wayward, you get a compile error:
+
+```rust
+// API has 3 endpoints but you only provided 2 handlers — doesn't compile
+Server::<API>::new((
+    bind!(list_users),
+    bind!(get_user),
+    // missing: create_user  ← compiler error here
+))
+```
+
+The `Serves<API>` trait enforces that the handler tuple has exactly the right number of `BoundHandler<E>` entries, one per endpoint. No more, no less. This is checked entirely at compile time with zero runtime cost.
+
+### Single Source of Truth for Server + Client + OpenAPI
+
+Most frameworks require you to maintain the API definition in multiple places: route registrations in the server, HTTP calls in the client, and annotations or YAML files for OpenAPI. These inevitably drift apart.
+
+Wayward derives all three from the same type:
+
+```rust
+// Server: compile-time verified handlers
+Server::<API>::new(handlers).serve(addr).await?;
+
+// Client: type-safe calls using the same endpoint types
+let user = client.call::<GetEndpoint<UserByIdPath, User>>((42u32,)).await?;
+
+// OpenAPI: spec generated from the type — no annotations needed
+Server::<API>::new(handlers).with_openapi("My API", "1.0").serve(addr).await?;
+```
+
+If you change the API type, the compiler forces you to update all three. There is no YAML to forget.
+
+### Type-Level Path Encoding via HLists
+
+URL paths are encoded as heterogeneous lists at the type level:
+
+```rust
+// /users/:id/posts/:post_id becomes:
+HCons<Lit<users>, HCons<Capture<u32>, HCons<Lit<posts>, HCons<Capture<u32>, HNil>>>>
+
+// Ergonomic macro form:
+wayward_path!(type UserPostsPath = "users" / u32 / "posts" / u32);
+```
+
+This is a type-level catamorphism (fold) — the `PathSpec` trait recurses over the HList to compute the capture tuple type. A path with captures `u32` and `String` produces `Captures = (u32, String)` at compile time. The runtime path parser is structurally derived from the same type.
+
+Why HLists instead of flat tuples? Paths are inherently recursive: match one segment, then recurse on the remainder. HLists give O(n) trait impls via structural recursion, where flat tuples would require combinatorial explosion of impls for every segment combination.
+
+### Zero Ceremony Ecosystem Integration
+
+Wayward doesn't ask you to choose between it and the existing Tower/Axum ecosystem. It composes with both:
+
+- **Tower middleware** works directly via `.layer()` — CorsLayer, TraceLayer, TimeoutLayer, your own custom layers
+- **Axum interop** is bidirectional: nest wayward inside Axum (`into_axum_router()`), or nest Axum inside wayward (`with_axum_fallback()`)
+- **Hyper 1.x** is the transport layer — no custom HTTP implementation
+
+You can adopt wayward for part of your API and keep the rest in Axum. Or start with Axum and gradually migrate endpoints to wayward for stronger type guarantees. No all-or-nothing commitment.
+
+### Structured Errors as Types, Not Strings
+
+Handler errors are part of the type system. Return `Result<Json<User>, JsonError>` and the framework handles serialization:
+
+```rust
+async fn get_user(path: Path<UserByIdPath>) -> Result<Json<User>, JsonError> {
+    let (id,) = path.0;
+    db.get(id)
+      .ok_or_else(|| JsonError::not_found(format!("user {id} not found")))
+}
+// Produces: {"error": {"status": 404, "message": "user 42 not found"}}
+```
+
+Custom extractors can use the same error type, so a missing auth token produces a structured 401 response, not a raw string.
+
 ## Comparison
 
-| Feature | Wayward | Axum | Warp | Dropshot |
-|---------|---------|------|------|----------|
-| API-as-type | Yes | No | No | Partial |
-| Compile-time handler verification | Yes | No | No | Yes |
-| Type-safe client from API type | Yes | No | No | No |
-| OpenAPI from types | Yes | No | No | Yes |
-| Tower middleware | Yes | Yes | No | No |
-| Axum interop | Yes | — | No | No |
+| Feature | Wayward | Axum | Warp | Dropshot | Servant (Haskell) |
+|---------|---------|------|------|----------|-------------------|
+| API-as-type | Yes | No | No | Partial | Yes |
+| Compile-time handler completeness | Yes | No | No | Yes | Yes |
+| Type-safe client from API type | Yes | No | No | No | Yes |
+| OpenAPI from types | Yes | No | No | Yes | Yes (via servant-openapi3) |
+| Tower middleware | Yes | Yes | No | No | N/A |
+| Axum interop | Yes | — | No | No | N/A |
+| Streaming/SSE bodies | Yes | Yes | Yes | No | Limited |
+| Stable Rust | Yes | Yes | Yes | Yes | N/A |
+
+### How Wayward Compares to Servant
+
+Wayward is most directly comparable to Haskell's Servant. Both share the core idea: the API is a type, and implementations are derived from it. The key differences:
+
+- **Servant** uses GHC's type-level strings, type operators (`:<|>`, `:>`), and type families. Wayward uses HLists, marker types, and trait-level computation — achieving similar results within Rust's type system.
+- **Servant** is known for slow compile times on large APIs due to deep type-level computation. Wayward mitigates this with flat tuple impls (macro-generated for arities 1-16) instead of recursive type-class resolution, and method-indexed routing instead of linear type-level dispatch.
+- **Servant** has a mature ecosystem (servant-auth, servant-swagger, servant-client). Wayward has built-in equivalents (auth extractors, OpenAPI generation, type-safe client) rather than separate packages.
+- **Wayward** integrates with the Rust async ecosystem (Tower, Hyper, Axum) natively. Servant integrates with WAI/Warp in Haskell.
