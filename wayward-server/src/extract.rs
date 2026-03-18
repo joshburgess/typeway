@@ -117,9 +117,15 @@ where
 ///
 /// # Example
 ///
-/// ```ignore
-/// async fn list_users(State(db): State<DbPool>) -> Json<Vec<User>> {
-///     // ...
+/// ```
+/// use wayward_server::State;
+///
+/// #[derive(Clone)]
+/// struct DbPool;
+///
+/// async fn list_users(State(db): State<DbPool>) -> &'static str {
+///     let _ = db;
+///     "users"
 /// }
 /// ```
 pub struct State<T>(pub T);
@@ -153,12 +159,14 @@ impl<T: Clone + Send + Sync + 'static> FromRequestParts for State<T> {
 ///
 /// # Example
 ///
-/// ```ignore
-/// #[derive(Deserialize)]
+/// ```
+/// use wayward_server::Query;
+///
+/// #[derive(serde::Deserialize)]
 /// struct Pagination { page: u32, per_page: u32 }
 ///
-/// async fn list_users(Query(p): Query<Pagination>) -> Json<Vec<User>> {
-///     // p.page, p.per_page
+/// async fn list_users(Query(p): Query<Pagination>) -> String {
+///     format!("page={}, per_page={}", p.page, p.per_page)
 /// }
 /// ```
 pub struct Query<T>(pub T);
@@ -202,9 +210,11 @@ impl FromRequestParts for http::HeaderMap {
 ///
 /// # Example
 ///
-/// ```ignore
-/// // A middleware injects a RequestId into extensions:
-/// // parts.extensions.insert(RequestId("abc-123".to_string()));
+/// ```
+/// use wayward_server::Extension;
+///
+/// #[derive(Clone)]
+/// struct RequestId(String);
 ///
 /// async fn handler(Extension(id): Extension<RequestId>) -> String {
 ///     format!("Request: {}", id.0)

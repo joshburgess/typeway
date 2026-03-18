@@ -338,7 +338,26 @@ pub trait EndpointDoc {
 }
 
 /// Blanket impl: all endpoints have no documentation by default.
-impl<M: HttpMethod, P: PathSpec, Req, Res> EndpointDoc for Endpoint<M, P, Req, Res> {}
+impl<M: HttpMethod, P: PathSpec, Req, Res, Q> EndpointDoc for Endpoint<M, P, Req, Res, Q> {}
+
+// ---------------------------------------------------------------------------
+// QueryParameters — extract query param schema for OpenAPI
+// ---------------------------------------------------------------------------
+
+/// Extract OpenAPI query parameters from a query type.
+///
+/// Implement this for your query parameter struct to have its fields
+/// appear in the OpenAPI spec. A blanket impl is provided for `()`
+/// (no query params).
+pub trait QueryParameters {
+    fn query_parameters() -> Vec<Parameter>;
+}
+
+impl QueryParameters for () {
+    fn query_parameters() -> Vec<Parameter> {
+        Vec::new()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // EndpointToOperation
@@ -352,11 +371,12 @@ pub trait EndpointToOperation {
 }
 
 // Bodyless endpoints (NoBody request)
-impl<M, P, Res> EndpointToOperation for Endpoint<M, P, NoBody, Res>
+impl<M, P, Res, Q> EndpointToOperation for Endpoint<M, P, NoBody, Res, Q>
 where
     M: HttpMethod,
     P: PathSpec + ExtractPath + PathParameters,
     Res: ToSchema,
+    Q: QueryParameters,
 {
     fn path_pattern() -> String {
         P::pattern()
@@ -370,6 +390,7 @@ where
         let mut op = Operation::new();
         op.parameters = P::parameters();
         assign_param_names_from_pattern(&mut op.parameters, &P::pattern());
+        op.parameters.extend(Q::query_parameters());
 
         // Apply documentation metadata if available.
         op.summary = <Self as EndpointDoc>::summary().map(|s| s.to_string());
@@ -403,11 +424,12 @@ where
 // Body endpoints — we need separate impls per method to avoid overlap with NoBody.
 macro_rules! impl_endpoint_to_operation_with_body {
     ($Method:ty) => {
-        impl<P, Req, Res> EndpointToOperation for Endpoint<$Method, P, Req, Res>
+        impl<P, Req, Res, Q> EndpointToOperation for Endpoint<$Method, P, Req, Res, Q>
         where
             P: PathSpec + ExtractPath + PathParameters,
             Req: ToSchema,
             Res: ToSchema,
+            Q: QueryParameters,
         {
             fn path_pattern() -> String {
                 P::pattern()
@@ -421,15 +443,17 @@ macro_rules! impl_endpoint_to_operation_with_body {
                 let mut op = Operation::new();
                 op.parameters = P::parameters();
                 assign_param_names_from_pattern(&mut op.parameters, &P::pattern());
+                op.parameters.extend(Q::query_parameters());
 
                 // Apply documentation metadata.
-                op.summary = <Endpoint<$Method, P, Req, Res> as EndpointDoc>::summary()
+                op.summary = <Endpoint<$Method, P, Req, Res, Q> as EndpointDoc>::summary()
                     .map(|s| s.to_string());
-                op.description = <Endpoint<$Method, P, Req, Res> as EndpointDoc>::description()
+                op.description = <Endpoint<$Method, P, Req, Res, Q> as EndpointDoc>::description()
                     .map(|s| s.to_string());
-                op.operation_id = <Endpoint<$Method, P, Req, Res> as EndpointDoc>::operation_id()
-                    .map(|s| s.to_string());
-                op.tags = <Endpoint<$Method, P, Req, Res> as EndpointDoc>::tags()
+                op.operation_id =
+                    <Endpoint<$Method, P, Req, Res, Q> as EndpointDoc>::operation_id()
+                        .map(|s| s.to_string());
+                op.tags = <Endpoint<$Method, P, Req, Res, Q> as EndpointDoc>::tags()
                     .into_iter()
                     .map(|s| s.to_string())
                     .collect();

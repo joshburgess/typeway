@@ -87,7 +87,7 @@ pub trait BindableEndpoint {
     fn match_fn() -> crate::router::MatchFn;
 }
 
-impl<M, P, Req, Res> BindableEndpoint for Endpoint<M, P, Req, Res>
+impl<M, P, Req, Res, Q> BindableEndpoint for Endpoint<M, P, Req, Res, Q>
 where
     M: HttpMethod,
     P: PathSpec + ExtractPath + Send + 'static,

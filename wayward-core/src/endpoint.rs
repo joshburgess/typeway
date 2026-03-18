@@ -21,27 +21,29 @@ use crate::path::PathSpec;
 /// - `P`: Path HList type (e.g., `HCons<Lit<users>, HCons<Capture<u32>, HNil>>`)
 /// - `Req`: Request body type ([`NoBody`] for bodyless methods)
 /// - `Res`: Declared response type (for OpenAPI/client generation)
-pub struct Endpoint<M: HttpMethod, P: PathSpec, Req, Res> {
-    _marker: PhantomData<(M, P, Req, Res)>,
+/// - `Q`: Query parameter type (default `()` for no query params). When set,
+///   the query params appear in the OpenAPI spec and can be extracted via `Query<Q>`.
+pub struct Endpoint<M: HttpMethod, P: PathSpec, Req, Res, Q = ()> {
+    _marker: PhantomData<(M, P, Req, Res, Q)>,
 }
 
 /// Marker type indicating no request body.
 pub struct NoBody;
 
 /// `GET` endpoint with no request body.
-pub type GetEndpoint<P, Res> = Endpoint<Get, P, NoBody, Res>;
+pub type GetEndpoint<P, Res, Q = ()> = Endpoint<Get, P, NoBody, Res, Q>;
 
 /// `POST` endpoint with a request body.
-pub type PostEndpoint<P, Req, Res> = Endpoint<Post, P, Req, Res>;
+pub type PostEndpoint<P, Req, Res, Q = ()> = Endpoint<Post, P, Req, Res, Q>;
 
 /// `PUT` endpoint with a request body.
-pub type PutEndpoint<P, Req, Res> = Endpoint<Put, P, Req, Res>;
+pub type PutEndpoint<P, Req, Res, Q = ()> = Endpoint<Put, P, Req, Res, Q>;
 
 /// `DELETE` endpoint with no request body.
-pub type DeleteEndpoint<P, Res> = Endpoint<Delete, P, NoBody, Res>;
+pub type DeleteEndpoint<P, Res, Q = ()> = Endpoint<Delete, P, NoBody, Res, Q>;
 
 /// `PATCH` endpoint with a request body.
-pub type PatchEndpoint<P, Req, Res> = Endpoint<Patch, P, Req, Res>;
+pub type PatchEndpoint<P, Req, Res, Q = ()> = Endpoint<Patch, P, Req, Res, Q>;
 
 #[cfg(test)]
 #[allow(non_camel_case_types)]
