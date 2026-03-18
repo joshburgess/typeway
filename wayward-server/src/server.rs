@@ -136,6 +136,140 @@ impl<A: ApiSpec> Server<A> {
         self
     }
 
+    /// Serve static files from a directory at a given URL prefix.
+    ///
+    /// Requests to `{prefix}/{path}` will serve files from `{dir}/{path}`.
+    /// 404 is returned if the file doesn't exist.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Server::<API>::new(handlers)
+    ///     .with_static_files("/static", "./public")
+    ///     .serve(addr)
+    ///     .await?;
+    /// ```
+    pub fn with_static_files(mut self, prefix: &str, dir: impl Into<std::path::PathBuf>) -> Self {
+        let dir: std::path::PathBuf = dir.into();
+        let prefix_segments: Vec<String> = prefix
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
+        let prefix_len = prefix_segments.len();
+
+        let router = Arc::get_mut(&mut self.router)
+            .expect("with_static_files must be called before cloning the router");
+
+        let dir = Arc::new(dir);
+        let prefix_segs = Arc::new(prefix_segments);
+
+        // Add a catch-all route for the prefix.
+        router.add_route(
+            http::Method::GET,
+            format!("{prefix}/{{*path}}"),
+            {
+                let prefix_segs = prefix_segs.clone();
+                Box::new(move |segments: &[&str]| {
+                    segments.len() > prefix_segs.len()
+                        && segments[..prefix_segs.len()]
+                            .iter()
+                            .zip(prefix_segs.iter())
+                            .all(|(a, b)| *a == b.as_str())
+                })
+            },
+            {
+                let dir = dir.clone();
+                Box::new(move |parts: http::request::Parts, _body: bytes::Bytes| {
+                    let dir = dir.clone();
+                    Box::pin(async move {
+                        let path = parts.uri.path();
+                        // Strip prefix to get the file path.
+                        let file_path = path
+                            .splitn(prefix_len + 2, '/')
+                            .skip(prefix_len + 1)
+                            .collect::<Vec<_>>()
+                            .join("/");
+
+                        // Prevent directory traversal.
+                        if file_path.contains("..") {
+                            let mut res = http::Response::new(crate::body::body_from_string(
+                                "Forbidden".to_string(),
+                            ));
+                            *res.status_mut() = http::StatusCode::FORBIDDEN;
+                            return res;
+                        }
+
+                        let full_path = dir.join(&file_path);
+                        match tokio::fs::read(&full_path).await {
+                            Ok(contents) => {
+                                let mime = mime_from_path(&full_path);
+                                let body =
+                                    crate::body::body_from_bytes(bytes::Bytes::from(contents));
+                                let mut res = http::Response::new(body);
+                                if let Ok(val) = http::HeaderValue::from_str(mime) {
+                                    res.headers_mut().insert(http::header::CONTENT_TYPE, val);
+                                }
+                                res
+                            }
+                            Err(_) => {
+                                let mut res = http::Response::new(crate::body::body_from_string(
+                                    "Not Found".to_string(),
+                                ));
+                                *res.status_mut() = http::StatusCode::NOT_FOUND;
+                                res
+                            }
+                        }
+                    })
+                })
+            },
+        );
+
+        self
+    }
+
+    /// Serve a file as the fallback for unmatched routes (SPA mode).
+    ///
+    /// When no API route matches, the given file (typically `index.html`)
+    /// is served. This enables client-side routing in single-page apps.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Server::<API>::new(handlers)
+    ///     .with_static_files("/static", "./public")
+    ///     .with_spa_fallback("./public/index.html")
+    ///     .serve(addr)
+    ///     .await?;
+    /// ```
+    pub fn with_spa_fallback(mut self, index_path: impl Into<std::path::PathBuf>) -> Self {
+        let index_path: std::path::PathBuf = index_path.into();
+
+        // Read the file once at startup and cache it.
+        let html = std::fs::read_to_string(&index_path).unwrap_or_else(|e| {
+            panic!(
+                "failed to read SPA fallback file {}: {e}",
+                index_path.display()
+            )
+        });
+        let html = Arc::new(html);
+
+        self.set_fallback_raw(Arc::new(move |_req| {
+            let html = html.clone();
+            Box::pin(async move {
+                let body = crate::body::body_from_string(html.to_string());
+                let mut res = http::Response::new(body);
+                res.headers_mut().insert(
+                    http::header::CONTENT_TYPE,
+                    http::HeaderValue::from_static("text/html; charset=utf-8"),
+                );
+                res
+            })
+        }));
+
+        self
+    }
+
     /// Set a raw fallback function on the router.
     ///
     /// Used by `with_fallback` and `with_axum_fallback`.
@@ -389,4 +523,26 @@ pub async fn serve<A: ApiSpec, H: Serves<A>>(
     handlers: H,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     Server::<A>::new(handlers).serve(addr).await
+}
+
+/// Guess MIME type from file extension.
+fn mime_from_path(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("html") | Some("htm") => "text/html; charset=utf-8",
+        Some("css") => "text/css; charset=utf-8",
+        Some("js") | Some("mjs") => "application/javascript; charset=utf-8",
+        Some("json") => "application/json",
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("ico") => "image/x-icon",
+        Some("woff") => "font/woff",
+        Some("woff2") => "font/woff2",
+        Some("ttf") => "font/ttf",
+        Some("txt") => "text/plain; charset=utf-8",
+        Some("xml") => "application/xml",
+        Some("wasm") => "application/wasm",
+        _ => "application/octet-stream",
+    }
 }

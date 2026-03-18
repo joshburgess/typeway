@@ -65,16 +65,17 @@ pub struct RequestIdService<S> {
     inner: S,
 }
 
-impl<S> tower_service::Service<http::Request<hyper::body::Incoming>> for RequestIdService<S>
+impl<S, B> tower_service::Service<http::Request<B>> for RequestIdService<S>
 where
     S: tower_service::Service<
-            http::Request<hyper::body::Incoming>,
+            http::Request<B>,
             Response = http::Response<BoxBody>,
             Error = Infallible,
         > + Clone
         + Send
         + 'static,
     S::Future: Send + 'static,
+    B: Send + 'static,
 {
     type Response = http::Response<BoxBody>;
     type Error = Infallible;
@@ -84,7 +85,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, mut req: http::Request<hyper::body::Incoming>) -> Self::Future {
+    fn call(&mut self, mut req: http::Request<B>) -> Self::Future {
         // Extract or generate request ID.
         let id = req
             .headers()
