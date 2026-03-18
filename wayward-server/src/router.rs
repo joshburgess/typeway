@@ -33,16 +33,17 @@ pub const DEFAULT_MAX_BODY_SIZE: usize = 2 * 1024 * 1024;
 /// dispatch. For typical API sizes (<100 routes), this linear scan with
 /// method pre-filtering is faster than a trie.
 pub struct Router {
+    /// All mutable state behind RwLock so the router can be configured
+    /// after Arc is shared (e.g., when LayeredServer wraps it).
+    inner: std::sync::RwLock<RouterInner>,
+}
+
+struct RouterInner {
     routes: Vec<RouteEntry>,
-    /// Routes indexed by method for O(1) method filtering.
     method_index: MethodIndex,
     state_injector: Option<StateInjector>,
     fallback: Option<FallbackService>,
-    /// Maximum request body size in bytes. Bodies exceeding this are rejected
-    /// with 413 Payload Too Large.
     max_body_size: usize,
-    /// Optional path prefix. When set, only requests whose path starts with
-    /// this prefix are matched, and the prefix is stripped before route matching.
     prefix: Option<Vec<String>>,
 }
 
@@ -113,55 +114,51 @@ impl Router {
     /// Create an empty router.
     pub fn new() -> Self {
         Router {
-            routes: Vec::new(),
-            method_index: MethodIndex::default(),
-            state_injector: None,
-            fallback: None,
-            max_body_size: DEFAULT_MAX_BODY_SIZE,
-            prefix: None,
+            inner: std::sync::RwLock::new(RouterInner {
+                routes: Vec::new(),
+                method_index: MethodIndex::default(),
+                state_injector: None,
+                fallback: None,
+                max_body_size: DEFAULT_MAX_BODY_SIZE,
+                prefix: None,
+            }),
         }
     }
 
     /// Set a path prefix for all routes.
-    ///
-    /// Only requests starting with this prefix will be matched, and the
-    /// prefix segments are stripped before route matching.
-    pub(crate) fn set_prefix(&mut self, prefix: &str) {
+    pub(crate) fn set_prefix(&self, prefix: &str) {
         let segments: Vec<String> = prefix
             .split('/')
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .collect();
         if !segments.is_empty() {
-            self.prefix = Some(segments);
+            self.inner.write().unwrap().prefix = Some(segments);
         }
     }
 
     /// Set the maximum request body size in bytes.
-    ///
-    /// Bodies exceeding this limit are rejected with 413 Payload Too Large
-    /// before the handler is called. Default: 2 MiB.
-    pub(crate) fn set_max_body_size(&mut self, max: usize) {
-        self.max_body_size = max;
+    pub(crate) fn set_max_body_size(&self, max: usize) {
+        self.inner.write().unwrap().max_body_size = max;
     }
 
     /// Register a route with a method, pattern, match function, and handler.
     pub(crate) fn add_route(
-        &mut self,
+        &self,
         method: http::Method,
         pattern: String,
         match_fn: MatchFn,
         handler: BoxedHandler,
     ) {
-        // Extract first literal segment from pattern for fast prefix filtering.
         let first_segment = pattern
             .split('/')
             .find(|s| !s.is_empty() && !s.starts_with('{'))
             .map(|s| s.to_string());
 
-        let idx = self.routes.len();
-        self.method_index.push(&method, idx);
-        self.routes.push(RouteEntry {
+        let mut inner = self.inner.write().unwrap();
+        let idx = inner.routes.len();
+        inner.method_index.push(&method, idx);
+        inner.routes.push(RouteEntry {
             pattern,
             first_segment,
             match_fn,
@@ -171,15 +168,15 @@ impl Router {
 
     /// Set the state injector function.
     pub(crate) fn set_state_injector(
-        &mut self,
+        &self,
         injector: Arc<dyn Fn(&mut http::Extensions) + Send + Sync>,
     ) {
-        self.state_injector = Some(injector);
+        self.inner.write().unwrap().state_injector = Some(injector);
     }
 
     /// Set a fallback service for requests that don't match any wayward route.
-    pub(crate) fn set_fallback(&mut self, fallback: FallbackService) {
-        self.fallback = Some(fallback);
+    pub(crate) fn set_fallback(&self, fallback: FallbackService) {
+        self.inner.write().unwrap().fallback = Some(fallback);
     }
 
     /// Route a request to the appropriate handler.
@@ -191,11 +188,12 @@ impl Router {
         self: &Arc<Self>,
         req: http::Request<hyper::body::Incoming>,
     ) -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
+        let inner = self.inner.read().unwrap();
         let path = req.uri().path().to_string();
         let all_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 
         // Strip prefix if configured.
-        let segments: &[&str] = if let Some(ref prefix) = self.prefix {
+        let segments: &[&str] = if let Some(ref prefix) = inner.prefix {
             if all_segments.len() >= prefix.len()
                 && all_segments[..prefix.len()]
                     .iter()
@@ -205,7 +203,7 @@ impl Router {
                 &all_segments[prefix.len()..]
             } else {
                 // Prefix doesn't match — fall through to 404/fallback.
-                return if let Some(ref fallback) = self.fallback {
+                return if let Some(ref fallback) = inner.fallback {
                     fallback(req)
                 } else {
                     Box::pin(async move {
@@ -224,9 +222,9 @@ impl Router {
         let method = req.method();
 
         // Fast path: check only routes with matching method.
-        let method_indices = self.method_index.get_indices(method);
+        let method_indices = inner.method_index.get_indices(method);
         for &i in method_indices {
-            let entry = &self.routes[i];
+            let entry = &inner.routes[i];
             // Fast prefix rejection: if the route starts with a literal segment
             // and it doesn't match the request's first segment, skip.
             if let Some(ref first) = entry.first_segment {
@@ -241,27 +239,33 @@ impl Router {
                     segments.iter().map(|s| s.to_string()).collect(),
                 )));
 
-                if let Some(ref injector) = self.state_injector {
+                if let Some(ref injector) = inner.state_injector {
                     injector(&mut parts.extensions);
                 }
 
                 let router = self.clone();
-                let max_body = self.max_body_size;
+                let max_body = inner.max_body_size;
+                drop(inner); // Release read lock before async
                 return Box::pin(async move {
                     let body_bytes = match collect_body_limited(body, max_body).await {
                         Ok(bytes) => bytes,
                         Err(resp) => return resp,
                     };
-                    (router.routes[i].handler)(parts, body_bytes).await
+                    // Re-acquire lock, call handler, drop lock before awaiting the future.
+                    let fut = {
+                        let inner = router.inner.read().unwrap();
+                        (inner.routes[i].handler)(parts, body_bytes)
+                    };
+                    fut.await
                 });
             }
         }
 
         // No method match — check if any route matches the path (for 405 vs 404).
-        let path_matched = self
+        let path_matched = inner
             .method_index
             .get_all_indices()
-            .any(|i| (self.routes[i].match_fn)(segments));
+            .any(|i| (inner.routes[i].match_fn)(segments));
 
         if path_matched {
             Box::pin(async move {
@@ -270,7 +274,7 @@ impl Router {
                 *res.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
                 res
             })
-        } else if let Some(ref fallback) = self.fallback {
+        } else if let Some(ref fallback) = inner.fallback {
             fallback(req)
         } else {
             Box::pin(async move {
@@ -286,69 +290,78 @@ impl Router {
     /// Used by the Axum interop adapter where the body has already been
     /// collected from Axum's body type.
     #[cfg(feature = "axum-interop")]
-    pub(crate) async fn route_with_bytes(
+    pub(crate) fn route_with_bytes(
         self: &Arc<Self>,
         mut parts: http::request::Parts,
         body_bytes: bytes::Bytes,
-    ) -> http::Response<BoxBody> {
+    ) -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
+        let inner = self.inner.read().unwrap();
         let path = parts.uri.path().to_string();
         let all_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 
-        // Strip prefix if configured.
-        let segments: &[&str] = if let Some(ref prefix) = self.prefix {
+        let segments: Vec<&str> = if let Some(ref prefix) = inner.prefix {
             if all_segments.len() >= prefix.len()
                 && all_segments[..prefix.len()]
                     .iter()
                     .zip(prefix.iter())
                     .all(|(a, b)| *a == b.as_str())
             {
-                &all_segments[prefix.len()..]
+                all_segments[prefix.len()..].to_vec()
             } else {
-                let mut res = http::Response::new(body_from_string("Not Found".to_string()));
-                *res.status_mut() = StatusCode::NOT_FOUND;
-                return res;
+                return Box::pin(async move {
+                    let mut res = http::Response::new(body_from_string("Not Found".to_string()));
+                    *res.status_mut() = StatusCode::NOT_FOUND;
+                    res
+                });
             }
         } else {
-            &all_segments
+            all_segments
         };
         let first_seg = segments.first().copied();
 
         let method = &parts.method;
-        let method_indices = self.method_index.get_indices(method);
+        let method_indices = inner.method_index.get_indices(method);
 
         for &i in method_indices {
-            let entry = &self.routes[i];
+            let entry = &inner.routes[i];
             if let Some(ref first) = entry.first_segment {
                 if first_seg != Some(first.as_str()) {
                     continue;
                 }
             }
-            if (entry.match_fn)(segments) {
+            if (entry.match_fn)(&segments) {
                 parts.extensions.insert(PathSegments(Arc::new(
                     segments.iter().map(|s| s.to_string()).collect(),
                 )));
 
-                if let Some(ref injector) = self.state_injector {
+                if let Some(ref injector) = inner.state_injector {
                     injector(&mut parts.extensions);
                 }
 
-                return (entry.handler)(parts, body_bytes).await;
+                let fut = (entry.handler)(parts, body_bytes);
+                drop(inner);
+                return fut;
             }
         }
 
-        let path_matched = self
+        let path_matched = inner
             .method_index
             .get_all_indices()
-            .any(|i| (self.routes[i].match_fn)(segments));
+            .any(|i| (inner.routes[i].match_fn)(&segments));
 
         if path_matched {
-            let mut res = http::Response::new(body_from_string("Method Not Allowed".to_string()));
-            *res.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
-            res
+            Box::pin(async move {
+                let mut res =
+                    http::Response::new(body_from_string("Method Not Allowed".to_string()));
+                *res.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
+                res
+            })
         } else {
-            let mut res = http::Response::new(body_from_string("Not Found".to_string()));
-            *res.status_mut() = StatusCode::NOT_FOUND;
-            res
+            Box::pin(async move {
+                let mut res = http::Response::new(body_from_string("Not Found".to_string()));
+                *res.status_mut() = StatusCode::NOT_FOUND;
+                res
+            })
         }
     }
 }

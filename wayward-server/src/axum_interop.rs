@@ -71,7 +71,7 @@ impl<A: ApiSpec> Server<A> {
     ///     .serve(addr)
     ///     .await?;
     /// ```
-    pub fn with_axum_fallback(mut self, axum_router: axum::Router) -> Self {
+    pub fn with_axum_fallback(self, axum_router: axum::Router) -> Self {
         self.set_fallback_raw(Arc::new(
             move |req: http::Request<hyper::body::Incoming>| {
                 let mut axum_svc = axum_router.clone();

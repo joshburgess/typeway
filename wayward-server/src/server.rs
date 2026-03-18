@@ -62,10 +62,8 @@ impl<A: ApiSpec> Server<A> {
     ///     .serve(addr)
     ///     .await?;
     /// ```
-    pub fn nest(mut self, prefix: &str) -> Self {
-        let router =
-            Arc::get_mut(&mut self.router).expect("nest must be called before cloning the router");
-        router.set_prefix(prefix);
+    pub fn nest(self, prefix: &str) -> Self {
+        self.router.set_prefix(prefix);
         self
     }
 
@@ -73,18 +71,14 @@ impl<A: ApiSpec> Server<A> {
     ///
     /// Bodies exceeding this limit are rejected with 413 Payload Too Large.
     /// Default: 2 MiB (2,097,152 bytes).
-    pub fn max_body_size(mut self, max: usize) -> Self {
-        let router = Arc::get_mut(&mut self.router)
-            .expect("max_body_size must be called before cloning the router");
-        router.set_max_body_size(max);
+    pub fn max_body_size(self, max: usize) -> Self {
+        self.router.set_max_body_size(max);
         self
     }
 
     /// Add shared state accessible via [`State<T>`](crate::extract::State) extractors.
-    pub fn with_state<T: Clone + Send + Sync + 'static>(mut self, state: T) -> Self {
-        let router = Arc::get_mut(&mut self.router)
-            .expect("with_state must be called before cloning the router");
-        router.set_state_injector(Arc::new(move |ext| {
+    pub fn with_state<T: Clone + Send + Sync + 'static>(self, state: T) -> Self {
+        self.router.set_state_injector(Arc::new(move |ext| {
             ext.insert(state.clone());
         }));
         self
@@ -104,7 +98,7 @@ impl<A: ApiSpec> Server<A> {
     ///     .await?;
     /// ```
     #[cfg(feature = "openapi")]
-    pub fn with_openapi(mut self, title: &str, version: &str) -> Self
+    pub fn with_openapi(self, title: &str, version: &str) -> Self
     where
         A: wayward_openapi::ApiToSpec,
     {
@@ -113,8 +107,7 @@ impl<A: ApiSpec> Server<A> {
             serde_json::to_string_pretty(&spec).expect("OpenAPI spec serialization failed"),
         );
 
-        let router = std::sync::Arc::get_mut(&mut self.router)
-            .expect("with_openapi must be called before cloning the router");
+        let router = &self.router;
 
         let spec_json_str =
             serde_json::to_string(&spec).expect("OpenAPI spec serialization failed");
@@ -149,7 +142,7 @@ impl<A: ApiSpec> Server<A> {
     ///     .serve(addr)
     ///     .await?;
     /// ```
-    pub fn with_static_files(mut self, prefix: &str, dir: impl Into<std::path::PathBuf>) -> Self {
+    pub fn with_static_files(self, prefix: &str, dir: impl Into<std::path::PathBuf>) -> Self {
         let dir: std::path::PathBuf = dir.into();
         let prefix_segments: Vec<String> = prefix
             .split('/')
@@ -158,8 +151,7 @@ impl<A: ApiSpec> Server<A> {
             .collect();
         let prefix_len = prefix_segments.len();
 
-        let router = Arc::get_mut(&mut self.router)
-            .expect("with_static_files must be called before cloning the router");
+        let router = &self.router;
 
         let dir = Arc::new(dir);
         let prefix_segs = Arc::new(prefix_segments);
@@ -255,7 +247,7 @@ impl<A: ApiSpec> Server<A> {
     ///     .serve(addr)
     ///     .await?;
     /// ```
-    pub fn with_spa_fallback(mut self, index_path: impl Into<std::path::PathBuf>) -> Self {
+    pub fn with_spa_fallback(self, index_path: impl Into<std::path::PathBuf>) -> Self {
         let index_path: std::path::PathBuf = index_path.into();
 
         // Read the file once at startup and cache it.
@@ -297,9 +289,8 @@ impl<A: ApiSpec> Server<A> {
     /// Set a raw fallback function on the router.
     ///
     /// Used by `with_fallback` and `with_axum_fallback`.
-    pub(crate) fn set_fallback_raw(&mut self, fallback: crate::router::FallbackService) {
-        let router = Arc::get_mut(&mut self.router)
-            .expect("set_fallback must be called before cloning the router");
+    pub(crate) fn set_fallback_raw(&self, fallback: crate::router::FallbackService) {
+        let router = &self.router;
         router.set_fallback(fallback);
     }
 
@@ -319,7 +310,7 @@ impl<A: ApiSpec> Server<A> {
     ///     .serve(addr)
     ///     .await?;
     /// ```
-    pub fn with_fallback<S>(mut self, service: S) -> Self
+    pub fn with_fallback<S>(self, service: S) -> Self
     where
         S: tower_service::Service<
                 http::Request<hyper::body::Incoming>,
@@ -375,9 +366,13 @@ impl<A: ApiSpec> Server<A> {
         <L::Service as tower_service::Service<http::Request<hyper::body::Incoming>>>::Future:
             Send + 'static,
     {
+        let router = self.router.clone();
         let svc = RouterService::new(self.router);
         let layered = layer.layer(svc);
-        LayeredServer { service: layered }
+        LayeredServer {
+            service: layered,
+            router,
+        }
     }
 
     /// Get the inner [`RouterService`] as a Tower service.
@@ -458,6 +453,143 @@ impl<A: ApiSpec> Server<A> {
 pub struct LayeredServer<S> {
     /// The layered service. Exposed for advanced use cases (e.g., manual serving).
     pub service: S,
+    /// Reference to the underlying router for post-layer configuration.
+    router: Arc<Router>,
+}
+
+impl<S> LayeredServer<S> {
+    /// Add shared state accessible via [`State<T>`] extractors.
+    pub fn with_state<T: Clone + Send + Sync + 'static>(self, state: T) -> Self {
+        self.router.set_state_injector(Arc::new(move |ext| {
+            ext.insert(state.clone());
+        }));
+        self
+    }
+
+    /// Set the maximum request body size.
+    pub fn max_body_size(self, max: usize) -> Self {
+        self.router.set_max_body_size(max);
+        self
+    }
+
+    /// Set a path prefix for all routes.
+    pub fn nest(self, prefix: &str) -> Self {
+        self.router.set_prefix(prefix);
+        self
+    }
+
+    /// Serve static files from a directory.
+    pub fn with_static_files(self, prefix: &str, dir: impl Into<std::path::PathBuf>) -> Self {
+        // Delegate to the shared router's add_route via the same logic as Server.
+        let dir: std::path::PathBuf = dir.into();
+        let prefix_segments: Vec<String> = prefix
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
+        let prefix_len = prefix_segments.len();
+        let dir = Arc::new(dir);
+        let prefix_segs = Arc::new(prefix_segments);
+
+        self.router.add_route(
+            http::Method::GET,
+            format!("{prefix}/{{*path}}"),
+            {
+                let prefix_segs = prefix_segs.clone();
+                Box::new(move |segments: &[&str]| {
+                    segments.len() >= prefix_segs.len()
+                        && segments[..prefix_segs.len()]
+                            .iter()
+                            .zip(prefix_segs.iter())
+                            .all(|(a, b)| *a == b.as_str())
+                })
+            },
+            {
+                let dir = dir.clone();
+                Box::new(move |parts: http::request::Parts, _body: bytes::Bytes| {
+                    let dir = dir.clone();
+                    Box::pin(async move {
+                        let path = parts.uri.path();
+                        let file_path: String = path
+                            .splitn(prefix_len + 2, '/')
+                            .skip(prefix_len + 1)
+                            .collect::<Vec<_>>()
+                            .join("/");
+                        if file_path.contains("..") {
+                            let mut res = http::Response::new(crate::body::body_from_string(
+                                "Forbidden".to_string(),
+                            ));
+                            *res.status_mut() = http::StatusCode::FORBIDDEN;
+                            return res;
+                        }
+                        let full_path = if file_path.is_empty() {
+                            dir.join("index.html")
+                        } else {
+                            let p = dir.join(&file_path);
+                            if p.is_dir() {
+                                p.join("index.html")
+                            } else {
+                                p
+                            }
+                        };
+                        match tokio::fs::read(&full_path).await {
+                            Ok(contents) => {
+                                let mime = mime_from_path(&full_path);
+                                let body =
+                                    crate::body::body_from_bytes(bytes::Bytes::from(contents));
+                                let mut res = http::Response::new(body);
+                                if let Ok(val) = http::HeaderValue::from_str(mime) {
+                                    res.headers_mut().insert(http::header::CONTENT_TYPE, val);
+                                }
+                                res
+                            }
+                            Err(_) => {
+                                let mut res = http::Response::new(crate::body::body_from_string(
+                                    "Not Found".to_string(),
+                                ));
+                                *res.status_mut() = http::StatusCode::NOT_FOUND;
+                                res
+                            }
+                        }
+                    })
+                })
+            },
+        );
+        self
+    }
+
+    /// Serve a file as SPA fallback for unmatched routes.
+    pub fn with_spa_fallback(self, index_path: impl Into<std::path::PathBuf>) -> Self {
+        let index_path: std::path::PathBuf = index_path.into();
+        let html = std::fs::read_to_string(&index_path).unwrap_or_else(|e| {
+            panic!(
+                "failed to read SPA fallback file {}: {e}",
+                index_path.display()
+            )
+        });
+        let html = Arc::new(html);
+        self.router.set_fallback(Arc::new(move |req| {
+            let html = html.clone();
+            let path = req.uri().path().to_string();
+            Box::pin(async move {
+                let last_segment = path.rsplit('/').next().unwrap_or("");
+                if last_segment.contains('.') {
+                    let mut res =
+                        http::Response::new(crate::body::body_from_string("Not Found".to_string()));
+                    *res.status_mut() = http::StatusCode::NOT_FOUND;
+                    return res;
+                }
+                let body = crate::body::body_from_string(html.to_string());
+                let mut res = http::Response::new(body);
+                res.headers_mut().insert(
+                    http::header::CONTENT_TYPE,
+                    http::HeaderValue::from_static("text/html; charset=utf-8"),
+                );
+                res
+            })
+        }));
+        self
+    }
 }
 
 impl<S> LayeredServer<S>
@@ -487,6 +619,7 @@ where
     {
         LayeredServer {
             service: layer.layer(self.service),
+            router: self.router,
         }
     }
 
