@@ -164,14 +164,15 @@ impl<A: ApiSpec> Server<A> {
         let dir = Arc::new(dir);
         let prefix_segs = Arc::new(prefix_segments);
 
-        // Add a catch-all route for the prefix.
+        // Add a catch-all route for the prefix (matches /static, /static/, /static/foo).
         router.add_route(
             http::Method::GET,
             format!("{prefix}/{{*path}}"),
             {
                 let prefix_segs = prefix_segs.clone();
                 Box::new(move |segments: &[&str]| {
-                    segments.len() > prefix_segs.len()
+                    // Match: prefix exactly, or prefix + any file path
+                    segments.len() >= prefix_segs.len()
                         && segments[..prefix_segs.len()]
                             .iter()
                             .zip(prefix_segs.iter())
@@ -185,7 +186,7 @@ impl<A: ApiSpec> Server<A> {
                     Box::pin(async move {
                         let path = parts.uri.path();
                         // Strip prefix to get the file path.
-                        let file_path = path
+                        let file_path: String = path
                             .splitn(prefix_len + 2, '/')
                             .skip(prefix_len + 1)
                             .collect::<Vec<_>>()
@@ -200,7 +201,19 @@ impl<A: ApiSpec> Server<A> {
                             return res;
                         }
 
-                        let full_path = dir.join(&file_path);
+                        let full_path = if file_path.is_empty() {
+                            // /static or /static/ → try index.html
+                            dir.join("index.html")
+                        } else {
+                            let p = dir.join(&file_path);
+                            // If it's a directory, try index.html inside it
+                            if p.is_dir() {
+                                p.join("index.html")
+                            } else {
+                                p
+                            }
+                        };
+
                         match tokio::fs::read(&full_path).await {
                             Ok(contents) => {
                                 let mime = mime_from_path(&full_path);
@@ -254,9 +267,20 @@ impl<A: ApiSpec> Server<A> {
         });
         let html = Arc::new(html);
 
-        self.set_fallback_raw(Arc::new(move |_req| {
+        self.set_fallback_raw(Arc::new(move |req| {
             let html = html.clone();
+            let path = req.uri().path().to_string();
             Box::pin(async move {
+                // Don't serve SPA HTML for paths that look like file requests
+                // (contain a dot in the last segment, e.g. /foo/bar.js).
+                let last_segment = path.rsplit('/').next().unwrap_or("");
+                if last_segment.contains('.') {
+                    let mut res =
+                        http::Response::new(crate::body::body_from_string("Not Found".to_string()));
+                    *res.status_mut() = http::StatusCode::NOT_FOUND;
+                    return res;
+                }
+
                 let body = crate::body::body_from_string(html.to_string());
                 let mut res = http::Response::new(body);
                 res.headers_mut().insert(
