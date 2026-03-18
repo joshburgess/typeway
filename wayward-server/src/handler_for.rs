@@ -61,6 +61,25 @@ where
     }
 }
 
+/// Convenience macro to bind a handler to an endpoint without turbofish.
+///
+/// Instead of `bind::<_, _, _>(handler)`, write `bind!(handler)`.
+/// The endpoint type is inferred from the `Serves<API>` context.
+///
+/// ```ignore
+/// Server::<API>::new((
+///     bind!(hello),
+///     bind!(get_user),
+///     bind!(create_user),
+/// ));
+/// ```
+#[macro_export]
+macro_rules! bind {
+    ($handler:expr) => {
+        $crate::bind::<_, _, _>($handler)
+    };
+}
+
 /// Trait providing runtime endpoint metadata for binding.
 pub trait BindableEndpoint {
     fn method() -> http::Method;

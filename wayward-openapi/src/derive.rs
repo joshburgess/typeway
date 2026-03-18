@@ -300,6 +300,47 @@ impl<U: ToSchema, T: PathParameters> PathParameters for HCons<Capture<U>, T> {
 }
 
 // ---------------------------------------------------------------------------
+// EndpointDoc — optional metadata for OpenAPI operations
+// ---------------------------------------------------------------------------
+
+/// Optional documentation metadata for an endpoint.
+///
+/// Implement this trait on your endpoint type alias to add summary,
+/// description, tags, and operation ID to the generated OpenAPI spec.
+///
+/// # Example
+///
+/// ```
+/// use wayward_openapi::EndpointDoc;
+///
+/// struct GetUsersEndpoint;
+///
+/// impl EndpointDoc for GetUsersEndpoint {
+///     fn summary() -> Option<&'static str> { Some("List all users") }
+///     fn description() -> Option<&'static str> { Some("Returns a paginated list of users") }
+///     fn tags() -> Vec<&'static str> { vec!["users"] }
+///     fn operation_id() -> Option<&'static str> { Some("listUsers") }
+/// }
+/// ```
+pub trait EndpointDoc {
+    fn summary() -> Option<&'static str> {
+        None
+    }
+    fn description() -> Option<&'static str> {
+        None
+    }
+    fn tags() -> Vec<&'static str> {
+        Vec::new()
+    }
+    fn operation_id() -> Option<&'static str> {
+        None
+    }
+}
+
+/// Blanket impl: all endpoints have no documentation by default.
+impl<M: HttpMethod, P: PathSpec, Req, Res> EndpointDoc for Endpoint<M, P, Req, Res> {}
+
+// ---------------------------------------------------------------------------
 // EndpointToOperation
 // ---------------------------------------------------------------------------
 
@@ -328,9 +369,16 @@ where
     fn to_operation() -> Operation {
         let mut op = Operation::new();
         op.parameters = P::parameters();
-
-        // Add path parameter names from the pattern.
         assign_param_names_from_pattern(&mut op.parameters, &P::pattern());
+
+        // Apply documentation metadata if available.
+        op.summary = <Self as EndpointDoc>::summary().map(|s| s.to_string());
+        op.description = <Self as EndpointDoc>::description().map(|s| s.to_string());
+        op.operation_id = <Self as EndpointDoc>::operation_id().map(|s| s.to_string());
+        op.tags = <Self as EndpointDoc>::tags()
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect();
 
         let mut responses = IndexMap::new();
         let mut content = IndexMap::new();
@@ -373,6 +421,18 @@ macro_rules! impl_endpoint_to_operation_with_body {
                 let mut op = Operation::new();
                 op.parameters = P::parameters();
                 assign_param_names_from_pattern(&mut op.parameters, &P::pattern());
+
+                // Apply documentation metadata.
+                op.summary = <Endpoint<$Method, P, Req, Res> as EndpointDoc>::summary()
+                    .map(|s| s.to_string());
+                op.description = <Endpoint<$Method, P, Req, Res> as EndpointDoc>::description()
+                    .map(|s| s.to_string());
+                op.operation_id = <Endpoint<$Method, P, Req, Res> as EndpointDoc>::operation_id()
+                    .map(|s| s.to_string());
+                op.tags = <Endpoint<$Method, P, Req, Res> as EndpointDoc>::tags()
+                    .into_iter()
+                    .map(|s| s.to_string())
+                    .collect();
 
                 // Request body
                 let mut req_content = IndexMap::new();

@@ -18,7 +18,7 @@ help: the trait `IntoResponse` is not implemented for `NotAResponse`
             Result<T, E>
             String
             bytes::bytes::Bytes
-            http::response::Response<http_body_util::combinators::box_body::BoxBody<bytes::bytes::Bytes, Box<(dyn std::error::Error + Send + Sync + 'static)>>>
+            http::response::Response<http_body_util::combinators::box_body::UnsyncBoxBody<bytes::bytes::Bytes, Box<(dyn std::error::Error + Send + Sync + 'static)>>>
             http::status::StatusCode
 note: required by a bound in `__check_response`
  --> tests/handler/fail_bad_return.rs:5:1

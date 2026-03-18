@@ -17,6 +17,8 @@ pub mod response;
 pub mod router;
 pub mod server;
 pub mod serves;
+#[cfg(feature = "ws")]
+pub mod ws;
 
 pub use body::{body_from_stream, empty_body, sse_body, BoxBody};
 pub use error::JsonError;

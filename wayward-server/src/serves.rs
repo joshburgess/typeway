@@ -15,8 +15,8 @@ use crate::router::Router;
 #[diagnostic::on_unimplemented(
     message = "the handler tuple does not match the API specification `{A}`",
     label = "handler tuple does not implement `Serves<{A}>`",
-    note = "each endpoint in the API type needs a corresponding `BoundHandler` created via `bind()`",
-    note = "the handler tuple must have exactly one `bind::<_, _, _>(handler)` for each endpoint"
+    note = "each endpoint in the API type needs a corresponding `BoundHandler` created via `bind!(handler)`",
+    note = "the handler tuple must have exactly one `bind!(handler)` for each endpoint"
 )]
 pub trait Serves<A: ApiSpec> {
     /// Register all handlers into the router.

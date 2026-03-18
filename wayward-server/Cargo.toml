@@ -7,6 +7,7 @@ edition = "2021"
 default = []
 openapi = ["dep:wayward-openapi"]
 axum-interop = ["dep:axum"]
+ws = ["dep:tokio-tungstenite", "dep:sha1_smol", "dep:base64"]
 
 [dependencies]
 wayward-core = { path = "../wayward-core" }
@@ -18,6 +19,9 @@ tower-service = "0.3"
 tower-layer = "0.3"
 tower-http = { version = "0.6", features = ["trace", "cors", "timeout", "compression-gzip", "compression-deflate", "request-id", "propagate-header", "set-header"] }
 uuid = { version = "1", features = ["v4"] }
+tokio-tungstenite = { version = "0.26", optional = true }
+sha1_smol = { version = "1", optional = true }
+base64 = { version = "0.22", optional = true }
 axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["full"] }
 http = "1"

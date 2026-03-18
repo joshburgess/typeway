@@ -4,14 +4,17 @@
 //! streaming responses. Handlers return `Response<BoxBody>`.
 
 use bytes::Bytes;
-use http_body_util::combinators::BoxBody as HBoxBody;
+use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt, Empty, Full, StreamBody};
 
 /// The response body type used by wayward handlers.
 ///
 /// This is a type-erased body that can wrap buffered data (`Full<Bytes>`),
 /// streaming data, or an empty body. It implements `http_body::Body`.
-pub type BoxBody = HBoxBody<Bytes, BoxBodyError>;
+///
+/// Uses `UnsyncBoxBody` internally, which only requires `Send` (not `Sync`),
+/// enabling streaming bodies from channels and other async sources.
+pub type BoxBody = UnsyncBoxBody<Bytes, BoxBodyError>;
 
 /// Error type for the boxed body. Infallible for buffered bodies,
 /// but allows streaming bodies to report errors.
@@ -19,7 +22,7 @@ pub type BoxBodyError = Box<dyn std::error::Error + Send + Sync>;
 
 /// Create a `BoxBody` from bytes.
 pub fn body_from_bytes(bytes: Bytes) -> BoxBody {
-    Full::new(bytes).map_err(|e| match e {}).boxed()
+    Full::new(bytes).map_err(|e| match e {}).boxed_unsync()
 }
 
 /// Create a `BoxBody` from a string.
@@ -29,12 +32,13 @@ pub fn body_from_string(s: String) -> BoxBody {
 
 /// Create an empty `BoxBody`.
 pub fn empty_body() -> BoxBody {
-    Empty::new().map_err(|e| match e {}).boxed()
+    Empty::new().map_err(|e| match e {}).boxed_unsync()
 }
 
 /// Create a streaming `BoxBody` from a `Stream` of `Result<Frame<Bytes>, E>`.
 ///
 /// Use this for Server-Sent Events, chunked responses, or any streaming body.
+/// The stream only needs to be `Send` — `Sync` is not required.
 ///
 /// # Example
 ///
@@ -50,17 +54,15 @@ pub fn empty_body() -> BoxBody {
 /// ```
 pub fn body_from_stream<S>(stream: S) -> BoxBody
 where
-    S: futures::Stream<Item = Result<http_body::Frame<Bytes>, BoxBodyError>>
-        + Send
-        + Sync
-        + 'static,
+    S: futures::Stream<Item = Result<http_body::Frame<Bytes>, BoxBodyError>> + Send + 'static,
 {
-    BoxBody::new(StreamBody::new(stream))
+    StreamBody::new(stream).boxed_unsync()
 }
 
 /// Create an SSE (Server-Sent Events) body from a stream of event strings.
 ///
 /// Each string in the stream is formatted as an SSE event (`data: ...\n\n`).
+/// The stream only needs to be `Send`.
 ///
 /// # Example
 ///
@@ -72,7 +74,7 @@ where
 /// ```
 pub fn sse_body<S>(stream: S) -> BoxBody
 where
-    S: futures::Stream<Item = String> + Send + Sync + 'static,
+    S: futures::Stream<Item = String> + Send + 'static,
 {
     use futures::StreamExt;
     let framed = stream.map(|event| {

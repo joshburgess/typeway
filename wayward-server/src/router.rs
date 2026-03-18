@@ -292,7 +292,25 @@ impl Router {
         body_bytes: bytes::Bytes,
     ) -> http::Response<BoxBody> {
         let path = parts.uri.path().to_string();
-        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        let all_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+
+        // Strip prefix if configured.
+        let segments: &[&str] = if let Some(ref prefix) = self.prefix {
+            if all_segments.len() >= prefix.len()
+                && all_segments[..prefix.len()]
+                    .iter()
+                    .zip(prefix.iter())
+                    .all(|(a, b)| *a == b.as_str())
+            {
+                &all_segments[prefix.len()..]
+            } else {
+                let mut res = http::Response::new(body_from_string("Not Found".to_string()));
+                *res.status_mut() = StatusCode::NOT_FOUND;
+                return res;
+            }
+        } else {
+            &all_segments
+        };
         let first_seg = segments.first().copied();
 
         let method = &parts.method;
@@ -305,9 +323,9 @@ impl Router {
                     continue;
                 }
             }
-            if (entry.match_fn)(&segments) {
+            if (entry.match_fn)(segments) {
                 parts.extensions.insert(PathSegments(Arc::new(
-                    segments.into_iter().map(|s| s.to_string()).collect(),
+                    segments.iter().map(|s| s.to_string()).collect(),
                 )));
 
                 if let Some(ref injector) = self.state_injector {
@@ -321,7 +339,7 @@ impl Router {
         let path_matched = self
             .method_index
             .get_all_indices()
-            .any(|i| (self.routes[i].match_fn)(&segments));
+            .any(|i| (self.routes[i].match_fn)(segments));
 
         if path_matched {
             let mut res = http::Response::new(body_from_string("Method Not Allowed".to_string()));

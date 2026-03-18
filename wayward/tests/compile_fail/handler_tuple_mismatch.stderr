@@ -11,8 +11,8 @@ error[E0277]: the handler tuple does not match the API specification `(Endpoint<
    | |_____^ handler tuple does not implement `Serves<(Endpoint<Get, HCons<Lit<__lit_hello>, HNil>, NoBody, std::string::String>,)>`
    |
    = help: the trait `Serves<(Endpoint<Get, HCons<Lit<__lit_hello>, HNil>, NoBody, std::string::String>,)>` is not implemented for `(BoundHandler<_>, BoundHandler<_>)`
-   = note: each endpoint in the API type needs a corresponding `BoundHandler` created via `bind()`
-   = note: the handler tuple must have exactly one `bind::<_, _, _>(handler)` for each endpoint
+   = note: each endpoint in the API type needs a corresponding `BoundHandler` created via `bind!(handler)`
+   = note: the handler tuple must have exactly one `bind!(handler)` for each endpoint
    = help: the following other types implement trait `Serves<A>`:
              `(BoundHandler<E0>, BoundHandler<E1>)` implements `Serves<(E0, E1)>`
              `(BoundHandler<E0>, BoundHandler<E1>, BoundHandler<E2>)` implements `Serves<(E0, E1, E2)>`

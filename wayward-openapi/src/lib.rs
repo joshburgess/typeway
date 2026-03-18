@@ -8,5 +8,5 @@ pub mod spec;
 
 #[cfg(feature = "schemars")]
 pub use derive::from_schemars;
-pub use derive::{ApiToSpec, CollectOperations, EndpointToOperation, ToSchema};
+pub use derive::{ApiToSpec, CollectOperations, EndpointDoc, EndpointToOperation, ToSchema};
 pub use spec::OpenApiSpec;
