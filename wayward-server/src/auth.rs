@@ -29,11 +29,11 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 
-use wayward_core::{ApiSpec, ExtractPath, HttpMethod, PathSpec};
+use wayward_core::{ApiSpec, ExtractPath};
 
 use crate::body::BoxBody;
 use crate::extract::{FromRequest, FromRequestParts};
-use crate::handler::{into_boxed_handler, BoxedHandler};
+use crate::handler::BoxedHandler;
 use crate::handler_for::{BindableEndpoint, BoundHandler};
 use crate::response::IntoResponse;
 

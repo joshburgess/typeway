@@ -18,6 +18,9 @@ pub mod response;
 pub mod router;
 pub mod server;
 pub mod serves;
+pub mod typed;
+pub mod typed_bind;
+pub mod typed_response;
 #[cfg(feature = "ws")]
 pub mod ws;
 
