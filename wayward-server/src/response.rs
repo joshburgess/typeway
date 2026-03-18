@@ -92,8 +92,13 @@ impl IntoResponse for Bytes {
 ///
 /// # Example
 ///
-/// ```ignore
-/// async fn get_user(/* ... */) -> Json<User> {
+/// ```
+/// use wayward_server::Json;
+///
+/// #[derive(serde::Serialize)]
+/// struct User { id: u32, name: String }
+///
+/// async fn get_user() -> Json<User> {
 ///     Json(User { id: 1, name: "Alice".into() })
 /// }
 /// ```

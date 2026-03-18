@@ -192,6 +192,133 @@ impl FromRequestParts for http::HeaderMap {
 }
 
 // ---------------------------------------------------------------------------
+// Extension extractor
+// ---------------------------------------------------------------------------
+
+/// Extracts a value from request extensions.
+///
+/// Use this to access arbitrary types injected by middleware or other
+/// infrastructure. Unlike [`State`], extensions are per-request.
+///
+/// # Example
+///
+/// ```ignore
+/// // A middleware injects a RequestId into extensions:
+/// // parts.extensions.insert(RequestId("abc-123".to_string()));
+///
+/// async fn handler(Extension(id): Extension<RequestId>) -> String {
+///     format!("Request: {}", id.0)
+/// }
+/// ```
+pub struct Extension<T>(pub T);
+
+impl<T: Clone + Send + Sync + 'static> FromRequestParts for Extension<T> {
+    type Error = (StatusCode, String);
+
+    fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error> {
+        parts
+            .extensions
+            .get::<T>()
+            .cloned()
+            .map(Extension)
+            .ok_or_else(|| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!(
+                        "extension of type `{}` not found in request",
+                        std::any::type_name::<T>()
+                    ),
+                )
+            })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Method extractor
+// ---------------------------------------------------------------------------
+
+/// Extracts the HTTP method from the request.
+impl FromRequestParts for http::Method {
+    type Error = (StatusCode, String);
+
+    fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error> {
+        Ok(parts.method.clone())
+    }
+}
+
+/// Extracts the request URI.
+impl FromRequestParts for http::Uri {
+    type Error = (StatusCode, String);
+
+    fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error> {
+        Ok(parts.uri.clone())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Header extractor
+// ---------------------------------------------------------------------------
+
+/// Extracts a single header value by name.
+///
+/// The header name is derived from `T::HEADER_NAME`. Implement [`NamedHeader`]
+/// on your type to use this extractor.
+///
+/// # Example
+///
+/// ```ignore
+/// struct ContentType(String);
+///
+/// impl NamedHeader for ContentType {
+///     const HEADER_NAME: &'static str = "content-type";
+///     fn from_value(value: &str) -> Result<Self, String> {
+///         Ok(ContentType(value.to_string()))
+///     }
+/// }
+///
+/// async fn handler(Header(ct): Header<ContentType>) -> String {
+///     format!("Content-Type: {}", ct.0)
+/// }
+/// ```
+pub struct Header<T>(pub T);
+
+/// Trait for types that can be extracted from a named HTTP header.
+pub trait NamedHeader: Sized + Send {
+    /// The header name (lowercase), e.g. `"content-type"`.
+    const HEADER_NAME: &'static str;
+
+    /// Parse the header value string into this type.
+    fn from_value(value: &str) -> Result<Self, String>;
+}
+
+impl<T: NamedHeader + 'static> FromRequestParts for Header<T> {
+    type Error = (StatusCode, String);
+
+    fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error> {
+        let value = parts
+            .headers
+            .get(T::HEADER_NAME)
+            .ok_or_else(|| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("missing required header: {}", T::HEADER_NAME),
+                )
+            })?
+            .to_str()
+            .map_err(|_| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("invalid header value for: {}", T::HEADER_NAME),
+                )
+            })?;
+
+        T::from_value(value)
+            .map(Header)
+            .map_err(|e| (StatusCode::BAD_REQUEST, e))
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Body extractors (FromRequest)
 // ---------------------------------------------------------------------------
 

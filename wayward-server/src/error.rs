@@ -16,12 +16,16 @@ use crate::response::IntoResponse;
 ///
 /// # Example
 ///
-/// ```ignore
+/// ```
 /// use wayward_server::error::JsonError;
+/// use wayward_server::Json;
 ///
-/// async fn get_user(path: Path<UserByIdPath>) -> Result<Json<User>, JsonError> {
-///     let (id,) = path.0;
-///     users.get(id).ok_or_else(|| JsonError::not_found("user not found"))
+/// #[derive(serde::Serialize)]
+/// struct User { id: u32 }
+///
+/// async fn get_user() -> Result<Json<User>, JsonError> {
+///     // Return a structured JSON error on failure:
+///     Err(JsonError::not_found("user not found"))
 /// }
 /// ```
 #[derive(Debug, Clone)]

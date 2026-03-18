@@ -12,6 +12,7 @@ pub mod handler;
 pub mod handler_for;
 #[cfg(feature = "openapi")]
 pub mod openapi;
+pub mod request_id;
 pub mod response;
 pub mod router;
 pub mod server;
@@ -19,7 +20,9 @@ pub mod serves;
 
 pub use body::{body_from_stream, empty_body, sse_body, BoxBody};
 pub use error::JsonError;
-pub use extract::{FromRequest, FromRequestParts, Path, Query, State};
+pub use extract::{
+    Extension, FromRequest, FromRequestParts, Header, NamedHeader, Path, Query, State,
+};
 pub use handler::Handler;
 pub use handler_for::{bind, BindableEndpoint, BoundHandler};
 pub use response::{IntoResponse, Json};

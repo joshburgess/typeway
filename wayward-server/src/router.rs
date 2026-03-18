@@ -41,6 +41,9 @@ pub struct Router {
     /// Maximum request body size in bytes. Bodies exceeding this are rejected
     /// with 413 Payload Too Large.
     max_body_size: usize,
+    /// Optional path prefix. When set, only requests whose path starts with
+    /// this prefix are matched, and the prefix is stripped before route matching.
+    prefix: Option<Vec<String>>,
 }
 
 struct RouteEntry {
@@ -115,6 +118,22 @@ impl Router {
             state_injector: None,
             fallback: None,
             max_body_size: DEFAULT_MAX_BODY_SIZE,
+            prefix: None,
+        }
+    }
+
+    /// Set a path prefix for all routes.
+    ///
+    /// Only requests starting with this prefix will be matched, and the
+    /// prefix segments are stripped before route matching.
+    pub(crate) fn set_prefix(&mut self, prefix: &str) {
+        let segments: Vec<String> = prefix
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
+        if !segments.is_empty() {
+            self.prefix = Some(segments);
         }
     }
 
@@ -173,7 +192,33 @@ impl Router {
         req: http::Request<hyper::body::Incoming>,
     ) -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
         let path = req.uri().path().to_string();
-        let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        let all_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+
+        // Strip prefix if configured.
+        let segments: &[&str] = if let Some(ref prefix) = self.prefix {
+            if all_segments.len() >= prefix.len()
+                && all_segments[..prefix.len()]
+                    .iter()
+                    .zip(prefix.iter())
+                    .all(|(a, b)| *a == b.as_str())
+            {
+                &all_segments[prefix.len()..]
+            } else {
+                // Prefix doesn't match — fall through to 404/fallback.
+                return if let Some(ref fallback) = self.fallback {
+                    fallback(req)
+                } else {
+                    Box::pin(async move {
+                        let mut res =
+                            http::Response::new(body_from_string("Not Found".to_string()));
+                        *res.status_mut() = StatusCode::NOT_FOUND;
+                        res
+                    })
+                };
+            }
+        } else {
+            &all_segments
+        };
         let first_seg = segments.first().copied();
 
         let method = req.method();
@@ -189,11 +234,11 @@ impl Router {
                     continue;
                 }
             }
-            if (entry.match_fn)(&segments) {
+            if (entry.match_fn)(segments) {
                 let (mut parts, body) = req.into_parts();
 
                 parts.extensions.insert(PathSegments(Arc::new(
-                    segments.into_iter().map(|s| s.to_string()).collect(),
+                    segments.iter().map(|s| s.to_string()).collect(),
                 )));
 
                 if let Some(ref injector) = self.state_injector {
@@ -216,7 +261,7 @@ impl Router {
         let path_matched = self
             .method_index
             .get_all_indices()
-            .any(|i| (self.routes[i].match_fn)(&segments));
+            .any(|i| (self.routes[i].match_fn)(segments));
 
         if path_matched {
             Box::pin(async move {

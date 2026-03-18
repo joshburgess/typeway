@@ -8,7 +8,7 @@
 //!
 //! ## Quick Start
 //!
-//! ```ignore
+//! ```no_run
 //! use wayward::prelude::*;
 //!
 //! // 1. Define path types
@@ -28,7 +28,7 @@
 //!     format!("Hello, {name}!")
 //! }
 //!
-//! // 4. Serve
+//! // 4. Serve — the compiler verifies every endpoint has a handler
 //! #[tokio::main]
 //! async fn main() {
 //!     Server::<API>::new((
@@ -62,9 +62,9 @@ pub use serde_json;
 // --- Server (feature = "server") ---
 #[cfg(feature = "server")]
 pub use wayward_server::{
-    bind, body_from_stream, empty_body, serve, sse_body, BoundHandler, FromRequest,
-    FromRequestParts, Handler, IntoResponse, Json, JsonError, LayeredServer, Path, Query, Router,
-    RouterService, Server, Serves, State,
+    bind, body_from_stream, empty_body, serve, sse_body, BoundHandler, Extension, FromRequest,
+    FromRequestParts, Handler, Header, IntoResponse, Json, JsonError, LayeredServer, NamedHeader,
+    Path, Query, Router, RouterService, Server, Serves, State,
 };
 
 /// Re-export tower-http for middleware (available when `server` feature is on).
@@ -88,9 +88,9 @@ pub mod prelude {
 
     #[cfg(feature = "server")]
     pub use wayward_server::{
-        bind, body_from_stream, empty_body, serve, sse_body, tower_http, BoundHandler, FromRequest,
-        FromRequestParts, Handler, IntoResponse, Json, JsonError, LayeredServer, Path, Query,
-        Router, RouterService, Server, Serves, State,
+        bind, body_from_stream, empty_body, serve, sse_body, tower_http, BoundHandler, Extension,
+        FromRequest, FromRequestParts, Handler, Header, IntoResponse, Json, JsonError,
+        LayeredServer, NamedHeader, Path, Query, Router, RouterService, Server, Serves, State,
     };
 
     #[cfg(feature = "client")]

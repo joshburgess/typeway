@@ -1,6 +1,7 @@
 //! The type-safe [`Server`] builder and [`serve`] convenience function.
 
 use std::convert::Infallible;
+use std::future::Future;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -45,6 +46,27 @@ impl<A: ApiSpec> Server<A> {
             router: Arc::new(router),
             _api: PhantomData,
         }
+    }
+
+    /// Set a path prefix for all routes in this server.
+    ///
+    /// Only requests whose path starts with the prefix will match. The prefix
+    /// is stripped before route matching.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// // Routes are /api/v1/hello, /api/v1/users, etc.
+    /// Server::<API>::new(handlers)
+    ///     .nest("/api/v1")
+    ///     .serve(addr)
+    ///     .await?;
+    /// ```
+    pub fn nest(mut self, prefix: &str) -> Self {
+        let router =
+            Arc::get_mut(&mut self.router).expect("nest must be called before cloning the router");
+        router.set_prefix(prefix);
+        self
     }
 
     /// Set the maximum request body size in bytes.
@@ -219,21 +241,55 @@ impl<A: ApiSpec> Server<A> {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let listener = TcpListener::bind(addr).await?;
         eprintln!("Listening on http://{addr}");
+        self.serve_with_shutdown(listener, std::future::pending())
+            .await
+    }
+
+    /// Start serving with graceful shutdown.
+    ///
+    /// The server stops accepting new connections when the `shutdown` future
+    /// completes. Existing connections are allowed to finish.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let server = Server::<API>::new(handlers);
+    /// let listener = TcpListener::bind("0.0.0.0:3000").await?;
+    ///
+    /// server.serve_with_shutdown(listener, async {
+    ///     tokio::signal::ctrl_c().await.ok();
+    ///     eprintln!("shutting down...");
+    /// }).await?;
+    /// ```
+    pub async fn serve_with_shutdown(
+        self,
+        listener: TcpListener,
+        shutdown: impl Future<Output = ()> + Send,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        tokio::pin!(shutdown);
 
         loop {
-            let (stream, _) = listener.accept().await?;
-            let io = TokioIo::new(stream);
-            let svc = RouterService::new(self.router.clone());
-            let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
+            tokio::select! {
+                result = listener.accept() => {
+                    let (stream, _) = result?;
+                    let io = TokioIo::new(stream);
+                    let svc = RouterService::new(self.router.clone());
+                    let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
 
-            tokio::task::spawn(async move {
-                if let Err(e) = hyper::server::conn::http1::Builder::new()
-                    .serve_connection(io, hyper_svc)
-                    .await
-                {
-                    eprintln!("Connection error: {e}");
+                    tokio::task::spawn(async move {
+                        if let Err(e) = hyper::server::conn::http1::Builder::new()
+                            .serve_connection(io, hyper_svc)
+                            .await
+                        {
+                            eprintln!("Connection error: {e}");
+                        }
+                    });
                 }
-            });
+                () = &mut shutdown => {
+                    eprintln!("Shutting down gracefully...");
+                    return Ok(());
+                }
+            }
         }
     }
 }
@@ -283,21 +339,40 @@ where
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let listener = TcpListener::bind(addr).await?;
         eprintln!("Listening on http://{addr}");
+        self.serve_with_shutdown(listener, std::future::pending())
+            .await
+    }
+
+    /// Start serving with graceful shutdown.
+    pub async fn serve_with_shutdown(
+        self,
+        listener: TcpListener,
+        shutdown: impl Future<Output = ()> + Send,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        tokio::pin!(shutdown);
 
         loop {
-            let (stream, _) = listener.accept().await?;
-            let io = TokioIo::new(stream);
-            let svc = self.service.clone();
-            let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
+            tokio::select! {
+                result = listener.accept() => {
+                    let (stream, _) = result?;
+                    let io = TokioIo::new(stream);
+                    let svc = self.service.clone();
+                    let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
 
-            tokio::task::spawn(async move {
-                if let Err(e) = hyper::server::conn::http1::Builder::new()
-                    .serve_connection(io, hyper_svc)
-                    .await
-                {
-                    eprintln!("Connection error: {e}");
+                    tokio::task::spawn(async move {
+                        if let Err(e) = hyper::server::conn::http1::Builder::new()
+                            .serve_connection(io, hyper_svc)
+                            .await
+                        {
+                            eprintln!("Connection error: {e}");
+                        }
+                    });
                 }
-            });
+                () = &mut shutdown => {
+                    eprintln!("Shutting down gracefully...");
+                    return Ok(());
+                }
+            }
         }
     }
 }

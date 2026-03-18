@@ -16,7 +16,8 @@ hyper-util = { version = "0.1", features = ["tokio", "service"] }
 tower = { version = "0.5", features = ["util"] }
 tower-service = "0.3"
 tower-layer = "0.3"
-tower-http = { version = "0.6", features = ["trace", "cors", "timeout", "compression-gzip", "compression-deflate"] }
+tower-http = { version = "0.6", features = ["trace", "cors", "timeout", "compression-gzip", "compression-deflate", "request-id", "propagate-header", "set-header"] }
+uuid = { version = "1", features = ["v4"] }
 axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["full"] }
 http = "1"
