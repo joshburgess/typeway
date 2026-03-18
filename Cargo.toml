@@ -7,5 +7,6 @@ members = [
     "wayward-macros",
     "wayward",
     "spike",
+    "examples/realworld",
 ]
 resolver = "2"

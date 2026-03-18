@@ -26,7 +26,7 @@ use crate::path::PathSpec;
 pub trait ApiSpec {}
 
 // Every Endpoint is an ApiSpec.
-impl<M: HttpMethod, P: PathSpec, Req, Res> ApiSpec for Endpoint<M, P, Req, Res> {}
+impl<M: HttpMethod, P: PathSpec, Req, Res, Q> ApiSpec for Endpoint<M, P, Req, Res, Q> {}
 
 // Tuples of ApiSpec implementors are ApiSpec.
 macro_rules! impl_api_spec_for_tuple {
@@ -51,6 +51,10 @@ impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M);
 impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
 impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
 impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
+impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q);
+impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
+impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
+impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
 
 #[cfg(test)]
 #[allow(non_camel_case_types, unused_imports)]
