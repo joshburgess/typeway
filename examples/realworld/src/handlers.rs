@@ -89,6 +89,93 @@ async fn build_article(
     })
 }
 
+/// Build a list of articles from a single joined query (avoids N+1).
+async fn build_articles_from_query(
+    pool: &Db,
+    query: &str,
+    params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
+    viewer_id: Option<Uuid>,
+) -> Result<Vec<ArticleBody>, JsonError> {
+    let client = pool
+        .get()
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?;
+    let rows = client
+        .query(query, params)
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?;
+
+    let mut articles = Vec::with_capacity(rows.len());
+    for row in &rows {
+        let tags_str: Option<String> = row.get("tags");
+        let tag_list: Vec<String> = tags_str
+            .unwrap_or_default()
+            .split(',')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
+
+        let fav_count: i64 = row.get("favorites_count");
+        let is_fav: bool = row.try_get("is_favorited").unwrap_or(false);
+
+        articles.push(ArticleBody {
+            slug: row.get("slug"),
+            title: row.get("title"),
+            description: row.get("description"),
+            body: row.get("body"),
+            tag_list,
+            created_at: row.get("created_at"),
+            updated_at: row.get("updated_at"),
+            favorited: is_fav,
+            favorites_count: fav_count,
+            author: ProfileBody {
+                username: row.get("author_username"),
+                bio: row.get("author_bio"),
+                image: row.get("author_image"),
+                following: row.try_get("is_following").unwrap_or(false),
+            },
+        });
+    }
+    Ok(articles)
+}
+
+const ARTICLES_QUERY_BASE: &str = "\
+    SELECT a.slug, a.title, a.description, a.body, a.author_id, \
+           a.created_at, a.updated_at, \
+           u.username AS author_username, u.bio AS author_bio, u.image AS author_image, \
+           COALESCE(STRING_AGG(DISTINCT t.tag, ',' ORDER BY t.tag), '') AS tags, \
+           COUNT(DISTINCT f.user_id) AS favorites_count, \
+           FALSE AS is_favorited, \
+           FALSE AS is_following \
+    FROM articles a \
+    JOIN users u ON u.id = a.author_id \
+    LEFT JOIN tags t ON t.article_id = a.id \
+    LEFT JOIN favorites f ON f.article_id = a.id";
+
+const ARTICLES_QUERY_TAIL: &str = " GROUP BY a.id, u.id ORDER BY a.created_at DESC LIMIT 20";
+
+// Full query (no WHERE filter).
+fn articles_query() -> String {
+    format!("{ARTICLES_QUERY_BASE}{ARTICLES_QUERY_TAIL}")
+}
+
+const FEED_QUERY: &str = "\
+    SELECT a.slug, a.title, a.description, a.body, a.author_id, \
+           a.created_at, a.updated_at, \
+           u.username AS author_username, u.bio AS author_bio, u.image AS author_image, \
+           COALESCE(STRING_AGG(DISTINCT t.tag, ',' ORDER BY t.tag), '') AS tags, \
+           COUNT(DISTINCT fav.user_id) AS favorites_count, \
+           FALSE AS is_favorited, \
+           TRUE AS is_following \
+    FROM articles a \
+    JOIN users u ON u.id = a.author_id \
+    JOIN follows fo ON fo.followed_id = a.author_id AND fo.follower_id = $1 \
+    LEFT JOIN tags t ON t.article_id = a.id \
+    LEFT JOIN favorites fav ON fav.article_id = a.id \
+    GROUP BY a.id, u.id \
+    ORDER BY a.created_at DESC \
+    LIMIT 20";
+
 // ---------------------------------------------------------------------------
 // Auth handlers
 // ---------------------------------------------------------------------------
@@ -188,38 +275,27 @@ pub async fn unfollow_profile(
 // ---------------------------------------------------------------------------
 
 pub async fn list_articles(
+    uri: http::Uri,
     _opt_auth: OptionalAuth,
     state: State<Db>,
 ) -> Result<Json<ArticlesResponse>, JsonError> {
-    // Simplified: returns all articles (real impl would handle query params)
-    let client = state
-        .0
-        .get()
-        .await
-        .map_err(|e| JsonError::internal(e.to_string()))?;
-    let rows = client
-        .query(
-            "SELECT id, slug, title, description, body, author_id, created_at, updated_at \
-             FROM articles ORDER BY created_at DESC LIMIT 20",
-            &[],
-        )
-        .await
-        .map_err(|e| JsonError::internal(e.to_string()))?;
+    // Parse optional ?author=username query param.
+    let author_filter: Option<String> = uri.query().and_then(|q| {
+        q.split('&')
+            .find_map(|pair| pair.strip_prefix("author=").map(|v| v.to_string()))
+    });
 
-    let mut articles = Vec::new();
-    for row in &rows {
-        let ar = db::ArticleRow {
-            id: row.get("id"),
-            slug: row.get("slug"),
-            title: row.get("title"),
-            description: row.get("description"),
-            body: row.get("body"),
-            author_id: row.get("author_id"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-        };
-        articles.push(build_article(&state.0, &ar, None).await?);
-    }
+    let articles = if let Some(ref author) = author_filter {
+        build_articles_from_query(
+            &state.0,
+            &format!("{ARTICLES_QUERY_BASE} WHERE u.username = $1 {ARTICLES_QUERY_TAIL}"),
+            &[author],
+            None,
+        )
+        .await?
+    } else {
+        build_articles_from_query(&state.0, &articles_query(), &[], None).await?
+    };
 
     let count = articles.len();
     Ok(Json(ArticlesResponse {
@@ -232,38 +308,8 @@ pub async fn get_feed(
     auth: AuthUser,
     state: State<Db>,
 ) -> Result<Json<ArticlesResponse>, JsonError> {
-    let client = state
-        .0
-        .get()
-        .await
-        .map_err(|e| JsonError::internal(e.to_string()))?;
-    let rows = client
-        .query(
-            "SELECT a.id, a.slug, a.title, a.description, a.body, a.author_id, a.created_at, a.updated_at \
-             FROM articles a \
-             JOIN follows f ON f.followed_id = a.author_id \
-             WHERE f.follower_id = $1 \
-             ORDER BY a.created_at DESC LIMIT 20",
-            &[&auth.0],
-        )
-        .await
-        .map_err(|e| JsonError::internal(e.to_string()))?;
-
-    let mut articles = Vec::new();
-    for row in &rows {
-        let ar = db::ArticleRow {
-            id: row.get("id"),
-            slug: row.get("slug"),
-            title: row.get("title"),
-            description: row.get("description"),
-            body: row.get("body"),
-            author_id: row.get("author_id"),
-            created_at: row.get("created_at"),
-            updated_at: row.get("updated_at"),
-        };
-        articles.push(build_article(&state.0, &ar, Some(auth.0)).await?);
-    }
-
+    let articles =
+        build_articles_from_query(&state.0, FEED_QUERY, &[&auth.0], Some(auth.0)).await?;
     let count = articles.len();
     Ok(Json(ArticlesResponse {
         articles,

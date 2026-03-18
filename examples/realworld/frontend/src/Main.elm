@@ -179,7 +179,10 @@ navigateTo url model =
 
         Just (ProfileRoute username) ->
             ( { model | page = Profile { profile = Nothing, articles = [], loading = True } }
-            , Api.getProfile model.apiUrl model.token username GotProfile
+            , Cmd.batch
+                [ Api.getProfile model.apiUrl model.token username GotProfile
+                , Api.getArticlesByAuthor model.apiUrl model.token username GotProfileArticles
+                ]
             )
 
         Nothing ->
@@ -198,6 +201,7 @@ type Msg
     | GotArticle (Result Http.Error Api.ArticleResponse)
     | GotComments (Result Http.Error Api.CommentsResponse)
     | GotProfile (Result Http.Error Api.ProfileResponse)
+    | GotProfileArticles (Result Http.Error Api.ArticlesResponse)
       -- Login
     | SetLoginEmail String
     | SetLoginPassword String
@@ -272,6 +276,14 @@ update msg model =
             case ( model.page, result ) of
                 ( Profile prof, Ok resp ) ->
                     ( { model | page = Profile { prof | profile = Just resp.profile, loading = False } }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        GotProfileArticles result ->
+            case ( model.page, result ) of
+                ( Profile prof, Ok resp ) ->
+                    ( { model | page = Profile { prof | articles = resp.articles } }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )

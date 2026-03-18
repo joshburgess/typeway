@@ -14,6 +14,7 @@ module Api exposing
     , createArticle
     , getArticle
     , getArticles
+    , getArticlesByAuthor
     , getComments
     , getProfile
     , getTags
@@ -220,6 +221,24 @@ getArticles apiUrl token toMsg =
         { method = "GET"
         , headers = authHeader token
         , url = apiUrl ++ "/api/articles"
+        , body = Http.emptyBody
+        , expect =
+            Http.expectJson toMsg
+                (D.map2 ArticlesResponse
+                    (D.field "articles" (D.list articleDecoder))
+                    (D.field "articlesCount" D.int)
+                )
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+getArticlesByAuthor : String -> Maybe String -> String -> (Result Http.Error ArticlesResponse -> msg) -> Cmd msg
+getArticlesByAuthor apiUrl token username toMsg =
+    Http.request
+        { method = "GET"
+        , headers = authHeader token
+        , url = apiUrl ++ "/api/articles?author=" ++ username
         , body = Http.emptyBody
         , expect =
             Http.expectJson toMsg

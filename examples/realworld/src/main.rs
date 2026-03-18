@@ -39,6 +39,7 @@ use api::RealWorldAPI;
 async fn main() {
     let pool = db::create_pool().await;
     db::run_migrations(&pool).await;
+    db::seed_data(&pool).await;
 
     // Frontend static files directory.
     let frontend_dir = std::env::var("FRONTEND_DIR")

@@ -1,0 +1,8 @@
+target/
+.git/
+*.md
+DESIGN.md
+SPIKE-REVIEW.md
+CHANGELOG.md
+examples/realworld/frontend/elm-stuff/
+examples/realworld/frontend/public/elm.js
