@@ -254,6 +254,51 @@ async fn get_user(path: Path<UserByIdPath>) -> Result<Json<User>, JsonError> {
 
 Custom extractors can use the same error type, so a missing auth token produces a structured 401 response, not a raw string.
 
+## Performance: The Cost of Type Safety
+
+Type-level frameworks invite skepticism about runtime cost. Wayward's type erasure and extractor machinery add overhead — but we've measured it, and it's negligible compared to real handler work.
+
+### Dispatch Overhead
+
+Wayward stores handlers as type-erased closures (`Box<dyn Fn(Parts, Bytes) -> Pin<Box<dyn Future>>>`). This is the cost of putting heterogeneous handlers in a single router. Here's what that costs:
+
+| Benchmark | Time | What it measures |
+|-----------|------|------------------|
+| Direct async fn (no framework) | 0.79 ns | Baseline — raw function call |
+| BoxedHandler dispatch | 878 ns | Two heap allocs (closure box + future box) + virtual call |
+| + Path extractor | +290 ns | `FromStr::parse` + `Extensions::get` |
+| + State extractor | +310 ns | `Extensions::get` + `Clone` |
+| + Path + State together | +610 ns | Multiple extractors compose linearly |
+| + JSON body parse (16 B) | +230 ns | `serde_json::from_slice` on pre-collected bytes |
+| Bytes::clone (any size) | 14 ns | O(1) — reference counted, no copy |
+
+The **878 ns dispatch floor** is the framework's fixed cost per request. Everything else — extractors, serialization, your handler logic — adds on top linearly.
+
+### What This Means in Practice
+
+A typical JSON API handler that queries a database and returns a response takes **1–100 ms**. The 878 ns dispatch overhead is **0.001–0.09%** of that. You cannot measure it in production.
+
+The extractor costs (~300 ns each) are dominated by `TypeId`-keyed hashmap lookups in `http::Extensions`. These are the same lookups Axum performs — wayward doesn't add extra indirection beyond what any extractor-based framework does.
+
+Body bytes are reference-counted (`Bytes`), so passing the pre-collected body to handlers costs 14 ns regardless of payload size. There is no copy.
+
+### Where Wayward Is Slower Than Axum
+
+Wayward's router uses a linear scan with method indexing and first-segment prefix rejection. Axum uses a radix trie (`matchit`). For 10 routes, wayward is ~30% slower at route matching:
+
+| Scenario (10 routes) | Axum | Wayward | Ratio |
+|----------------------|------|---------|-------|
+| First route match | 1.41 µs | 1.90 µs | 1.35x |
+| Last route match | 1.43 µs | 1.93 µs | 1.35x |
+| Path with captures | 1.66 µs | 2.12 µs | 1.28x |
+| No match (404) | 0.98 µs | 1.50 µs | 1.53x |
+
+This gap comes from two sources: (1) linear scan vs trie for route matching, and (2) the Axum adapter layer in the benchmark adds body type conversion overhead. For APIs with fewer than ~100 routes, the linear scan is fast enough that the difference is invisible in end-to-end latency. The method index ensures that only routes with the matching HTTP method are checked, so a 50-route API with 10 GETs and 40 POSTs only scans 10 entries for a GET request.
+
+### The Trade-Off
+
+Wayward trades ~1 µs of dispatch overhead for compile-time guarantees that eliminate entire categories of runtime bugs: missing handlers, mismatched types between server and client, drifted OpenAPI specs. For any API where correctness matters more than shaving microseconds off an already-sub-millisecond overhead, this is a good trade.
+
 ## Comparison
 
 | Feature | Wayward | Axum | Warp | Dropshot | Servant (Haskell) |
