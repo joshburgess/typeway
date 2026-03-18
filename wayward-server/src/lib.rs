@@ -7,6 +7,7 @@ pub mod auth;
 #[cfg(feature = "axum-interop")]
 pub mod axum_interop;
 pub mod body;
+pub mod ep;
 pub mod error;
 pub mod extract;
 pub mod handler;
