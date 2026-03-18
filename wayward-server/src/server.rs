@@ -250,14 +250,29 @@ impl<A: ApiSpec> Server<A> {
     pub fn with_spa_fallback(self, index_path: impl Into<std::path::PathBuf>) -> Self {
         let index_path: std::path::PathBuf = index_path.into();
 
-        // Read the file once at startup and cache it.
-        let html = std::fs::read_to_string(&index_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read SPA fallback file {}: {e}",
-                index_path.display()
-            )
-        });
-        let html = Arc::new(html);
+        // Try to read the file at startup. If it fails, serve an error page instead.
+        let html = match std::fs::read_to_string(&index_path) {
+            Ok(contents) => Arc::new(contents),
+            Err(e) => {
+                eprintln!(
+                    "WARNING: SPA fallback file not found: {} ({}). \
+                     Unmatched routes will show an error page.",
+                    index_path.display(),
+                    e
+                );
+                let error_page = format!(
+                    "<!DOCTYPE html><html><body>\
+                     <h1>Frontend Not Available</h1>\
+                     <p>The SPA fallback file <code>{}</code> could not be loaded: {}</p>\
+                     <p>If running locally, build the frontend first:</p>\
+                     <pre>cd examples/realworld/frontend\nelm make src/Main.elm --output=public/elm.js</pre>\
+                     </body></html>",
+                    index_path.display(),
+                    e
+                );
+                Arc::new(error_page)
+            }
+        };
 
         self.set_fallback_raw(Arc::new(move |req| {
             let html = html.clone();
@@ -561,13 +576,23 @@ impl<S> LayeredServer<S> {
     /// Serve a file as SPA fallback for unmatched routes.
     pub fn with_spa_fallback(self, index_path: impl Into<std::path::PathBuf>) -> Self {
         let index_path: std::path::PathBuf = index_path.into();
-        let html = std::fs::read_to_string(&index_path).unwrap_or_else(|e| {
-            panic!(
-                "failed to read SPA fallback file {}: {e}",
-                index_path.display()
-            )
-        });
-        let html = Arc::new(html);
+        let html = match std::fs::read_to_string(&index_path) {
+            Ok(contents) => Arc::new(contents),
+            Err(e) => {
+                eprintln!(
+                    "WARNING: SPA fallback file not found: {} ({})",
+                    index_path.display(),
+                    e
+                );
+                Arc::new(format!(
+                    "<!DOCTYPE html><html><body>\
+                     <h1>Frontend Not Available</h1>\
+                     <p><code>{}</code>: {}</p></body></html>",
+                    index_path.display(),
+                    e
+                ))
+            }
+        };
         self.router.set_fallback(Arc::new(move |req| {
             let html = html.clone();
             let path = req.uri().path().to_string();
