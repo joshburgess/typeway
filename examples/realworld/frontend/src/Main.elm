@@ -493,7 +493,7 @@ update msg model =
 
 view : Model -> Browser.Document Msg
 view model =
-    { title = "Conduit — Wayward"
+    { title = "Wayward Word"
     , body =
         [ viewNav model
         , div [ class "max-w-4xl mx-auto px-4 py-8" ]
@@ -509,7 +509,7 @@ viewNav : Model -> Html Msg
 viewNav model =
     nav [ class "bg-white shadow-sm border-b" ]
         [ div [ class "max-w-4xl mx-auto px-4 py-3 flex items-center justify-between" ]
-            [ a [ href "/", class "text-xl font-bold text-brand" ] [ text "conduit" ]
+            [ a [ href "/", class "text-xl font-bold text-brand" ] [ text "wayward word" ]
             , div [ class "flex gap-4 text-sm" ]
                 (case model.user of
                     Just user ->
@@ -544,7 +544,7 @@ viewFooter =
     footer [ class "mt-16 py-6 text-center text-xs text-gray-400 border-t" ]
         [ text "Powered by "
         , a [ href "https://github.com/joshburgess/wayward", class "text-brand" ] [ text "Wayward" ]
-        , text " — a type-level web framework for Rust"
+        , text " — type-level web framework for Rust"
         ]
 
 
@@ -578,8 +578,8 @@ viewHome : HomeModel -> Html Msg
 viewHome home =
     div []
         [ div [ class "bg-brand text-white text-center py-10 -mx-4 mb-8 rounded-lg" ]
-            [ h1 [ class "text-3xl font-bold" ] [ text "conduit" ]
-            , p [ class "mt-2 text-green-100" ] [ text "A place to share your knowledge." ]
+            [ h1 [ class "text-3xl font-bold" ] [ text "wayward word" ]
+            , p [ class "mt-2 text-green-100" ] [ text "Words that wander. Ideas that stick." ]
             ]
         , div [ class "flex gap-8" ]
             [ div [ class "flex-1" ]

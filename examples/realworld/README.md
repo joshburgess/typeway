@@ -1,6 +1,6 @@
-# Wayward RealWorld Example
+# Wayward Word
 
-A full implementation of the [RealWorld](https://github.com/gothinkster/realworld) ("Conduit") API spec — a Medium clone backend — using wayward.
+A Medium-style blogging platform built with wayward, implementing the [RealWorld](https://github.com/gothinkster/realworld) API spec.
 
 This demonstrates wayward in a realistic application with:
 - 19 endpoints defined as a single API type

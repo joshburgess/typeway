@@ -83,7 +83,7 @@ async fn main() {
     let port = std::env::var("PORT").unwrap_or_else(|_| "4000".to_string());
     let addr = format!("0.0.0.0:{port}");
 
-    println!("Wayward RealWorld running on http://localhost:{port}");
+    println!("Wayward Word running on http://localhost:{port}");
     println!("  Frontend: http://localhost:{port}/");
     println!("  API:      http://localhost:{port}/api/");
     println!("  Static:   {frontend_dir}");
