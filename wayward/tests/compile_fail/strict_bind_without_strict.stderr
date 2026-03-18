@@ -1,10 +1,9 @@
-error[E0277]: the trait bound `Protected<AuthUser, Endpoint<Get, HCons<Lit<__lit_hello>, HNil>, NoBody, std::string::String>>: BindableEndpoint` is not satisfied
-  --> tests/compile_fail/protected_missing_auth.rs:28:33
+error[E0277]: the trait bound `Strict<Endpoint<Get, HCons<Lit<__lit_tags>, HNil>, NoBody, std::string::String>>: BindableEndpoint` is not satisfied
+  --> tests/compile_fail/strict_bind_without_strict.rs:16:33
    |
-28 |     let _ = Server::<API>::new((bind!(no_auth),));
-   |                                 ^^^^^^^^^^^^^^ unsatisfied trait bound
+16 |     let _ = Server::<API>::new((bind!(get_tags),));
+   |                                 ^^^^^^^^^^^^^^^ the trait `BindableEndpoint` is not implemented for `Strict<Endpoint<Get, HCons<Lit<__lit_tags>, HNil>, NoBody, std::string::String>>`
    |
-   = help: the trait `BindableEndpoint` is not implemented for `Protected<AuthUser, Endpoint<Get, HCons<Lit<__lit_hello>, HNil>, NoBody, std::string::String>>`
    = help: the following other types implement trait `BindableEndpoint`:
              ContentType<C, E>
              Endpoint<M, P, Req, Res, Q>
