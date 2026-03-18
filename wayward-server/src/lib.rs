@@ -23,9 +23,9 @@ pub mod ws;
 pub use body::{body_from_stream, empty_body, sse_body, BoxBody};
 pub use error::JsonError;
 pub use extract::{
-    Extension, FromRequest, FromRequestParts, Header, NamedHeader, Path, Query, State,
+    Extension, FromRequest, FromRequestParts, Header, NamedHeader, Path, PathSegments, Query, State,
 };
-pub use handler::Handler;
+pub use handler::{into_boxed_handler, BoxedHandler, Handler, ResponseFuture};
 pub use handler_for::{bind, BindableEndpoint, BoundHandler};
 pub use response::{IntoResponse, Json};
 pub use router::{Router, RouterService};

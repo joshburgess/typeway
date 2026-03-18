@@ -76,7 +76,7 @@ pub struct Path<P: PathSpec>(pub P::Captures);
 
 /// Raw path segments stored in request extensions by the router.
 #[derive(Clone)]
-pub(crate) struct PathSegments(pub Arc<Vec<String>>);
+pub struct PathSegments(pub Arc<Vec<String>>);
 
 impl<P> FromRequestParts for Path<P>
 where

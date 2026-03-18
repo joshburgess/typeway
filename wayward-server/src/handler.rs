@@ -175,18 +175,18 @@ impl_handler_with_body!([T1, T2, T3, T4, T5, T6, T7], [t1, t2, t3, t4, t5, t6, t
 // ---------------------------------------------------------------------------
 
 /// A pinned, boxed future producing an HTTP response.
-pub(crate) type ResponseFuture = Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>>;
+pub type ResponseFuture = Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>>;
 
 /// A type-erased handler stored in the router.
 ///
 /// Handlers receive pre-collected body bytes. This enables both Hyper
 /// and Axum body types to be collected at the router boundary before
 /// dispatch, avoiding body-type coupling in the handler infrastructure.
-pub(crate) type BoxedHandler =
+pub type BoxedHandler =
     Box<dyn Fn(http::request::Parts, bytes::Bytes) -> ResponseFuture + Send + Sync>;
 
 /// Erase a handler's type for storage in the router.
-pub(crate) fn into_boxed_handler<H, Args>(handler: H) -> BoxedHandler
+pub fn into_boxed_handler<H, Args>(handler: H) -> BoxedHandler
 where
     H: Handler<Args>,
     Args: 'static,

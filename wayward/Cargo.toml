@@ -31,6 +31,9 @@ hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "service"] }
 criterion = { version = "0.5", features = ["async_tokio"] }
 trybuild = "1"
+wayward-server = { path = "../wayward-server" }
+wayward-core = { path = "../wayward-core" }
+wayward-macros = { path = "../wayward-macros" }
 axum = "0.8"
 tower = { version = "0.5", features = ["util"] }
 bytes = "1"
@@ -39,6 +42,11 @@ bytes = "1"
 name = "routing"
 harness = false
 required-features = ["server", "axum-interop"]
+
+[[bench]]
+name = "dispatch"
+harness = false
+required-features = ["server"]
 
 [[example]]
 name = "hello_world"
