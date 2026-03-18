@@ -189,7 +189,14 @@ impl Router {
         req: http::Request<hyper::body::Incoming>,
     ) -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
         let inner = self.inner.read().unwrap();
+        let method = req.method().clone();
         let path = req.uri().path().to_string();
+        eprintln!(
+            "{} {} -> {} routes registered",
+            method,
+            path,
+            inner.routes.len()
+        );
         let all_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 
         // Strip prefix if configured.

@@ -202,7 +202,9 @@ pub async fn login(
     body: Json<LoginRequest>,
 ) -> Result<Json<UserResponse>, JsonError> {
     let input = &body.0.user;
-    let user = db::find_user_by_email(&state.0, &input.email).await?;
+    let user = db::find_user_by_email(&state.0, &input.email)
+        .await
+        .map_err(|_| JsonError::unauthorized("invalid email or password"))?;
     verify_password(&input.password, &user.password_hash)?;
     let token = create_token(user.id)?;
     Ok(Json(user_response(&user, token)))

@@ -80,12 +80,15 @@ async fn main() {
     .layer(CorsLayer::permissive())
     .layer(RequestIdLayer::new());
 
-    println!("Wayward RealWorld running on http://localhost:3000");
-    println!("  Frontend: http://localhost:3000/");
-    println!("  API:      http://localhost:3000/api/");
+    let port = std::env::var("PORT").unwrap_or_else(|_| "4000".to_string());
+    let addr = format!("0.0.0.0:{port}");
+
+    println!("Wayward RealWorld running on http://localhost:{port}");
+    println!("  Frontend: http://localhost:{port}/");
+    println!("  API:      http://localhost:{port}/api/");
     println!("  Static:   {frontend_dir}");
     println!();
     println!("19 API endpoints + Elm frontend — pure wayward, no Axum");
 
-    server.serve("0.0.0.0:3000".parse().unwrap()).await.unwrap();
+    server.serve(addr.parse().unwrap()).await.unwrap();
 }

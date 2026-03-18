@@ -326,8 +326,8 @@ update msg model =
                     , Nav.pushUrl model.key "/"
                     )
 
-                Err _ ->
-                    ( { model | errors = [ "Invalid email or password" ] }
+                Err err ->
+                    ( { model | errors = [ "Login failed: " ++ httpErrorToString err ] }
                     , Cmd.none
                     )
 
@@ -377,8 +377,8 @@ update msg model =
                     , Nav.pushUrl model.key "/"
                     )
 
-                Err _ ->
-                    ( { model | errors = [ "Registration failed — username or email may be taken" ] }
+                Err err ->
+                    ( { model | errors = [ "Registration failed: " ++ httpErrorToString err ] }
                     , Cmd.none
                     )
 
@@ -861,6 +861,25 @@ viewProfile prof =
                         List.map viewArticlePreview prof.articles
                     )
                 ]
+
+
+httpErrorToString : Http.Error -> String
+httpErrorToString err =
+    case err of
+        Http.BadUrl url ->
+            "Bad URL: " ++ url
+
+        Http.Timeout ->
+            "Request timed out"
+
+        Http.NetworkError ->
+            "Network error — is the server running?"
+
+        Http.BadStatus code ->
+            "Server returned " ++ String.fromInt code
+
+        Http.BadBody msg ->
+            "Response decode error: " ++ msg
 
 
 onSubmit : Msg -> Attribute Msg

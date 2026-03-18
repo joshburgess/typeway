@@ -1,6 +1,6 @@
 //! Database access layer using tokio-postgres via deadpool.
 
-use deadpool_postgres::{Config, Pool, Runtime};
+use deadpool_postgres::{Config, ManagerConfig, Pool, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
 use uuid::Uuid;
 
@@ -23,8 +23,39 @@ pub async fn create_pool() -> Pool {
     cfg.dbname = Some(std::env::var("DATABASE_NAME").unwrap_or_else(|_| "realworld".into()));
     cfg.user = Some(std::env::var("DATABASE_USER").unwrap_or_else(|_| "postgres".into()));
     cfg.password = Some(std::env::var("DATABASE_PASSWORD").unwrap_or_else(|_| "postgres".into()));
-    cfg.create_pool(Some(Runtime::Tokio1), NoTls)
-        .expect("failed to create database pool")
+
+    // Use Verified recycling: runs SELECT 1 before handing out a recycled
+    // connection. The default (Fast) only checks is_closed() which misses
+    // half-open TCP sockets and silently dead connections.
+    cfg.manager = Some(ManagerConfig {
+        recycling_method: RecyclingMethod::Verified,
+    });
+
+    cfg.pool = Some(deadpool_postgres::PoolConfig {
+        max_size: 16,
+        timeouts: deadpool_postgres::Timeouts {
+            wait: Some(std::time::Duration::from_secs(5)),
+            create: Some(std::time::Duration::from_secs(5)),
+            recycle: Some(std::time::Duration::from_secs(5)),
+        },
+        ..Default::default()
+    });
+
+    // TCP keepalive prevents firewalls/LBs from killing idle connections.
+    cfg.keepalives = Some(true);
+    cfg.keepalives_idle = Some(std::time::Duration::from_secs(30));
+    cfg.connect_timeout = Some(std::time::Duration::from_secs(5));
+
+    let pool = cfg
+        .create_pool(Some(Runtime::Tokio1), NoTls)
+        .expect("failed to create database pool");
+
+    // Fail fast at startup if the database is unreachable.
+    pool.get()
+        .await
+        .expect("failed to connect to database — check DATABASE_* env vars");
+
+    pool
 }
 
 pub async fn run_migrations(pool: &Pool) {
