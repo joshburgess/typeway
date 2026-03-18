@@ -807,3 +807,236 @@ fn extract_req_res_types(
     // The macro primarily provides ergonomic trait-based API definitions.
     Ok((None, res_type))
 }
+
+// ---------------------------------------------------------------------------
+// endpoint! — builder-style endpoint type macro
+// ---------------------------------------------------------------------------
+
+/// Defines an endpoint type with builder-style options.
+///
+/// Desugars nested wrappers (`Protected`, `Validated`, `Strict`, etc.)
+/// into a single readable declaration.
+///
+/// # Syntax
+///
+/// ```ignore
+/// endpoint! {
+///     GET "users" / u32 => Json<User>,
+///     auth: AuthUser,
+///     errors: JsonError,
+///     strict: true,
+/// }
+///
+/// endpoint! {
+///     POST "users",
+///     body: CreateUser => Json<User>,
+///     auth: AuthUser,
+///     validate: CreateUserValidator,
+///     content_type: json,
+///     errors: JsonError,
+///     version: V1,
+/// }
+/// ```
+///
+/// # Fields
+///
+/// - Method + path + `=>` response (required)
+/// - `body:` request body type (for POST/PUT/PATCH)
+/// - `auth:` wraps in `Protected<Auth, _>`
+/// - `validate:` wraps in `Validated<V, _>`
+/// - `content_type:` wraps in `ContentType<C, _>` (`json` or a type)
+/// - `errors:` sets the `Err` type parameter
+/// - `version:` wraps in `Versioned<V, _>`
+/// - `strict:` wraps in `Strict<_>` (if `true`)
+/// - `rate_limit:` wraps in `RateLimited<R, _>`
+#[proc_macro]
+pub fn endpoint(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as EndpointInput);
+    match endpoint_impl(input) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+struct EndpointInput {
+    method: String,
+    path_type: Type,
+    body_type: Option<Type>,
+    response_type: Type,
+    auth: Option<Type>,
+    validate: Option<Type>,
+    content_type: Option<Type>,
+    errors: Option<Type>,
+    version: Option<Type>,
+    strict: bool,
+    rate_limit: Option<Type>,
+}
+
+impl Parse for EndpointInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        // Parse method
+        let method_ident: Ident = input.parse()?;
+        let method = method_ident.to_string().to_uppercase();
+
+        // Parse path type (a named type, not segments)
+        let path_type: Type = input.parse()?;
+
+        // Parse => Response or , body: ... => Response
+        let mut body_type = None;
+        let response_type;
+
+        if input.peek(Token![=>]) {
+            // GET PathType => Response
+            input.parse::<Token![=>]>()?;
+            response_type = input.parse::<Type>()?;
+        } else if input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+            // Look for body: ... => Response
+            let key: Ident = input.parse()?;
+            if key != "body" {
+                return Err(syn::Error::new(
+                    key.span(),
+                    "expected `=> Response` or `body: Type => Response`",
+                ));
+            }
+            input.parse::<Token![:]>()?;
+            body_type = Some(input.parse::<Type>()?);
+            input.parse::<Token![=>]>()?;
+            response_type = input.parse::<Type>()?;
+        } else {
+            return Err(input.error("expected `=>` or `,`"));
+        }
+
+        // Consume trailing comma
+        if input.peek(Token![,]) {
+            input.parse::<Token![,]>()?;
+        }
+
+        // Parse optional key: value fields
+        let mut auth = None;
+        let mut validate = None;
+        let mut content_type = None;
+        let mut errors = None;
+        let mut version = None;
+        let mut strict = false;
+        let mut rate_limit = None;
+
+        while !input.is_empty() {
+            let key: Ident = input.parse()?;
+            input.parse::<Token![:]>()?;
+
+            match key.to_string().as_str() {
+                "auth" => auth = Some(input.parse::<Type>()?),
+                "validate" => validate = Some(input.parse::<Type>()?),
+                "content_type" => {
+                    if input.peek(Ident) {
+                        let ct: Ident = input.parse()?;
+                        content_type = Some(match ct.to_string().as_str() {
+                            "json" => syn::parse_quote! { ::wayward_server::typed::JsonContent },
+                            "form" => syn::parse_quote! { ::wayward_server::typed::FormContent },
+                            _ => {
+                                return Err(syn::Error::new(
+                                    ct.span(),
+                                    "expected `json`, `form`, or a type",
+                                ))
+                            }
+                        });
+                    } else {
+                        content_type = Some(input.parse::<Type>()?);
+                    }
+                }
+                "errors" => errors = Some(input.parse::<Type>()?),
+                "version" => version = Some(input.parse::<Type>()?),
+                "strict" => {
+                    let v: syn::LitBool = input.parse()?;
+                    strict = v.value;
+                }
+                "rate_limit" => rate_limit = Some(input.parse::<Type>()?),
+                other => {
+                    return Err(syn::Error::new(
+                        key.span(),
+                        format!("unknown field `{other}`"),
+                    ))
+                }
+            }
+
+            if input.peek(Token![,]) {
+                input.parse::<Token![,]>()?;
+            }
+        }
+
+        Ok(EndpointInput {
+            method,
+            path_type,
+            body_type,
+            response_type,
+            auth,
+            validate,
+            content_type,
+            errors,
+            version,
+            strict,
+            rate_limit,
+        })
+    }
+}
+
+fn endpoint_impl(input: EndpointInput) -> syn::Result<TokenStream2> {
+    let path_type = &input.path_type;
+    let method_type = method_type_ident(&input.method);
+    let response_type = &input.response_type;
+
+    let (req_type, q_type, err_type) = {
+        let req = match &input.body_type {
+            Some(t) => quote! { #t },
+            None => quote! { ::wayward_core::NoBody },
+        };
+        let q = quote! { () };
+        let err = match &input.errors {
+            Some(t) => quote! { #t },
+            None => quote! { () },
+        };
+        (req, q, err)
+    };
+
+    let mut result = quote! {
+        ::wayward_core::Endpoint<
+            ::wayward_core::#method_type,
+            #path_type,
+            #req_type,
+            #response_type,
+            #q_type,
+            #err_type
+        >
+    };
+
+    // Apply wrappers inside-out:
+    // strict → content_type → validate → rate_limit → version → auth
+    // (auth is outermost so it's checked first at runtime)
+
+    if input.strict {
+        result = quote! { ::wayward_server::typed_response::Strict<#result> };
+    }
+
+    if let Some(ref ct) = input.content_type {
+        result = quote! { ::wayward_server::typed::ContentType<#ct, #result> };
+    }
+
+    if let Some(ref v) = input.validate {
+        result = quote! { ::wayward_server::typed::Validated<#v, #result> };
+    }
+
+    if let Some(ref r) = input.rate_limit {
+        result = quote! { ::wayward_server::typed::RateLimited<#r, #result> };
+    }
+
+    if let Some(ref v) = input.version {
+        result = quote! { ::wayward_server::typed::Versioned<#v, #result> };
+    }
+
+    if let Some(ref auth) = input.auth {
+        result = quote! { ::wayward_server::auth::Protected<#auth, #result> };
+    }
+
+    Ok(result)
+}
