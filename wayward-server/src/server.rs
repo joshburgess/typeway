@@ -47,6 +47,17 @@ impl<A: ApiSpec> Server<A> {
         }
     }
 
+    /// Set the maximum request body size in bytes.
+    ///
+    /// Bodies exceeding this limit are rejected with 413 Payload Too Large.
+    /// Default: 2 MiB (2,097,152 bytes).
+    pub fn max_body_size(mut self, max: usize) -> Self {
+        let router = Arc::get_mut(&mut self.router)
+            .expect("max_body_size must be called before cloning the router");
+        router.set_max_body_size(max);
+        self
+    }
+
     /// Add shared state accessible via [`State<T>`](crate::extract::State) extractors.
     pub fn with_state<T: Clone + Send + Sync + 'static>(mut self, state: T) -> Self {
         let router = Arc::get_mut(&mut self.router)

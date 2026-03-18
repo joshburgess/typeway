@@ -9,7 +9,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use http::StatusCode;
-use http_body_util::BodyExt;
 
 use crate::body::{body_from_string, BoxBody};
 use crate::extract::PathSegments;
@@ -25,6 +24,9 @@ pub(crate) type FallbackService = Arc<
         + Sync,
 >;
 
+/// Default maximum request body size: 2 MiB.
+pub const DEFAULT_MAX_BODY_SIZE: usize = 2 * 1024 * 1024;
+
 /// A runtime HTTP router.
 ///
 /// Routes are stored in a flat list but indexed by HTTP method for fast
@@ -36,6 +38,9 @@ pub struct Router {
     method_index: MethodIndex,
     state_injector: Option<StateInjector>,
     fallback: Option<FallbackService>,
+    /// Maximum request body size in bytes. Bodies exceeding this are rejected
+    /// with 413 Payload Too Large.
+    max_body_size: usize,
 }
 
 struct RouteEntry {
@@ -109,7 +114,16 @@ impl Router {
             method_index: MethodIndex::default(),
             state_injector: None,
             fallback: None,
+            max_body_size: DEFAULT_MAX_BODY_SIZE,
         }
+    }
+
+    /// Set the maximum request body size in bytes.
+    ///
+    /// Bodies exceeding this limit are rejected with 413 Payload Too Large
+    /// before the handler is called. Default: 2 MiB.
+    pub(crate) fn set_max_body_size(&mut self, max: usize) {
+        self.max_body_size = max;
     }
 
     /// Register a route with a method, pattern, match function, and handler.
@@ -187,12 +201,12 @@ impl Router {
                 }
 
                 let router = self.clone();
+                let max_body = self.max_body_size;
                 return Box::pin(async move {
-                    let body_bytes = body
-                        .collect()
-                        .await
-                        .map(|c| c.to_bytes())
-                        .unwrap_or_default();
+                    let body_bytes = match collect_body_limited(body, max_body).await {
+                        Ok(bytes) => bytes,
+                        Err(resp) => return resp,
+                    };
                     (router.routes[i].handler)(parts, body_bytes).await
                 });
             }
@@ -279,6 +293,32 @@ impl Router {
 impl Default for Router {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Body collection with size limit
+// ---------------------------------------------------------------------------
+
+/// Collect a hyper body into bytes, enforcing a size limit.
+///
+/// Returns 413 Payload Too Large if the body exceeds `max_bytes`.
+async fn collect_body_limited(
+    body: hyper::body::Incoming,
+    max_bytes: usize,
+) -> Result<bytes::Bytes, http::Response<BoxBody>> {
+    use http_body_util::BodyExt;
+
+    let limited = http_body_util::Limited::new(body, max_bytes);
+    match limited.collect().await {
+        Ok(collected) => Ok(collected.to_bytes()),
+        Err(_) => {
+            let mut res = http::Response::new(body_from_string(format!(
+                "request body too large (max {max_bytes} bytes)"
+            )));
+            *res.status_mut() = StatusCode::PAYLOAD_TOO_LARGE;
+            Err(res)
+        }
     }
 }
 

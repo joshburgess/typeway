@@ -14,7 +14,8 @@ help: the trait `IntoResponse` is not implemented for `NotAResponse`
             &'static str
             (wayward::http::StatusCode, T)
             Json<T>
-            Response<http_body_util::full::Full<bytes::bytes::Bytes>>
+            JsonError
+            Response<http_body_util::combinators::box_body::BoxBody<bytes::bytes::Bytes, Box<(dyn StdError + Send + Sync + 'static)>>>
             Result<T, E>
             bytes::bytes::Bytes
             std::string::String

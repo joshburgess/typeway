@@ -283,3 +283,63 @@ async fn not_found_on_missing_resource() {
         .unwrap();
     assert_eq!(resp.status(), 404);
 }
+
+// --- Body size limit tests ---
+
+async fn start_limited_server() -> u16 {
+    wayward_path!(type BodyPath = "body");
+    type BodyAPI = (PostEndpoint<BodyPath, String, String>,);
+
+    async fn echo_body(body: String) -> String {
+        body
+    }
+
+    let server = Server::<BodyAPI>::new((bind::<_, _, _>(echo_body),)).max_body_size(64);
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    tokio::spawn(async move {
+        let router = Arc::new(server.into_router());
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let svc = RouterService::new(router.clone());
+            let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
+            tokio::spawn(async move {
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(io, hyper_svc)
+                    .await;
+            });
+        }
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    port
+}
+
+#[tokio::test]
+async fn body_within_limit_succeeds() {
+    let port = start_limited_server().await;
+    let resp = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{port}/body"))
+        .body("small")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.text().await.unwrap(), "small");
+}
+
+#[tokio::test]
+async fn body_exceeding_limit_returns_413() {
+    let port = start_limited_server().await;
+    let big_body = "x".repeat(128); // 128 bytes > 64 byte limit
+    let resp = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{port}/body"))
+        .body(big_body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 413);
+}

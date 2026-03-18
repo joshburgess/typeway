@@ -62,8 +62,9 @@ pub use serde_json;
 // --- Server (feature = "server") ---
 #[cfg(feature = "server")]
 pub use wayward_server::{
-    bind, serve, BoundHandler, FromRequest, FromRequestParts, Handler, IntoResponse, Json,
-    LayeredServer, Path, Query, Router, RouterService, Server, Serves, State,
+    bind, body_from_stream, empty_body, serve, sse_body, BoundHandler, FromRequest,
+    FromRequestParts, Handler, IntoResponse, Json, JsonError, LayeredServer, Path, Query, Router,
+    RouterService, Server, Serves, State,
 };
 
 /// Re-export tower-http for middleware (available when `server` feature is on).
@@ -87,9 +88,9 @@ pub mod prelude {
 
     #[cfg(feature = "server")]
     pub use wayward_server::{
-        bind, serve, tower_http, BoundHandler, FromRequest, FromRequestParts, Handler,
-        IntoResponse, Json, LayeredServer, Path, Query, Router, RouterService, Server, Serves,
-        State,
+        bind, body_from_stream, empty_body, serve, sse_body, tower_http, BoundHandler, FromRequest,
+        FromRequestParts, Handler, IntoResponse, Json, JsonError, LayeredServer, Path, Query,
+        Router, RouterService, Server, Serves, State,
     };
 
     #[cfg(feature = "client")]
