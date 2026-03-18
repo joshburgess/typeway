@@ -26,7 +26,7 @@ use crate::path::PathSpec;
 pub trait ApiSpec {}
 
 // Every Endpoint is an ApiSpec.
-impl<M: HttpMethod, P: PathSpec, Req, Res, Q> ApiSpec for Endpoint<M, P, Req, Res, Q> {}
+impl<M: HttpMethod, P: PathSpec, Req, Res, Q, Err> ApiSpec for Endpoint<M, P, Req, Res, Q, Err> {}
 
 // Tuples of ApiSpec implementors are ApiSpec.
 macro_rules! impl_api_spec_for_tuple {

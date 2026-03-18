@@ -73,7 +73,7 @@ impl_build_path!(0: A, 1: B, 2: C, 3: D, 4: E, 5: F, 6: G, 7: H);
 
 macro_rules! impl_call_bodyless {
     ($Method:ty) => {
-        impl<P, Res> CallEndpoint for Endpoint<$Method, P, NoBody, Res>
+        impl<P, Res, Q, Err> CallEndpoint for Endpoint<$Method, P, NoBody, Res, Q, Err>
         where
             P: PathSpec + ExtractPath,
             P::Captures: BuildPath,
@@ -113,7 +113,7 @@ impl_call_bodyless!(Options);
 
 macro_rules! impl_call_with_body {
     ($Method:ty) => {
-        impl<P, Req, Res> CallEndpoint for Endpoint<$Method, P, Req, Res>
+        impl<P, Req, Res, Q, Err> CallEndpoint for Endpoint<$Method, P, Req, Res, Q, Err>
         where
             P: PathSpec + ExtractPath,
             P::Captures: BuildPath,

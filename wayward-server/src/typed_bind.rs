@@ -55,8 +55,8 @@ pub trait HasReqType {
     type Req;
 }
 
-impl<M: wayward_core::HttpMethod, P: wayward_core::PathSpec, Req, Res, Q> HasReqType
-    for wayward_core::Endpoint<M, P, Req, Res, Q>
+impl<M: wayward_core::HttpMethod, P: wayward_core::PathSpec, Req, Res, Q, Err> HasReqType
+    for wayward_core::Endpoint<M, P, Req, Res, Q, Err>
 {
     type Req = Req;
 }

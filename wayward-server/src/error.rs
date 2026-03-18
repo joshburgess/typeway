@@ -142,6 +142,65 @@ impl From<(StatusCode, String)> for JsonError {
     }
 }
 
+// ---------------------------------------------------------------------------
+// OpenAPI error responses (feature = "openapi")
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "openapi")]
+impl wayward_openapi::ErrorResponses for JsonError {
+    fn error_responses() -> indexmap::IndexMap<String, wayward_openapi::spec::Response> {
+        use wayward_openapi::spec::*;
+
+        let mut content = indexmap::IndexMap::new();
+        let mut properties = indexmap::IndexMap::new();
+
+        let mut error_props = indexmap::IndexMap::new();
+        error_props.insert("status".to_string(), Schema::integer());
+        error_props.insert("message".to_string(), Schema::string());
+
+        properties.insert(
+            "error".to_string(),
+            Schema {
+                schema_type: Some("object".into()),
+                format: None,
+                items: None,
+                properties: Some(error_props),
+                description: None,
+            },
+        );
+
+        content.insert(
+            "application/json".to_string(),
+            MediaType {
+                schema: Some(Schema {
+                    schema_type: Some("object".into()),
+                    format: None,
+                    items: None,
+                    properties: Some(properties),
+                    description: Some("JSON error response".into()),
+                }),
+            },
+        );
+
+        let mut responses = indexmap::IndexMap::new();
+        responses.insert(
+            "4XX".to_string(),
+            Response {
+                description: "Client error".to_string(),
+                content: content.clone(),
+            },
+        );
+        responses.insert(
+            "5XX".to_string(),
+            Response {
+                description: "Server error".to_string(),
+                content,
+            },
+        );
+        responses
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

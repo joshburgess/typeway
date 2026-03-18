@@ -21,29 +21,31 @@ use crate::path::PathSpec;
 /// - `P`: Path HList type (e.g., `HCons<Lit<users>, HCons<Capture<u32>, HNil>>`)
 /// - `Req`: Request body type ([`NoBody`] for bodyless methods)
 /// - `Res`: Declared response type (for OpenAPI/client generation)
-/// - `Q`: Query parameter type (default `()` for no query params). When set,
-///   the query params appear in the OpenAPI spec and can be extracted via `Query<Q>`.
-pub struct Endpoint<M: HttpMethod, P: PathSpec, Req, Res, Q = ()> {
-    _marker: PhantomData<(M, P, Req, Res, Q)>,
+/// - `Q`: Query parameter type (default `()` for no query params)
+/// - `Err`: Error response type (default `()` for untyped errors). When set,
+///   the error type appears in the OpenAPI spec and the client knows what to
+///   deserialize on non-2xx responses.
+pub struct Endpoint<M: HttpMethod, P: PathSpec, Req, Res, Q = (), Err = ()> {
+    _marker: PhantomData<(M, P, Req, Res, Q, Err)>,
 }
 
 /// Marker type indicating no request body.
 pub struct NoBody;
 
 /// `GET` endpoint with no request body.
-pub type GetEndpoint<P, Res, Q = ()> = Endpoint<Get, P, NoBody, Res, Q>;
+pub type GetEndpoint<P, Res, Q = (), Err = ()> = Endpoint<Get, P, NoBody, Res, Q, Err>;
 
 /// `POST` endpoint with a request body.
-pub type PostEndpoint<P, Req, Res, Q = ()> = Endpoint<Post, P, Req, Res, Q>;
+pub type PostEndpoint<P, Req, Res, Q = (), Err = ()> = Endpoint<Post, P, Req, Res, Q, Err>;
 
 /// `PUT` endpoint with a request body.
-pub type PutEndpoint<P, Req, Res, Q = ()> = Endpoint<Put, P, Req, Res, Q>;
+pub type PutEndpoint<P, Req, Res, Q = (), Err = ()> = Endpoint<Put, P, Req, Res, Q, Err>;
 
 /// `DELETE` endpoint with no request body.
-pub type DeleteEndpoint<P, Res, Q = ()> = Endpoint<Delete, P, NoBody, Res, Q>;
+pub type DeleteEndpoint<P, Res, Q = (), Err = ()> = Endpoint<Delete, P, NoBody, Res, Q, Err>;
 
 /// `PATCH` endpoint with a request body.
-pub type PatchEndpoint<P, Req, Res, Q = ()> = Endpoint<Patch, P, Req, Res, Q>;
+pub type PatchEndpoint<P, Req, Res, Q = (), Err = ()> = Endpoint<Patch, P, Req, Res, Q, Err>;
 
 #[cfg(test)]
 #[allow(non_camel_case_types)]

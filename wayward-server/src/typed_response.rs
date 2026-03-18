@@ -52,10 +52,21 @@ pub trait HasResType {
     type Res;
 }
 
-impl<M: wayward_core::HttpMethod, P: wayward_core::PathSpec, Req, Res, Q> HasResType
-    for wayward_core::Endpoint<M, P, Req, Res, Q>
+impl<M: wayward_core::HttpMethod, P: wayward_core::PathSpec, Req, Res, Q, Err> HasResType
+    for wayward_core::Endpoint<M, P, Req, Res, Q, Err>
 {
     type Res = Res;
+}
+
+/// Trait to extract the Err type from an endpoint.
+pub trait HasErrType {
+    type Err;
+}
+
+impl<M: wayward_core::HttpMethod, P: wayward_core::PathSpec, Req, Res, Q, Err> HasErrType
+    for wayward_core::Endpoint<M, P, Req, Res, Q, Err>
+{
+    type Err = Err;
 }
 
 /// A handler that returns exactly type `Res`.

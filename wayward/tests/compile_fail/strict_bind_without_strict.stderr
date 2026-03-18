@@ -6,7 +6,7 @@ error[E0277]: the trait bound `Strict<Endpoint<Get, HCons<Lit<__lit_tags>, HNil>
    |
    = help: the following other types implement trait `BindableEndpoint`:
              ContentType<C, E>
-             Endpoint<M, P, Req, Res, Q>
+             Endpoint<M, P, Req, Res, Q, Err>
              RateLimited<R, E>
              Validated<V, E>
              Versioned<V, E>

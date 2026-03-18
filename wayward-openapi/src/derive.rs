@@ -266,6 +266,37 @@ fn convert_schemars_schema(value: &serde_json::Value) -> Schema {
 }
 
 // ---------------------------------------------------------------------------
+// Error response schema
+// ---------------------------------------------------------------------------
+
+/// Generate OpenAPI error response entries for an endpoint's error type.
+///
+/// Implemented for `()` (no error schema). Implement this trait on your
+/// error type to have error schemas appear in the OpenAPI spec.
+///
+/// ```ignore
+/// impl ErrorResponses for JsonError {
+///     fn error_responses() -> IndexMap<String, Response> {
+///         // Generate 4xx error schema
+///     }
+/// }
+///
+/// // Then use in endpoint type:
+/// type API = (
+///     GetEndpoint<UsersPath, Json<Vec<User>>, (), JsonError>,
+/// );
+/// ```
+pub trait ErrorResponses {
+    fn error_responses() -> IndexMap<String, Response>;
+}
+
+impl ErrorResponses for () {
+    fn error_responses() -> IndexMap<String, Response> {
+        IndexMap::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Path parameter extraction
 // ---------------------------------------------------------------------------
 
@@ -338,7 +369,10 @@ pub trait EndpointDoc {
 }
 
 /// Blanket impl: all endpoints have no documentation by default.
-impl<M: HttpMethod, P: PathSpec, Req, Res, Q> EndpointDoc for Endpoint<M, P, Req, Res, Q> {}
+impl<M: HttpMethod, P: PathSpec, Req, Res, Q, Err> EndpointDoc
+    for Endpoint<M, P, Req, Res, Q, Err>
+{
+}
 
 // ---------------------------------------------------------------------------
 // QueryParameters — extract query param schema for OpenAPI
@@ -371,12 +405,13 @@ pub trait EndpointToOperation {
 }
 
 // Bodyless endpoints (NoBody request)
-impl<M, P, Res, Q> EndpointToOperation for Endpoint<M, P, NoBody, Res, Q>
+impl<M, P, Res, Q, Err> EndpointToOperation for Endpoint<M, P, NoBody, Res, Q, Err>
 where
     M: HttpMethod,
     P: PathSpec + ExtractPath + PathParameters,
     Res: ToSchema,
     Q: QueryParameters,
+    Err: ErrorResponses,
 {
     fn path_pattern() -> String {
         P::pattern()
@@ -416,6 +451,8 @@ where
                 content,
             },
         );
+        // Merge error responses from the Err type.
+        responses.extend(Err::error_responses());
         op.responses = responses;
         op
     }
@@ -424,12 +461,13 @@ where
 // Body endpoints — we need separate impls per method to avoid overlap with NoBody.
 macro_rules! impl_endpoint_to_operation_with_body {
     ($Method:ty) => {
-        impl<P, Req, Res, Q> EndpointToOperation for Endpoint<$Method, P, Req, Res, Q>
+        impl<P, Req, Res, Q, Err> EndpointToOperation for Endpoint<$Method, P, Req, Res, Q, Err>
         where
             P: PathSpec + ExtractPath + PathParameters,
             Req: ToSchema,
             Res: ToSchema,
             Q: QueryParameters,
+            Err: ErrorResponses,
         {
             fn path_pattern() -> String {
                 P::pattern()
@@ -446,14 +484,15 @@ macro_rules! impl_endpoint_to_operation_with_body {
                 op.parameters.extend(Q::query_parameters());
 
                 // Apply documentation metadata.
-                op.summary = <Endpoint<$Method, P, Req, Res, Q> as EndpointDoc>::summary()
+                op.summary = <Endpoint<$Method, P, Req, Res, Q, Err> as EndpointDoc>::summary()
                     .map(|s| s.to_string());
-                op.description = <Endpoint<$Method, P, Req, Res, Q> as EndpointDoc>::description()
-                    .map(|s| s.to_string());
-                op.operation_id =
-                    <Endpoint<$Method, P, Req, Res, Q> as EndpointDoc>::operation_id()
+                op.description =
+                    <Endpoint<$Method, P, Req, Res, Q, Err> as EndpointDoc>::description()
                         .map(|s| s.to_string());
-                op.tags = <Endpoint<$Method, P, Req, Res, Q> as EndpointDoc>::tags()
+                op.operation_id =
+                    <Endpoint<$Method, P, Req, Res, Q, Err> as EndpointDoc>::operation_id()
+                        .map(|s| s.to_string());
+                op.tags = <Endpoint<$Method, P, Req, Res, Q, Err> as EndpointDoc>::tags()
                     .into_iter()
                     .map(|s| s.to_string())
                     .collect();
@@ -487,6 +526,7 @@ macro_rules! impl_endpoint_to_operation_with_body {
                         content: res_content,
                     },
                 );
+                responses.extend(Err::error_responses());
                 op.responses = responses;
                 op
             }
