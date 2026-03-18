@@ -3,6 +3,7 @@
 //! This crate provides the HTTP server layer: handler dispatch, request
 //! extraction, response encoding, and the type-safe server builder.
 
+pub mod auth;
 #[cfg(feature = "axum-interop")]
 pub mod axum_interop;
 pub mod body;

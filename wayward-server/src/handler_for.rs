@@ -24,6 +24,22 @@ pub struct BoundHandler<E> {
 }
 
 impl<E> BoundHandler<E> {
+    /// Create a new bound handler with explicit endpoint metadata.
+    pub fn new(
+        method: http::Method,
+        pattern: String,
+        match_fn: crate::router::MatchFn,
+        handler: BoxedHandler,
+    ) -> Self {
+        BoundHandler {
+            method,
+            pattern,
+            match_fn,
+            handler,
+            _endpoint: PhantomData,
+        }
+    }
+
     /// Register this handler into the router.
     pub(crate) fn register_into(self, router: &mut Router) {
         router.add_route(self.method, self.pattern, self.match_fn, self.handler);

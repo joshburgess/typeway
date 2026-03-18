@@ -31,7 +31,7 @@ mod models;
 
 use wayward_server::request_id::RequestIdLayer;
 use wayward_server::tower_http::cors::CorsLayer;
-use wayward_server::{bind, Server};
+use wayward_server::{bind, bind_auth, Server};
 
 use api::RealWorldAPI;
 
@@ -48,29 +48,30 @@ async fn main() {
     // Build the wayward API server with all 19 endpoints.
     // Static file serving and SPA fallback are built into wayward — no Axum needed.
     let server = Server::<RealWorldAPI>::new((
-        // Auth
+        // Auth (public)
         bind!(handlers::register),
         bind!(handlers::login),
-        bind!(handlers::get_current_user),
-        bind!(handlers::update_user),
+        // Auth (protected — compiler enforces AuthUser as first arg)
+        bind_auth!(handlers::get_current_user),
+        bind_auth!(handlers::update_user),
         // Profiles
         bind!(handlers::get_profile),
-        bind!(handlers::follow_profile),
-        bind!(handlers::unfollow_profile),
+        bind_auth!(handlers::follow_profile),
+        bind_auth!(handlers::unfollow_profile),
         // Articles
         bind!(handlers::list_articles),
-        bind!(handlers::get_feed),
+        bind_auth!(handlers::get_feed),
         bind!(handlers::get_article),
-        bind!(handlers::create_article),
-        bind!(handlers::update_article),
-        bind!(handlers::delete_article),
+        bind_auth!(handlers::create_article),
+        bind_auth!(handlers::update_article),
+        bind_auth!(handlers::delete_article),
         // Favorites
-        bind!(handlers::favorite_article),
-        bind!(handlers::unfavorite_article),
+        bind_auth!(handlers::favorite_article),
+        bind_auth!(handlers::unfavorite_article),
         // Comments
         bind!(handlers::get_comments),
-        bind!(handlers::add_comment),
-        bind!(handlers::delete_comment),
+        bind_auth!(handlers::add_comment),
+        bind_auth!(handlers::delete_comment),
         // Tags
         bind!(handlers::get_tags),
     ))

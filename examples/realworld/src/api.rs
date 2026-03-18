@@ -25,31 +25,39 @@ wayward_path!(pub type TagsPath = "api" / "tags");
 // ---------------------------------------------------------------------------
 
 use wayward_core::{DeleteEndpoint, GetEndpoint, PostEndpoint, PutEndpoint};
+use wayward_server::auth::Protected;
+
+use crate::auth::AuthUser;
+
+// Protected<Auth, E> declares at the type level that an endpoint requires
+// authentication. The compiler enforces that the handler's first argument
+// is the Auth type — omitting it is a compile error.
 
 pub type RealWorldAPI = (
-    // Auth
+    // Auth (public)
     PostEndpoint<UsersPath, NewUserRequest, UserResponse>,
     PostEndpoint<UsersLoginPath, LoginRequest, UserResponse>,
-    GetEndpoint<UserPath, UserResponse>,
-    PutEndpoint<UserPath, UpdateUserRequest, UserResponse>,
-    // Profiles
+    // Auth (protected)
+    Protected<AuthUser, GetEndpoint<UserPath, UserResponse>>,
+    Protected<AuthUser, PutEndpoint<UserPath, UpdateUserRequest, UserResponse>>,
+    // Profiles (public read, protected write)
     GetEndpoint<ProfilePath, ProfileResponse>,
-    PostEndpoint<ProfileFollowPath, (), ProfileResponse>,
-    DeleteEndpoint<ProfileFollowPath, ProfileResponse>,
-    // Articles
+    Protected<AuthUser, PostEndpoint<ProfileFollowPath, (), ProfileResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ProfileFollowPath, ProfileResponse>>,
+    // Articles (public read, protected write)
     GetEndpoint<ArticlesPath, ArticlesResponse>,
-    GetEndpoint<ArticlesFeedPath, ArticlesResponse>,
+    Protected<AuthUser, GetEndpoint<ArticlesFeedPath, ArticlesResponse>>,
     GetEndpoint<ArticlePath, ArticleResponse>,
-    PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>,
-    PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>,
-    DeleteEndpoint<ArticlePath, ()>,
-    // Favorites
-    PostEndpoint<ArticleFavoritePath, (), ArticleResponse>,
-    DeleteEndpoint<ArticleFavoritePath, ArticleResponse>,
-    // Comments
+    Protected<AuthUser, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>,
+    Protected<AuthUser, PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ArticlePath, ()>>,
+    // Favorites (protected)
+    Protected<AuthUser, PostEndpoint<ArticleFavoritePath, (), ArticleResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ArticleFavoritePath, ArticleResponse>>,
+    // Comments (public read, protected write)
     GetEndpoint<ArticleCommentsPath, CommentsResponse>,
-    PostEndpoint<ArticleCommentsPath, NewCommentRequest, CommentResponse>,
-    DeleteEndpoint<ArticleCommentPath, ()>,
-    // Tags
+    Protected<AuthUser, PostEndpoint<ArticleCommentsPath, NewCommentRequest, CommentResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ArticleCommentPath, ()>>,
+    // Tags (public)
     GetEndpoint<TagsPath, TagsResponse>,
 );
