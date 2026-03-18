@@ -1,0 +1,5 @@
+error: handler functions must be async
+ --> tests/compile_fail/sync_handler.rs:5:1
+  |
+5 | fn not_async() -> &'static str {
+  | ^^

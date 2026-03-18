@@ -1,0 +1,809 @@
+//! `wayward-macros` — proc macros for the Wayward web framework.
+//!
+//! Provides `wayward_path!` for ergonomic path type construction,
+//! `wayward_api!` for defining complete API types with inline routes,
+//! and `#[handler]` for validating handler functions at the definition site.
+
+use proc_macro::TokenStream;
+use proc_macro2::{Span, TokenStream as TokenStream2};
+use quote::{format_ident, quote};
+use syn::parse::{Parse, ParseStream};
+use syn::{Ident, LitStr, Token, Type};
+
+// ---------------------------------------------------------------------------
+// Path segment parsing (shared between macros)
+// ---------------------------------------------------------------------------
+
+enum PathSegment {
+    Literal(String),
+    Capture(Type),
+}
+
+fn parse_one_segment(input: ParseStream) -> syn::Result<PathSegment> {
+    if input.peek(LitStr) {
+        let lit: LitStr = input.parse()?;
+        let value = lit.value();
+        if value.is_empty() {
+            return Err(syn::Error::new(lit.span(), "path literal cannot be empty"));
+        }
+        if value.contains('/') {
+            return Err(syn::Error::new(
+                lit.span(),
+                "path literal cannot contain '/'; use separate segments",
+            ));
+        }
+        Ok(PathSegment::Literal(value))
+    } else {
+        let ty: Type = input.parse()?;
+        Ok(PathSegment::Capture(ty))
+    }
+}
+
+fn parse_path_segments(input: ParseStream) -> syn::Result<Vec<PathSegment>> {
+    let mut segments = Vec::new();
+    if input.is_empty() || input.peek(Token![;]) {
+        return Ok(segments);
+    }
+    segments.push(parse_one_segment(input)?);
+    while input.peek(Token![/]) {
+        input.parse::<Token![/]>()?;
+        segments.push(parse_one_segment(input)?);
+    }
+    Ok(segments)
+}
+
+/// Build the HCons type chain from path segments.
+/// `mod_path` is the module path prefix for marker types (e.g., `__m::` ).
+fn build_hlist_type(segments: &[PathSegment], mod_path: &TokenStream2) -> TokenStream2 {
+    if segments.is_empty() {
+        return quote! { ::wayward_core::HNil };
+    }
+
+    let head = match &segments[0] {
+        PathSegment::Literal(s) => {
+            let marker = lit_marker_ident(s);
+            quote! { ::wayward_core::Lit<#mod_path #marker> }
+        }
+        PathSegment::Capture(ty) => {
+            quote! { ::wayward_core::Capture<#ty> }
+        }
+    };
+
+    let tail = build_hlist_type(&segments[1..], mod_path);
+    quote! { ::wayward_core::HCons<#head, #tail> }
+}
+
+fn lit_marker_ident(s: &str) -> Ident {
+    format_ident!("__lit_{}", s)
+}
+
+/// Collect unique marker type definitions for all literal segments.
+fn collect_marker_defs(
+    segments: &[PathSegment],
+    seen: &mut std::collections::HashSet<String>,
+) -> Vec<TokenStream2> {
+    let mut defs = Vec::new();
+    for seg in segments {
+        if let PathSegment::Literal(s) = seg {
+            if seen.insert(s.clone()) {
+                let marker = lit_marker_ident(s);
+                let value = s.as_str();
+                defs.push(quote! {
+                    #[allow(non_camel_case_types)]
+                    pub struct #marker;
+                    impl ::wayward_core::LitSegment for #marker {
+                        const VALUE: &'static str = #value;
+                    }
+                });
+            }
+        }
+    }
+    defs
+}
+
+// ---------------------------------------------------------------------------
+// wayward_path! macro
+// ---------------------------------------------------------------------------
+
+/// Defines a path type with auto-generated literal segment markers.
+///
+/// Markers are scoped in a private module to avoid name collisions.
+///
+/// # Syntax
+///
+/// ```ignore
+/// wayward_path!(type UserPath = "users" / u32);
+/// ```
+///
+/// Expands to:
+///
+/// ```ignore
+/// mod __wp_UserPath {
+///     pub struct __lit_users;
+///     impl wayward_core::LitSegment for __lit_users { ... }
+/// }
+/// type UserPath = HCons<Lit<__wp_UserPath::__lit_users>, HCons<Capture<u32>, HNil>>;
+/// ```
+#[proc_macro]
+pub fn wayward_path(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as WaywardPathInput);
+    let name = &input.name;
+    let vis = &input.vis;
+    let mod_name = format_ident!("__wp_{}", name);
+
+    let mut seen = std::collections::HashSet::new();
+    let marker_defs = collect_marker_defs(&input.segments, &mut seen);
+
+    let mod_path: TokenStream2 = quote! { #mod_name:: };
+    let hlist_type = build_hlist_type(&input.segments, &mod_path);
+
+    quote! {
+        #[doc(hidden)]
+        #[allow(non_snake_case)]
+        mod #mod_name {
+            #(#marker_defs)*
+        }
+        #vis type #name = #hlist_type;
+    }
+    .into()
+}
+
+struct WaywardPathInput {
+    vis: syn::Visibility,
+    name: Ident,
+    segments: Vec<PathSegment>,
+}
+
+impl Parse for WaywardPathInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let vis: syn::Visibility = input.parse()?;
+        input.parse::<Token![type]>()?;
+        let name: Ident = input.parse()?;
+        input.parse::<Token![=]>()?;
+        let segments = parse_path_segments(input)?;
+        if input.peek(Token![;]) {
+            input.parse::<Token![;]>()?;
+        }
+        Ok(WaywardPathInput {
+            vis,
+            name,
+            segments,
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// wayward_api! macro
+// ---------------------------------------------------------------------------
+
+/// Defines a complete API type with inline route definitions.
+///
+/// # Syntax
+///
+/// ```ignore
+/// wayward_api! {
+///     type MyAPI = {
+///         GET "users" => Json<Vec<User>>,
+///         GET "users" / u32 => Json<User>,
+///         POST "users" [Json<CreateUser>] => Json<User>,
+///         DELETE "users" / u32 => StatusCode,
+///     };
+/// }
+/// ```
+///
+/// - Methods: `GET`, `POST`, `PUT`, `DELETE`, `PATCH`, `HEAD`, `OPTIONS`
+/// - Request body is specified in `[brackets]` (optional, only for POST/PUT/PATCH)
+/// - Response type follows `=>`
+#[proc_macro]
+pub fn wayward_api(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as WaywardApiInput);
+    let name = &input.name;
+    let vis = &input.vis;
+    let mod_name = format_ident!("__wa_{}", name);
+
+    let mut seen = std::collections::HashSet::new();
+    let mut all_marker_defs = Vec::new();
+    for route in &input.routes {
+        all_marker_defs.extend(collect_marker_defs(&route.path, &mut seen));
+    }
+
+    let mod_path: TokenStream2 = quote! { #mod_name:: };
+    let mut endpoint_types = Vec::new();
+    for route in &input.routes {
+        let path_type = build_hlist_type(&route.path, &mod_path);
+        let method = method_type_ident(&route.method);
+        let res_type = &route.response;
+
+        let endpoint = if let Some(ref req) = route.request {
+            quote! { ::wayward_core::Endpoint<::wayward_core::#method, #path_type, #req, #res_type> }
+        } else {
+            quote! { ::wayward_core::Endpoint<::wayward_core::#method, #path_type, ::wayward_core::NoBody, #res_type> }
+        };
+        endpoint_types.push(endpoint);
+    }
+
+    quote! {
+        #[doc(hidden)]
+        #[allow(non_snake_case)]
+        mod #mod_name {
+            #(#all_marker_defs)*
+        }
+        #vis type #name = (#(#endpoint_types,)*);
+    }
+    .into()
+}
+
+fn method_type_ident(method: &str) -> Ident {
+    let s = match method.to_uppercase().as_str() {
+        "GET" => "Get",
+        "POST" => "Post",
+        "PUT" => "Put",
+        "DELETE" => "Delete",
+        "PATCH" => "Patch",
+        "HEAD" => "Head",
+        "OPTIONS" => "Options",
+        other => panic!("unknown HTTP method: {other}"),
+    };
+    Ident::new(s, Span::call_site())
+}
+
+struct ApiRoute {
+    method: String,
+    path: Vec<PathSegment>,
+    request: Option<Type>,
+    response: Type,
+}
+
+struct WaywardApiInput {
+    vis: syn::Visibility,
+    name: Ident,
+    routes: Vec<ApiRoute>,
+}
+
+impl Parse for WaywardApiInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let vis: syn::Visibility = input.parse()?;
+        input.parse::<Token![type]>()?;
+        let name: Ident = input.parse()?;
+        input.parse::<Token![=]>()?;
+
+        let content;
+        syn::braced!(content in input);
+
+        let mut routes = Vec::new();
+        while !content.is_empty() {
+            routes.push(parse_api_route(&content)?);
+            if content.peek(Token![,]) {
+                content.parse::<Token![,]>()?;
+            }
+        }
+
+        if input.peek(Token![;]) {
+            input.parse::<Token![;]>()?;
+        }
+
+        Ok(WaywardApiInput { vis, name, routes })
+    }
+}
+
+fn parse_api_route(input: ParseStream) -> syn::Result<ApiRoute> {
+    let method_ident: Ident = input.parse()?;
+    let method = method_ident.to_string();
+
+    let mut path = Vec::new();
+    while !input.peek(Token![=>]) && !input.peek(syn::token::Bracket) {
+        if !path.is_empty() {
+            input.parse::<Token![/]>()?;
+        }
+        path.push(parse_one_segment(input)?);
+    }
+
+    let request = if input.peek(syn::token::Bracket) {
+        let bracket_content;
+        syn::bracketed!(bracket_content in input);
+        Some(bracket_content.parse::<Type>()?)
+    } else {
+        None
+    };
+
+    input.parse::<Token![=>]>()?;
+    let response: Type = input.parse()?;
+
+    Ok(ApiRoute {
+        method,
+        path,
+        request,
+        response,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// path! — lightweight type-position macro (for use in type aliases/binds)
+// ---------------------------------------------------------------------------
+
+/// Constructs a path type expression. Unlike `wayward_path!`, this does NOT
+/// generate marker types — it references markers that were already defined
+/// by a `wayward_path!` or `wayward_api!` invocation.
+///
+/// Not recommended for direct use — prefer `wayward_path!` which handles
+/// both marker generation and type definition.
+#[proc_macro]
+pub fn path(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as PathRefInput);
+    let empty_mod = quote! {};
+    let hlist = build_hlist_type(&input.segments, &empty_mod);
+    hlist.into()
+}
+
+struct PathRefInput {
+    segments: Vec<PathSegment>,
+}
+
+impl Parse for PathRefInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let segments = parse_path_segments(input)?;
+        Ok(PathRefInput { segments })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// #[handler] attribute macro
+// ---------------------------------------------------------------------------
+
+/// Validates a handler function at its definition site.
+///
+/// Checks that:
+/// - The function is `async`
+/// - All arguments (except the last) implement `FromRequestParts`
+/// - The last argument implements either `FromRequestParts` or `FromRequest`
+/// - The return type implements `IntoResponse`
+///
+/// The function is emitted unchanged — it already works with [`bind`] and
+/// the blanket `Handler<Args>` impls. This macro exists purely for early,
+/// readable compile errors instead of cryptic trait-resolution failures at
+/// the `Server::new` call site.
+///
+/// # Example
+///
+/// ```ignore
+/// #[handler]
+/// async fn get_user(path: Path<UserByIdPath>, state: State<AppState>) -> Json<User> {
+///     // ...
+/// }
+/// ```
+///
+/// # Compile errors
+///
+/// ```ignore
+/// #[handler]
+/// fn not_async() -> String { todo!() }
+/// // error: handler functions must be async
+///
+/// #[handler]
+/// async fn bad_return() -> NotAResponse { todo!() }
+/// // error: `NotAResponse` does not implement `IntoResponse`
+/// ```
+#[proc_macro_attribute]
+pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let _ = attr; // no attributes expected
+    let func = match syn::parse::<syn::ItemFn>(item.clone()) {
+        Ok(f) => f,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    // Must be async.
+    if func.sig.asyncness.is_none() {
+        return syn::Error::new_spanned(func.sig.fn_token, "handler functions must be async")
+            .to_compile_error()
+            .into();
+    }
+
+    let fn_name = &func.sig.ident;
+    let check_mod = format_ident!("__wayward_check_{}", fn_name);
+
+    // Collect typed arguments (skip self).
+    let typed_args: Vec<&syn::PatType> = func
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| match arg {
+            syn::FnArg::Typed(pt) => Some(pt),
+            _ => None,
+        })
+        .collect();
+
+    // Generate FromRequestParts assertions for all-but-last args,
+    // and a FromRequestParts-or-FromRequest check for the last arg.
+    let mut parts_checks = Vec::new();
+
+    for (i, arg) in typed_args.iter().enumerate() {
+        let ty = &arg.ty;
+        if i < typed_args.len() - 1 {
+            // Non-last args must be FromRequestParts.
+            let assert_fn = format_ident!("__assert_parts_{}", i);
+            let call_fn = format_ident!("__call_parts_{}", i);
+            parts_checks.push(quote! {
+                fn #assert_fn<T: ::wayward_server::FromRequestParts>() {}
+                fn #call_fn() { #assert_fn::<#ty>(); }
+            });
+        }
+        // Last arg: could be FromRequestParts or FromRequest.
+        // We can't express an "or" bound, so the blanket Handler
+        // impl catches type mismatches for the last argument.
+    }
+
+    // Return type must implement IntoResponse.
+    let ret_ty = match &func.sig.output {
+        syn::ReturnType::Default => quote! { () },
+        syn::ReturnType::Type(_, ty) => quote! { #ty },
+    };
+
+    let expanded = quote! {
+        #func
+
+        #[doc(hidden)]
+        #[allow(non_snake_case, unused, dead_code, unreachable_code)]
+        mod #check_mod {
+            use super::*;
+
+            fn __check_response<T: ::wayward_server::IntoResponse>() {}
+
+            fn __check_response_call() {
+                __check_response::<#ret_ty>();
+            }
+
+            #(#parts_checks)*
+        }
+    };
+
+    expanded.into()
+}
+
+// ---------------------------------------------------------------------------
+// #[api_description] trait macro
+// ---------------------------------------------------------------------------
+
+/// Defines an API as a trait, generating endpoint types and a `Serves` bridge.
+///
+/// Each method in the trait is annotated with an HTTP method attribute (`#[get(...)]`,
+/// `#[post(...)]`, etc.) that specifies the path. The macro generates:
+///
+/// 1. A type alias `<TraitName>Spec` — a tuple of endpoint types
+/// 2. The original trait with async method signatures
+/// 3. An `into_handlers` method that produces a handler tuple for `Server::new`
+///
+/// # Example
+///
+/// ```ignore
+/// #[api_description]
+/// trait UserAPI {
+///     #[get("users" / u32)]
+///     async fn get_user(path: Path<UserByIdPath>) -> Json<User>;
+///
+///     #[post("users")]
+///     async fn create_user(body: Json<CreateUser>) -> Json<User>;
+/// }
+///
+/// struct MyImpl;
+/// impl UserAPI for MyImpl {
+///     async fn get_user(path: Path<UserByIdPath>) -> Json<User> { todo!() }
+///     async fn create_user(body: Json<CreateUser>) -> Json<User> { todo!() }
+/// }
+///
+/// // Use: serve_user_api() bridges the trait impl to Server::new
+/// Server::<UserAPISpec>::new(serve_user_api(MyImpl));
+/// ```
+#[proc_macro_attribute]
+pub fn api_description(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let _ = attr;
+    let trait_def = match syn::parse::<syn::ItemTrait>(item) {
+        Ok(t) => t,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    match api_description_impl(trait_def) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+fn api_description_impl(trait_def: syn::ItemTrait) -> syn::Result<TokenStream2> {
+    let trait_name = &trait_def.ident;
+    let trait_vis = &trait_def.vis;
+    let spec_name = format_ident!("{}Spec", trait_name);
+    let handlers_fn = format_ident!("serve_{}", to_snake_case(&trait_name.to_string()));
+    let markers_mod = format_ident!("__wa_desc_{}", trait_name);
+
+    // Parse each method and its route attribute.
+    let mut routes = Vec::new();
+    let mut clean_methods = Vec::new();
+
+    for item in &trait_def.items {
+        let method = match item {
+            syn::TraitItem::Fn(m) => m,
+            other => {
+                clean_methods.push(quote! { #other });
+                continue;
+            }
+        };
+
+        // Find and parse the route attribute (#[get(...)], #[post(...)], etc.).
+        let (http_method, path_segments, remaining_attrs) = parse_route_attr(method)?;
+
+        let sig = &method.sig;
+        if sig.asyncness.is_none() {
+            return Err(syn::Error::new_spanned(
+                sig.fn_token,
+                "api_description methods must be async",
+            ));
+        }
+
+        // Emit clean method (without the route attribute).
+        // - Inject `&self` as the first parameter if not already present.
+        // - Desugar `async fn` to `fn -> impl Future<Output = T> + Send`
+        //   so the trait is object-safe and futures are Send.
+        let default_body = &method.default;
+        let mut clean_sig = method.sig.clone();
+        let has_self = clean_sig
+            .inputs
+            .iter()
+            .any(|arg| matches!(arg, syn::FnArg::Receiver(_)));
+        if !has_self {
+            clean_sig.inputs.insert(0, syn::parse_quote! { &self });
+        }
+        // Desugar async fn to fn -> impl Future + Send.
+        if clean_sig.asyncness.is_some() {
+            clean_sig.asyncness = None;
+            let ret_ty = match &clean_sig.output {
+                syn::ReturnType::Default => quote! { () },
+                syn::ReturnType::Type(_, ty) => quote! { #ty },
+            };
+            clean_sig.output = syn::parse_quote! {
+                -> impl ::std::future::Future<Output = #ret_ty> + Send
+            };
+        }
+        let semi = if default_body.is_none() {
+            quote! { ; }
+        } else {
+            quote! {}
+        };
+        clean_methods.push(quote! {
+            #(#remaining_attrs)*
+            #clean_sig #default_body #semi
+        });
+
+        routes.push(ParsedRoute {
+            method_name: sig.ident.clone(),
+            http_method,
+            path_segments,
+            sig: sig.clone(),
+        });
+    }
+
+    // Collect all literal marker types.
+    let mut seen = std::collections::HashSet::new();
+    let mut all_marker_defs = Vec::new();
+    for route in &routes {
+        all_marker_defs.extend(collect_marker_defs(&route.path_segments, &mut seen));
+    }
+
+    let mod_path: TokenStream2 = quote! { #markers_mod:: };
+
+    // Build endpoint types and path type aliases for each route.
+    let mut endpoint_types = Vec::new();
+    let mut path_type_aliases = Vec::new();
+    for route in &routes {
+        let path_type = build_hlist_type(&route.path_segments, &mod_path);
+        let method_type = method_type_ident(&route.http_method);
+
+        // Generate a path type alias named after the method (e.g., get_user -> GetUserPath).
+        let path_alias = format_ident!("{}Path", to_pascal_case(&route.method_name.to_string()));
+        path_type_aliases.push(quote! {
+            #trait_vis type #path_alias = #path_type;
+        });
+
+        // Extract request body type and response type from the signature.
+        let (req_type, res_type) = extract_req_res_types(&route.sig)?;
+
+        let endpoint = match req_type {
+            Some(req) => {
+                quote! { ::wayward_core::Endpoint<::wayward_core::#method_type, #path_type, #req, #res_type> }
+            }
+            None => {
+                quote! { ::wayward_core::Endpoint<::wayward_core::#method_type, #path_type, ::wayward_core::NoBody, #res_type> }
+            }
+        };
+        endpoint_types.push(endpoint);
+    }
+
+    // Generate the into_handlers function.
+    // For each route, create a closure that calls the trait method.
+    let impl_clones: Vec<TokenStream2> = routes
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            let clone_name = format_ident!("__impl_{}", i);
+            quote! { let #clone_name = __impl.clone(); }
+        })
+        .collect();
+
+    let handler_binds: Vec<TokenStream2> = routes
+        .iter()
+        .enumerate()
+        .map(|(i, route)| {
+            let method_name = &route.method_name;
+            let ep_type = &endpoint_types[i];
+            let clone_name = format_ident!("__impl_{}", i);
+
+            // Collect typed arguments (skip &self receivers).
+            let args: Vec<&syn::PatType> = route
+                .sig
+                .inputs
+                .iter()
+                .filter_map(|arg| match arg {
+                    syn::FnArg::Typed(pt) => Some(pt),
+                    _ => None,
+                })
+                .collect();
+
+            let arg_pats: Vec<&syn::Pat> = args.iter().map(|a| a.pat.as_ref()).collect();
+            let arg_types: Vec<&syn::Type> = args.iter().map(|a| a.ty.as_ref()).collect();
+
+            quote! {
+                ::wayward_server::bind::<#ep_type, _, _>(
+                    move |#(#arg_pats: #arg_types),*| {
+                        let __self = #clone_name.clone();
+                        async move {
+                            __self.#method_name(#(#arg_pats),*).await
+                        }
+                    }
+                )
+            }
+        })
+        .collect();
+
+    // Supertraits of the original trait.
+    let supertraits = &trait_def.supertraits;
+    let colon_token = &trait_def.colon_token;
+
+    let expanded = quote! {
+        // Marker types for literal path segments.
+        #[doc(hidden)]
+        #[allow(non_snake_case, non_camel_case_types)]
+        mod #markers_mod {
+            #(#all_marker_defs)*
+        }
+
+        // Path type aliases for each route (e.g., GetUserPath, CreateUserPath).
+        #(#path_type_aliases)*
+
+        // The API spec type alias.
+        #trait_vis type #spec_name = (#(#endpoint_types,)*);
+
+        // The trait itself (with route attributes stripped).
+        #trait_vis trait #trait_name #colon_token #supertraits {
+            #(#clean_methods)*
+        }
+
+        // Bridge: convert a trait impl into bound handlers for Server::new.
+        //
+        // Usage: `Server::<UserAPISpec>::new(serve_user_api(my_impl))`
+        #trait_vis fn #handlers_fn<T>(
+            __impl: T,
+        ) -> (#(::wayward_server::BoundHandler<#endpoint_types>,)*)
+        where
+            T: #trait_name + Clone + Send + Sync + 'static,
+        {
+            #(#impl_clones)*
+            (#(#handler_binds,)*)
+        }
+    };
+
+    Ok(expanded)
+}
+
+/// Convert snake_case to PascalCase.
+fn to_pascal_case(s: &str) -> String {
+    s.split('_')
+        .map(|word| {
+            let mut chars = word.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(c) => c.to_uppercase().chain(chars).collect(),
+            }
+        })
+        .collect()
+}
+
+/// Convert PascalCase to snake_case, handling acronyms correctly.
+/// "UserAPI" -> "user_api", "HTMLParser" -> "html_parser"
+fn to_snake_case(s: &str) -> String {
+    let mut result = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    for (i, &ch) in chars.iter().enumerate() {
+        if ch.is_uppercase() {
+            if i > 0 {
+                let prev_upper = chars[i - 1].is_uppercase();
+                let next_lower = chars.get(i + 1).is_some_and(|c| c.is_lowercase());
+                // Insert underscore before: a new uppercase word, or the last letter
+                // of an acronym followed by a lowercase letter.
+                if !prev_upper || next_lower {
+                    result.push('_');
+                }
+            }
+            result.push(ch.to_ascii_lowercase());
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+struct ParsedRoute {
+    method_name: Ident,
+    http_method: String,
+    path_segments: Vec<PathSegment>,
+    sig: syn::Signature,
+}
+
+/// Parse the `#[get(...)]`, `#[post(...)]`, etc. attribute from a trait method.
+/// Returns (http_method, path_segments, remaining_attrs).
+fn parse_route_attr(
+    method: &syn::TraitItemFn,
+) -> syn::Result<(String, Vec<PathSegment>, Vec<syn::Attribute>)> {
+    let route_methods = ["get", "post", "put", "delete", "patch", "head", "options"];
+    let mut http_method = None;
+    let mut path_segments = None;
+    let mut remaining_attrs = Vec::new();
+
+    for attr in &method.attrs {
+        let ident = attr.path().get_ident();
+        if let Some(id) = ident {
+            let name = id.to_string();
+            if route_methods.contains(&name.as_str()) {
+                if http_method.is_some() {
+                    return Err(syn::Error::new_spanned(
+                        attr,
+                        "only one route attribute per method",
+                    ));
+                }
+                http_method = Some(name.to_uppercase());
+                // Parse the attribute arguments as path segments.
+                let segments: Vec<PathSegment> = attr.parse_args_with(parse_path_segments)?;
+                path_segments = Some(segments);
+                continue;
+            }
+        }
+        remaining_attrs.push(attr.clone());
+    }
+
+    match (http_method, path_segments) {
+        (Some(m), Some(p)) => Ok((m, p, remaining_attrs)),
+        _ => Err(syn::Error::new_spanned(
+            &method.sig.ident,
+            "api_description methods must have a route attribute: #[get(...)], #[post(...)], etc.",
+        )),
+    }
+}
+
+/// Extract request body type and response type from a method signature.
+///
+/// The response type is the return type. The request body type is the last
+/// argument if the HTTP method supports a body (POST, PUT, PATCH) and the
+/// last argument looks like a body extractor (Json<T>, Bytes, String).
+/// For simplicity, we always treat the return type as the response and
+/// don't try to extract the body type from the signature — that's determined
+/// by the endpoint type parameters and the Handler impls at the server level.
+fn extract_req_res_types(
+    sig: &syn::Signature,
+) -> syn::Result<(Option<TokenStream2>, TokenStream2)> {
+    let res_type = match &sig.output {
+        syn::ReturnType::Default => quote! { () },
+        syn::ReturnType::Type(_, ty) => quote! { #ty },
+    };
+
+    // For the request type, we don't infer it from args — it's NoBody by default.
+    // Users should specify body types via the endpoint type if needed.
+    // The macro primarily provides ergonomic trait-based API definitions.
+    Ok((None, res_type))
+}

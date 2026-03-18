@@ -1,0 +1,5 @@
+error: api_description methods must have a route attribute: #[get(...)], #[post(...)], etc.
+ --> tests/api_description/fail_no_route_attr.rs:5:14
+  |
+5 |     async fn missing_route() -> String;
+  |              ^^^^^^^^^^^^^

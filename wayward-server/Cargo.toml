@@ -1,0 +1,38 @@
+[package]
+name = "wayward-server"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+openapi = ["dep:wayward-openapi"]
+axum-interop = ["dep:axum"]
+
+[dependencies]
+wayward-core = { path = "../wayward-core" }
+wayward-openapi = { path = "../wayward-openapi", optional = true }
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
+tower = { version = "0.5", features = ["util"] }
+tower-service = "0.3"
+tower-layer = "0.3"
+tower-http = { version = "0.6", features = ["trace", "cors", "timeout", "compression-gzip", "compression-deflate"] }
+axum = { version = "0.8", optional = true }
+tokio = { version = "1", features = ["full"] }
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
+bytes = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_urlencoded = "0.7"
+futures = "0.3"
+pin-project-lite = "0.2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+wayward-macros = { path = "../wayward-macros" }
+wayward-openapi = { path = "../wayward-openapi" }
+reqwest = { version = "0.12", features = ["json"] }
+serde_json = "1"
+axum = "0.8"

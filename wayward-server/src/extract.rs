@@ -1,0 +1,247 @@
+//! Request extraction traits and built-in extractors.
+//!
+//! Extractors pull typed data from incoming HTTP requests. Each handler
+//! argument is an extractor that implements [`FromRequestParts`] (for
+//! metadata like path captures, headers, query strings) or [`FromRequest`]
+//! (for the request body).
+
+use std::sync::Arc;
+
+use bytes::Bytes;
+use http::request::Parts;
+use http::StatusCode;
+use serde::de::DeserializeOwned;
+
+use wayward_core::{ExtractPath, PathSpec};
+
+use crate::response::IntoResponse;
+
+/// Extract a value from request metadata (URI, headers, extensions).
+///
+/// Implementors can be used as handler arguments. Multiple `FromRequestParts`
+/// extractors can appear in a single handler since they don't consume the body.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be extracted from request metadata",
+    label = "does not implement `FromRequestParts`",
+    note = "valid extractors: `Path<P>`, `State<T>`, `Query<T>`, `HeaderMap`"
+)]
+pub trait FromRequestParts: Sized + Send {
+    /// The error type returned when extraction fails.
+    type Error: IntoResponse;
+
+    /// Extract this type from the request parts.
+    fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error>;
+}
+
+/// Extract a value by consuming the request body.
+///
+/// At most one `FromRequest` extractor can appear per handler (as the last
+/// argument), since it consumes the body.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be extracted from the request body",
+    label = "does not implement `FromRequest`",
+    note = "valid body extractors: `Json<T>`, `Bytes`, `String`, `()`"
+)]
+pub trait FromRequest: Sized + Send {
+    /// The error type returned when extraction fails.
+    type Error: IntoResponse;
+
+    /// Extract this type from the request parts and pre-collected body bytes.
+    ///
+    /// This is async for interface consistency, though body bytes are already
+    /// collected by the router before dispatch.
+    fn from_request(
+        parts: &Parts,
+        body: bytes::Bytes,
+    ) -> impl std::future::Future<Output = Result<Self, Self::Error>> + Send;
+}
+
+// ---------------------------------------------------------------------------
+// Path extractor
+// ---------------------------------------------------------------------------
+
+/// Extracts typed path captures from the URL.
+///
+/// The path segments are stored in request extensions by the router
+/// before the handler is called.
+///
+/// # Example
+///
+/// ```ignore
+/// async fn get_user(Path((id,)): Path<path!("users" / u32)>) -> Json<User> {
+///     // id: u32, extracted from /users/42
+/// }
+/// ```
+pub struct Path<P: PathSpec>(pub P::Captures);
+
+/// Raw path segments stored in request extensions by the router.
+#[derive(Clone)]
+pub(crate) struct PathSegments(pub Arc<Vec<String>>);
+
+impl<P> FromRequestParts for Path<P>
+where
+    P: PathSpec + ExtractPath + Send,
+    P::Captures: Send,
+{
+    type Error = (StatusCode, String);
+
+    fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error> {
+        let segments = parts.extensions.get::<PathSegments>().ok_or_else(|| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "missing path segments in request extensions".to_string(),
+            )
+        })?;
+
+        let seg_refs: Vec<&str> = segments.0.iter().map(|s| s.as_str()).collect();
+        P::extract(&seg_refs).map(Path).ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "failed to parse path segments for pattern: {}",
+                    P::pattern()
+                ),
+            )
+        })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// State extractor
+// ---------------------------------------------------------------------------
+
+/// Extracts shared application state.
+///
+/// State must be added to the server via [`Server::with_state`](crate::server::Server::with_state)
+/// and is injected into request extensions.
+///
+/// # Example
+///
+/// ```ignore
+/// async fn list_users(State(db): State<DbPool>) -> Json<Vec<User>> {
+///     // ...
+/// }
+/// ```
+pub struct State<T>(pub T);
+
+impl<T: Clone + Send + Sync + 'static> FromRequestParts for State<T> {
+    type Error = (StatusCode, String);
+
+    fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error> {
+        parts
+            .extensions
+            .get::<T>()
+            .cloned()
+            .map(State)
+            .ok_or_else(|| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!(
+                        "state of type `{}` not found — did you call .with_state()?",
+                        std::any::type_name::<T>()
+                    ),
+                )
+            })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Query extractor
+// ---------------------------------------------------------------------------
+
+/// Extracts typed query string parameters.
+///
+/// # Example
+///
+/// ```ignore
+/// #[derive(Deserialize)]
+/// struct Pagination { page: u32, per_page: u32 }
+///
+/// async fn list_users(Query(p): Query<Pagination>) -> Json<Vec<User>> {
+///     // p.page, p.per_page
+/// }
+/// ```
+pub struct Query<T>(pub T);
+
+impl<T: DeserializeOwned + Send> FromRequestParts for Query<T> {
+    type Error = (StatusCode, String);
+
+    fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error> {
+        let query = parts.uri.query().unwrap_or("");
+        serde_urlencoded::from_str::<T>(query)
+            .map(Query)
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("failed to parse query string: {e}"),
+                )
+            })
+    }
+}
+
+// ---------------------------------------------------------------------------
+// HeaderMap extractor
+// ---------------------------------------------------------------------------
+
+impl FromRequestParts for http::HeaderMap {
+    type Error = (StatusCode, String);
+
+    fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error> {
+        Ok(parts.headers.clone())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Body extractors (FromRequest)
+// ---------------------------------------------------------------------------
+
+/// JSON request body extractor.
+///
+/// Parses the request body as JSON. Requires `Content-Type: application/json`.
+///
+/// # Example
+///
+/// ```ignore
+/// async fn create_user(Json(body): Json<CreateUser>) -> Json<User> {
+///     // body: CreateUser, deserialized from JSON
+/// }
+/// ```
+impl<T: DeserializeOwned + Send> FromRequest for crate::response::Json<T> {
+    type Error = (StatusCode, String);
+
+    async fn from_request(_parts: &Parts, body: bytes::Bytes) -> Result<Self, Self::Error> {
+        serde_json::from_slice(&body)
+            .map(crate::response::Json)
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid JSON: {e}")))
+    }
+}
+
+impl FromRequest for Bytes {
+    type Error = (StatusCode, String);
+
+    async fn from_request(_parts: &Parts, body: bytes::Bytes) -> Result<Self, Self::Error> {
+        Ok(body)
+    }
+}
+
+impl FromRequest for String {
+    type Error = (StatusCode, String);
+
+    async fn from_request(_parts: &Parts, body: bytes::Bytes) -> Result<Self, Self::Error> {
+        String::from_utf8(body.to_vec()).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                format!("request body is not valid UTF-8: {e}"),
+            )
+        })
+    }
+}
+
+/// Unit extractor — always succeeds, ignoring the body.
+impl FromRequest for () {
+    type Error = (StatusCode, String);
+
+    async fn from_request(_parts: &Parts, _body: bytes::Bytes) -> Result<Self, Self::Error> {
+        Ok(())
+    }
+}

@@ -1,0 +1,11 @@
+[workspace]
+members = [
+    "wayward-core",
+    "wayward-server",
+    "wayward-client",
+    "wayward-openapi",
+    "wayward-macros",
+    "wayward",
+    "spike",
+]
+resolver = "2"

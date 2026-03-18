@@ -1,0 +1,30 @@
+error[E0277]: the handler tuple does not match the API specification `(Endpoint<Get, HCons<Lit<__lit_hello>, HNil>, NoBody, std::string::String>,)`
+  --> tests/compile_fail/handler_tuple_mismatch.rs:13:32
+   |
+13 |       let _ = Server::<API>::new((
+   |  _____________------------------_^
+   | |             |
+   | |             required by a bound introduced by this call
+14 | |         bind::<_, _, _>(hello),
+15 | |         bind::<_, _, _>(world),
+16 | |     ));
+   | |_____^ handler tuple does not implement `Serves<(Endpoint<Get, HCons<Lit<__lit_hello>, HNil>, NoBody, std::string::String>,)>`
+   |
+   = help: the trait `Serves<(Endpoint<Get, HCons<Lit<__lit_hello>, HNil>, NoBody, std::string::String>,)>` is not implemented for `(BoundHandler<_>, BoundHandler<_>)`
+   = note: each endpoint in the API type needs a corresponding `BoundHandler` created via `bind()`
+   = note: the handler tuple must have exactly one `bind::<_, _, _>(handler)` for each endpoint
+   = help: the following other types implement trait `Serves<A>`:
+             `(BoundHandler<E0>, BoundHandler<E1>)` implements `Serves<(E0, E1)>`
+             `(BoundHandler<E0>, BoundHandler<E1>, BoundHandler<E2>)` implements `Serves<(E0, E1, E2)>`
+             `(BoundHandler<E0>, BoundHandler<E1>, BoundHandler<E2>, BoundHandler<E3>)` implements `Serves<(E0, E1, E2, E3)>`
+             `(BoundHandler<E0>, BoundHandler<E1>, BoundHandler<E2>, BoundHandler<E3>, BoundHandler<E4>)` implements `Serves<(E0, E1, E2, E3, E4)>`
+             `(BoundHandler<E0>, BoundHandler<E1>, BoundHandler<E2>, BoundHandler<E3>, BoundHandler<E4>, BoundHandler<E5>)` implements `Serves<(E0, E1, E2, E3, E4, E5)>`
+             `(BoundHandler<E0>, BoundHandler<E1>, BoundHandler<E2>, BoundHandler<E3>, BoundHandler<E4>, BoundHandler<E5>, BoundHandler<E6>)` implements `Serves<(E0, E1, E2, E3, E4, E5, E6)>`
+             `(BoundHandler<E0>, BoundHandler<E1>, BoundHandler<E2>, BoundHandler<E3>, BoundHandler<E4>, BoundHandler<E5>, BoundHandler<E6>, BoundHandler<E7>)` implements `Serves<(E0, E1, E2, E3, E4, E5, E6, E7)>`
+             `(BoundHandler<E0>, BoundHandler<E1>, BoundHandler<E2>, BoundHandler<E3>, BoundHandler<E4>, BoundHandler<E5>, BoundHandler<E6>, BoundHandler<E7>, BoundHandler<E8>)` implements `Serves<(E0, E1, E2, E3, E4, E5, E6, E7, E8)>`
+           and $N others
+note: required by a bound in `wayward::Server::<A>::new`
+  --> $WORKSPACE/wayward-server/src/server.rs
+   |
+   |     pub fn new<H: Serves<A>>(handlers: H) -> Self {
+   |                   ^^^^^^^^^ required by this bound in `Server::<A>::new`

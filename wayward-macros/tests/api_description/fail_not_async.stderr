@@ -1,0 +1,5 @@
+error: api_description methods must be async
+ --> tests/api_description/fail_not_async.rs:6:5
+  |
+6 |     fn not_async() -> String;
+  |     ^^
