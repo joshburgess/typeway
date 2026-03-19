@@ -28,6 +28,21 @@ enum Command {
         dry_run: bool,
     },
 
+    /// Convert Typeway code to Axum.
+    TypewayToAxum {
+        /// Process a single file.
+        #[arg(long)]
+        file: Option<PathBuf>,
+
+        /// Process all .rs files in a directory.
+        #[arg(long, default_value = "src/")]
+        dir: PathBuf,
+
+        /// Print output to stdout instead of writing files.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Analyze Axum code and report what would be converted.
     Check {
         /// Process a single file.
@@ -55,6 +70,45 @@ fn main() -> Result<()> {
                     .with_context(|| format!("failed to read {}", path.display()))?;
 
                 match typeway_migrate::axum_to_typeway(&source) {
+                    Ok(output) => {
+                        if dry_run {
+                            println!("// === {} ===\n{}", path.display(), output);
+                        } else {
+                            // Create backup.
+                            let backup = path.with_extension("rs.bak");
+                            std::fs::copy(&path, &backup).with_context(|| {
+                                format!("failed to create backup {}", backup.display())
+                            })?;
+
+                            std::fs::write(&path, &output).with_context(|| {
+                                format!("failed to write {}", path.display())
+                            })?;
+
+                            eprintln!(
+                                "Converted {} (backup: {})",
+                                path.display(),
+                                backup.display()
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Skipping {} — {}", path.display(), e);
+                    }
+                }
+            }
+        }
+
+        Command::TypewayToAxum {
+            file,
+            dir,
+            dry_run,
+        } => {
+            let files = collect_files(file.as_deref(), &dir)?;
+            for path in files {
+                let source = std::fs::read_to_string(&path)
+                    .with_context(|| format!("failed to read {}", path.display()))?;
+
+                match typeway_migrate::typeway_to_axum(&source) {
                     Ok(output) => {
                         if dry_run {
                             println!("// === {} ===\n{}", path.display(), output);
