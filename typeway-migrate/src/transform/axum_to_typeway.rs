@@ -29,6 +29,18 @@ pub fn emit_typeway(model: &ApiModel) -> TokenStream {
     }
 }
 
+/// Generate warning comment lines to prepend to the output source.
+///
+/// These are returned as plain strings because proc-macro token streams
+/// cannot represent comments.
+pub fn emit_warning_lines(model: &ApiModel) -> Vec<String> {
+    let mut lines = Vec::new();
+    for warning in &model.warnings {
+        lines.push(format!("// TODO: {}", warning));
+    }
+    lines
+}
+
 fn emit_use_statements() -> TokenStream {
     quote! {
         use typeway::prelude::*;
@@ -266,6 +278,12 @@ fn emit_server(model: &ApiModel) -> TokenStream {
         }
     });
 
+    let nest = model.prefix.as_ref().map(|p| {
+        quote! {
+            .nest(#p)
+        }
+    });
+
     quote! {
         async fn serve(addr: std::net::SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Server::<API>::new((
@@ -273,6 +291,7 @@ fn emit_server(model: &ApiModel) -> TokenStream {
             ))
             #(#layers)*
             #state
+            #nest
             .serve(addr)
             .await
         }

@@ -123,6 +123,8 @@ pub fn parse_typeway_file(source: &str) -> Result<ApiModel> {
         layers,
         passthrough_items,
         use_items,
+        prefix: None,
+        warnings: Vec::new(),
     })
 }
 

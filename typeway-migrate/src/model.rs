@@ -15,6 +15,10 @@ pub struct ApiModel {
     pub passthrough_items: Vec<syn::Item>,
     /// Use statements that need rewriting.
     pub use_items: Vec<syn::ItemUse>,
+    /// Nest prefix, if detected (e.g., `"/api/v1"`).
+    pub prefix: Option<String>,
+    /// Warnings produced during parsing (e.g., unsupported patterns).
+    pub warnings: Vec<String>,
 }
 
 /// A single HTTP endpoint.

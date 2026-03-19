@@ -7,6 +7,8 @@ use syn::{
     Expr, ExprCall, ExprMethodCall, ExprPath, Item, ItemFn, Lit,
 };
 
+use quote::quote;
+
 use crate::model::*;
 use crate::parse::common;
 
@@ -16,6 +18,42 @@ struct RawRoute {
     path_pattern: String,
     method: HttpMethod,
     handler_name: String,
+}
+
+/// Check whether a return type is `impl IntoResponse` (opaque).
+fn is_impl_into_response(ty: &syn::Type) -> bool {
+    if let syn::Type::ImplTrait(impl_trait) = ty {
+        for bound in &impl_trait.bounds {
+            if let syn::TypeParamBound::Trait(trait_bound) = bound {
+                if let Some(seg) = trait_bound.path.segments.last() {
+                    if seg.ident == "IntoResponse" {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Check whether a layer expression is `axum::middleware::from_fn(...)` or
+/// `middleware::from_fn(...)`.
+fn is_from_fn_middleware(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call(call) => {
+            if let Expr::Path(ExprPath { path, .. }) = call.func.as_ref() {
+                let segments: Vec<_> =
+                    path.segments.iter().map(|s| s.ident.to_string()).collect();
+                // Match `axum::middleware::from_fn(...)`, `middleware::from_fn(...)`,
+                // or any path ending in `middleware::from_fn`.
+                segments
+                    .ends_with(&["middleware".to_string(), "from_fn".to_string()])
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
 }
 
 /// Parse an Axum source file into an `ApiModel`.
@@ -29,6 +67,8 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
     let mut state_type: Option<syn::Type> = None;
     let mut passthrough_items: Vec<Item> = Vec::new();
     let mut use_items: Vec<syn::ItemUse> = Vec::new();
+    let mut prefix: Option<String> = None;
+    let mut warnings: Vec<String> = Vec::new();
 
     // First pass: collect handler functions and identify the router function.
     for item in &file.items {
@@ -40,12 +80,22 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
                     // Check if this is a router-building function.
                     let routes_and_layers =
                         extract_routes_from_fn(func);
-                    if !routes_and_layers.routes.is_empty() {
+                    let has_router_content = !routes_and_layers.routes.is_empty()
+                        || routes_and_layers.prefix.is_some()
+                        || !routes_and_layers.layers.is_empty()
+                        || !routes_and_layers.warnings.is_empty()
+                        || routes_and_layers.state_type.is_some();
+
+                    if has_router_content {
                         raw_routes.extend(routes_and_layers.routes);
                         layers.extend(routes_and_layers.layers);
                         if routes_and_layers.state_type.is_some() {
                             state_type = routes_and_layers.state_type;
                         }
+                        if routes_and_layers.prefix.is_some() {
+                            prefix = routes_and_layers.prefix;
+                        }
+                        warnings.extend(routes_and_layers.warnings);
                     } else {
                         passthrough_items.push(item.clone());
                     }
@@ -70,6 +120,10 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
                 if routes_and_layers.state_type.is_some() {
                     state_type = routes_and_layers.state_type;
                 }
+                if routes_and_layers.prefix.is_some() {
+                    prefix = routes_and_layers.prefix;
+                }
+                warnings.extend(routes_and_layers.warnings);
             }
         }
     }
@@ -129,12 +183,35 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
         fill_capture_types(endpoint, &path_models);
     }
 
+    // Detect `impl IntoResponse` return types and custom extractors.
+    for endpoint in &endpoints {
+        if is_impl_into_response(&endpoint.response_type) {
+            warnings.push(format!(
+                "Handler `{}` returns `impl IntoResponse` — specify a concrete type for the API tuple",
+                endpoint.handler.name,
+            ));
+        }
+        for ext in &endpoint.handler.extractors {
+            if ext.kind == ExtractorKind::Unknown {
+                let ty = &ext.full_type;
+                let ty_str = quote!(#ty).to_string();
+                warnings.push(format!(
+                    "Handler `{}` uses unknown extractor type `{}` — review after conversion",
+                    endpoint.handler.name,
+                    ty_str,
+                ));
+            }
+        }
+    }
+
     Ok(ApiModel {
         endpoints,
         state_type,
         layers,
         passthrough_items,
         use_items,
+        prefix,
+        warnings,
     })
 }
 
@@ -143,6 +220,8 @@ struct RoutesAndLayers {
     routes: Vec<RawRoute>,
     layers: Vec<Expr>,
     state_type: Option<syn::Type>,
+    prefix: Option<String>,
+    warnings: Vec<String>,
 }
 
 /// Scan a function body for `Router::new().route(...)` chains.
@@ -151,6 +230,8 @@ fn extract_routes_from_fn(func: &ItemFn) -> RoutesAndLayers {
         routes: Vec::new(),
         layers: Vec::new(),
         state_type: None,
+        prefix: None,
+        warnings: Vec::new(),
     };
 
     // Walk statements looking for expressions that are Router chains.
@@ -195,7 +276,13 @@ fn extract_from_expr(expr: &Expr, result: &mut RoutesAndLayers) {
                 }
                 "layer" => {
                     if let Some(arg) = mc.args.first() {
-                        result.layers.push(arg.clone());
+                        if is_from_fn_middleware(arg) {
+                            result.warnings.push(
+                                "axum::middleware::from_fn detected — must be converted to a Tower layer manually".to_string(),
+                            );
+                        } else {
+                            result.layers.push(arg.clone());
+                        }
                     }
                     extract_from_expr(&mc.receiver, result);
                 }
@@ -207,7 +294,23 @@ fn extract_from_expr(expr: &Expr, result: &mut RoutesAndLayers) {
                     extract_from_expr(&mc.receiver, result);
                 }
                 "nest" => {
-                    // TODO: handle nested routers
+                    // Extract the prefix string from .nest("/prefix", sub_router).
+                    if let Some(Expr::Lit(lit)) = mc.args.first() {
+                        if let Lit::Str(s) = &lit.lit {
+                            result.prefix = Some(s.value());
+                        }
+                    }
+                    // If the second arg is a function call, note as a TODO.
+                    if let Some(Expr::Call(call)) = mc.args.get(1) {
+                        if let Expr::Path(p) = call.func.as_ref() {
+                            let fn_name = p.path.segments.last()
+                                .map(|s| s.ident.to_string())
+                                .unwrap_or_default();
+                            result.warnings.push(
+                                format!("Nested router from function call `{}()` — must be inlined or converted separately", fn_name),
+                            );
+                        }
+                    }
                     extract_from_expr(&mc.receiver, result);
                 }
                 _ => {
