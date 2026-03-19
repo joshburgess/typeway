@@ -376,11 +376,11 @@ impl Parse for PathRefInput {
 ///
 /// ```ignore
 /// #[handler]
-/// fn not_async() -> String { todo!() }
+/// fn not_async() -> String { "hello".to_string() }
 /// // error: handler functions must be async
 ///
 /// #[handler]
-/// async fn bad_return() -> NotAResponse { todo!() }
+/// async fn bad_return() -> NotAResponse { NotAResponse }
 /// // error: `NotAResponse` does not implement `IntoResponse`
 /// ```
 #[proc_macro_attribute]
@@ -484,10 +484,16 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
 ///     async fn create_user(body: Json<CreateUser>) -> Json<User>;
 /// }
 ///
-/// struct MyImpl;
+/// struct MyImpl { db: DbPool }
 /// impl UserAPI for MyImpl {
-///     async fn get_user(path: Path<UserByIdPath>) -> Json<User> { todo!() }
-///     async fn create_user(body: Json<CreateUser>) -> Json<User> { todo!() }
+///     async fn get_user(path: Path<UserByIdPath>) -> Json<User> {
+///         let user = User { id: path.id, name: "Alice".into() };
+///         Json(user)
+///     }
+///     async fn create_user(body: Json<CreateUser>) -> Json<User> {
+///         let user = User { id: 1, name: body.0.name.clone() };
+///         Json(user)
+///     }
 /// }
 ///
 /// // Use: serve_user_api() bridges the trait impl to Server::new

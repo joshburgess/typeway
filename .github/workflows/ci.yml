@@ -103,3 +103,33 @@ jobs:
 
       - name: Run cargo audit
         run: cargo audit
+
+  compile-time:
+    name: Compile Time
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Release build with timings
+        run: cargo build --workspace --all-features --release --timings
+
+      - name: Upload release timing report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timing-release
+          path: target/cargo-timings/cargo-timing.html
+
+      - name: Clean before dev build
+        run: cargo clean
+
+      - name: Dev build with timings
+        run: cargo build --workspace --all-features --timings 2>&1 | tee build-timing.txt
+
+      - name: Upload dev timing output
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-timing-dev
+          path: |
+            build-timing.txt
+            target/cargo-timings/cargo-timing.html
