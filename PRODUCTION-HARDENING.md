@@ -7,7 +7,7 @@ Gaps identified between the current state (Phases 0–7 complete) and production
 ## Not Yet Implemented (from original plan)
 
 - [x] **MSRV testing in CI** — Rust 1.80, CI job verifies `cargo check --workspace --all-features`
-- [ ] **Compile-time regression tracking** — benchmarks exist but CI doesn't fail on regressions or track build times with `cargo build --timings` / `hyperfine`
+- [x] **Compile-time regression tracking** — CI job captures `cargo build --timings` artifacts (release + dev)
 - [ ] **Benchmark regression gating** — criterion benchmarks exist but no baseline comparison in CI that fails on >10% throughput drops
 
 ## Production Hardening Gaps
@@ -17,10 +17,10 @@ Gaps identified between the current state (Phases 0–7 complete) and production
 - [x] **Dependency auditing in CI** — `cargo-deny` (advisories + licenses) and `cargo-audit` (CVEs) added to CI
 - [x] **Client retries/backoff** — `RetryPolicy` + `ClientConfig` with exponential backoff, jitter, and configurable timeouts
 - [x] **Security headers** — `SecureHeadersLayer` with 6 defaults + builder pattern for HSTS, CSP overrides, custom headers
-- [ ] **Request size limits adversarial testing** — body size limits exist but need testing against slowloris, chunked encoding edge cases, etc.
-- [ ] **Graceful degradation docs** — graceful shutdown exists but no guidance on health checks, readiness probes, or load balancer draining
+- [x] **Request size limits adversarial testing** — 9 tests covering boundary conditions, chunked encoding, mismatched Content-Length, custom limits
+- [x] **Graceful degradation docs** — `production` module with health checks, shutdown, draining, recommended middleware stack, panic recovery
 
 ## Polish
 
-- [ ] **`todo!()` in macro doc examples** — 4 instances in `typeway-macros/src/lib.rs`
-- [ ] **No `CHANGELOG.md`** or versioning strategy
+- [x] **`todo!()` in macro doc examples** — replaced with realistic code
+- [x] **Per-crate changelogs** — Keep a Changelog format, independent semver per crate
