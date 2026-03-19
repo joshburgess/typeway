@@ -6,6 +6,7 @@
 use indexmap::IndexMap;
 
 use typeway_core::*;
+use typeway_core::effects::{Effect, Requires};
 
 use crate::spec::*;
 
@@ -21,6 +22,47 @@ use crate::spec::*;
 pub trait ToSchema {
     fn schema() -> Schema;
     fn type_name() -> &'static str;
+
+    /// Return an example JSON value for this type.
+    ///
+    /// Override this to include response examples in the generated OpenAPI spec.
+    /// The default returns `None` (no example).
+    fn example() -> Option<serde_json::Value> {
+        None
+    }
+}
+
+/// Provide example response values for OpenAPI spec generation.
+///
+/// Implement this trait on types that should include example values in the
+/// generated OpenAPI spec. The framework calls [`ExampleValue::example()`],
+/// serializes the result, and includes it in the MediaType's `example` field.
+///
+/// # Example
+///
+/// ```ignore
+/// use typeway_openapi::ExampleValue;
+///
+/// #[derive(Serialize)]
+/// struct User { id: u32, name: String }
+///
+/// impl ExampleValue for User {
+///     fn example() -> Self {
+///         User { id: 1, name: "Alice".to_string() }
+///     }
+/// }
+/// ```
+pub trait ExampleValue: serde::Serialize {
+    /// Return an example instance of this type.
+    fn example() -> Self;
+
+    /// Serialize the example to a JSON value.
+    fn example_json() -> Option<serde_json::Value>
+    where
+        Self: Sized,
+    {
+        serde_json::to_value(Self::example()).ok()
+    }
 }
 
 impl ToSchema for String {
@@ -442,6 +484,7 @@ where
             "application/json".to_string(),
             MediaType {
                 schema: Some(Res::schema()),
+                example: Res::example(),
             },
         );
         responses.insert(
@@ -503,6 +546,7 @@ macro_rules! impl_endpoint_to_operation_with_body {
                     "application/json".to_string(),
                     MediaType {
                         schema: Some(Req::schema()),
+                        example: Req::example(),
                     },
                 );
                 op.request_body = Some(RequestBody {
@@ -516,6 +560,7 @@ macro_rules! impl_endpoint_to_operation_with_body {
                     "application/json".to_string(),
                     MediaType {
                         schema: Some(Res::schema()),
+                        example: Res::example(),
                     },
                 );
                 let mut responses = IndexMap::new();
@@ -556,6 +601,114 @@ fn assign_param_names_from_pattern(params: &mut [Parameter], pattern: &str) {
 }
 
 // ---------------------------------------------------------------------------
+// EndpointToOperation / CollectOperations for wrapper types (typeway-core)
+// ---------------------------------------------------------------------------
+
+/// `Requires<E, T>` delegates to the inner endpoint, adding no OpenAPI annotations.
+///
+/// Effect requirements are internal implementation details and do not affect
+/// the generated OpenAPI spec.
+impl<Eff: Effect, Inner: EndpointToOperation> EndpointToOperation for Requires<Eff, Inner> {
+    fn path_pattern() -> String {
+        Inner::path_pattern()
+    }
+    fn method() -> http::Method {
+        Inner::method()
+    }
+    fn to_operation() -> Operation {
+        Inner::to_operation()
+    }
+}
+
+/// `Deprecated<E>` delegates to the inner endpoint but marks the operation
+/// as deprecated in the OpenAPI spec.
+impl<Inner: EndpointToOperation> EndpointToOperation
+    for typeway_core::versioning::Deprecated<Inner>
+{
+    fn path_pattern() -> String {
+        Inner::path_pattern()
+    }
+    fn method() -> http::Method {
+        Inner::method()
+    }
+    fn to_operation() -> Operation {
+        let mut op = Inner::to_operation();
+        op.deprecated = true;
+        op
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Auto-tagging by path prefix
+// ---------------------------------------------------------------------------
+
+/// Extract a tag name from a path pattern.
+///
+/// Uses the first non-empty, non-parameter segment as the tag. For example:
+/// - `/users` -> `"users"`
+/// - `/api/articles` -> `"api"` (first segment)
+/// - `/users/{id}/posts` -> `"users"`
+/// - `/{param}` -> `None`
+fn extract_tag_from_path(path: &str) -> Option<String> {
+    path.split('/')
+        .filter(|s| !s.is_empty())
+        .find(|s| !s.starts_with('{'))
+        .map(|s| s.to_string())
+}
+
+/// Post-process a spec to auto-assign tags based on path prefix.
+///
+/// Operations that already have tags (set via [`EndpointDoc`]) are not modified.
+/// Operations without tags get a tag derived from the first literal path segment.
+pub fn auto_tag_operations(spec: &mut OpenApiSpec) {
+    for (path, item) in &mut spec.paths {
+        let tag = extract_tag_from_path(path);
+        for op in item.all_operations_mut() {
+            if op.tags.is_empty() {
+                if let Some(ref tag) = tag {
+                    op.tags.push(tag.clone());
+                }
+            }
+        }
+    }
+}
+
+/// Post-process a spec to collect security schemes from operations.
+///
+/// If any operation references `bearerAuth`, adds a bearer JWT security
+/// scheme to the spec's components section.
+pub fn collect_security_schemes(spec: &mut OpenApiSpec) {
+    let has_bearer = spec.paths.values().any(|item| {
+        let ops: Vec<&Operation> = [
+            item.get.as_ref(),
+            item.post.as_ref(),
+            item.put.as_ref(),
+            item.delete.as_ref(),
+            item.patch.as_ref(),
+            item.head.as_ref(),
+            item.options.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        ops.iter().any(|op| {
+            op.security.iter().any(|req| req.0.contains_key("bearerAuth"))
+        })
+    });
+
+    if has_bearer {
+        let components = spec.components.get_or_insert_with(|| Components {
+            security_schemes: IndexMap::new(),
+        });
+        components
+            .security_schemes
+            .entry("bearerAuth".to_string())
+            .or_insert_with(SecurityScheme::bearer_jwt);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ApiToSpec
 // ---------------------------------------------------------------------------
 
@@ -592,6 +745,8 @@ macro_rules! impl_collect_for_tuple {
             fn to_spec(title: &str, version: &str) -> OpenApiSpec {
                 let mut spec = OpenApiSpec::new(title, version);
                 $($T::collect_into(&mut spec);)+
+                auto_tag_operations(&mut spec);
+                collect_security_schemes(&mut spec);
                 spec
             }
         }

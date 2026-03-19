@@ -149,3 +149,48 @@ pub(crate) fn docs_handler(title: &str, version: &str, spec_json: &str) -> Boxed
 pub(crate) fn exact_match(expected: &'static [&'static str]) -> crate::router::MatchFn {
     Box::new(move |segments| segments == expected)
 }
+
+// ---------------------------------------------------------------------------
+// EndpointToOperation impls for server-side wrapper types
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "openapi")]
+mod openapi_impls {
+    use typeway_openapi::spec::{Operation, SecurityRequirement};
+    use typeway_openapi::EndpointToOperation;
+
+    use crate::auth::Protected;
+    use crate::typed::Validated;
+
+    /// `Protected<Auth, E>` delegates to the inner endpoint but adds a
+    /// bearer security requirement to the operation.
+    impl<Auth, E: EndpointToOperation> EndpointToOperation for Protected<Auth, E> {
+        fn path_pattern() -> String {
+            E::path_pattern()
+        }
+        fn method() -> http::Method {
+            E::method()
+        }
+        fn to_operation() -> Operation {
+            let mut op = E::to_operation();
+            op.security.push(SecurityRequirement::bearer());
+            op
+        }
+    }
+
+    /// `Validated<V, E>` is transparent to OpenAPI — validation is an
+    /// internal implementation detail.
+    impl<V: Send + Sync + 'static, E: EndpointToOperation> EndpointToOperation
+        for Validated<V, E>
+    {
+        fn path_pattern() -> String {
+            E::path_pattern()
+        }
+        fn method() -> http::Method {
+            E::method()
+        }
+        fn to_operation() -> Operation {
+            E::to_operation()
+        }
+    }
+}

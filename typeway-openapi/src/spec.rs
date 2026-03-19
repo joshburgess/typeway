@@ -12,6 +12,8 @@ pub struct OpenApiSpec {
     pub openapi: String,
     pub info: Info,
     pub paths: IndexMap<String, PathItem>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub components: Option<Components>,
 }
 
 impl OpenApiSpec {
@@ -25,6 +27,7 @@ impl OpenApiSpec {
                 description: None,
             },
             paths: IndexMap::new(),
+            components: None,
         }
     }
 }
@@ -89,6 +92,10 @@ pub struct Operation {
     #[serde(rename = "requestBody", skip_serializing_if = "Option::is_none")]
     pub request_body: Option<RequestBody>,
     pub responses: IndexMap<String, Response>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub security: Vec<SecurityRequirement>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub deprecated: bool,
 }
 
 impl Operation {
@@ -102,6 +109,8 @@ impl Operation {
             parameters: Vec::new(),
             request_body: None,
             responses: IndexMap::new(),
+            security: Vec::new(),
+            deprecated: false,
         }
     }
 }
@@ -150,11 +159,13 @@ pub struct Response {
     pub content: IndexMap<String, MediaType>,
 }
 
-/// A media type with its schema.
+/// A media type with its schema and optional example value.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MediaType {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub schema: Option<Schema>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub example: Option<serde_json::Value>,
 }
 
 /// A simplified JSON Schema representation.
@@ -170,6 +181,90 @@ pub struct Schema {
     pub properties: Option<IndexMap<String, Schema>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Security types
+// ---------------------------------------------------------------------------
+
+/// Security requirement on an operation.
+///
+/// Maps security scheme names to lists of scopes. For bearer auth,
+/// the scope list is typically empty.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityRequirement(pub IndexMap<String, Vec<String>>);
+
+impl SecurityRequirement {
+    /// Create a bearer authentication security requirement.
+    pub fn bearer() -> Self {
+        let mut map = IndexMap::new();
+        map.insert("bearerAuth".to_string(), Vec::new());
+        SecurityRequirement(map)
+    }
+}
+
+/// Top-level components section of an OpenAPI spec.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Components {
+    #[serde(
+        rename = "securitySchemes",
+        skip_serializing_if = "IndexMap::is_empty"
+    )]
+    pub security_schemes: IndexMap<String, SecurityScheme>,
+}
+
+/// A security scheme definition.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecurityScheme {
+    #[serde(rename = "type")]
+    pub scheme_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scheme: Option<String>,
+    #[serde(rename = "bearerFormat", skip_serializing_if = "Option::is_none")]
+    pub bearer_format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+impl SecurityScheme {
+    /// Create a bearer token security scheme.
+    pub fn bearer_jwt() -> Self {
+        SecurityScheme {
+            scheme_type: "http".to_string(),
+            scheme: Some("bearer".to_string()),
+            bearer_format: Some("JWT".to_string()),
+            description: Some("Bearer token authentication".to_string()),
+        }
+    }
+}
+
+impl PathItem {
+    /// Return mutable references to all operations defined on this path.
+    pub fn all_operations_mut(&mut self) -> Vec<&mut Operation> {
+        let mut ops = Vec::new();
+        if let Some(ref mut op) = self.get {
+            ops.push(op);
+        }
+        if let Some(ref mut op) = self.post {
+            ops.push(op);
+        }
+        if let Some(ref mut op) = self.put {
+            ops.push(op);
+        }
+        if let Some(ref mut op) = self.delete {
+            ops.push(op);
+        }
+        if let Some(ref mut op) = self.patch {
+            ops.push(op);
+        }
+        if let Some(ref mut op) = self.head {
+            ops.push(op);
+        }
+        if let Some(ref mut op) = self.options {
+            ops.push(op);
+        }
+        ops
+    }
 }
 
 impl Schema {

@@ -179,6 +179,7 @@ impl typeway_openapi::ErrorResponses for JsonError {
                     properties: Some(properties),
                     description: Some("JSON error response".into()),
                 }),
+                example: None,
             },
         );
 

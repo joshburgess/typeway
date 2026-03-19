@@ -9,7 +9,9 @@ pub mod spec;
 #[cfg(feature = "schemars")]
 pub use derive::from_schemars;
 pub use derive::{
-    ApiToSpec, CollectOperations, EndpointDoc, EndpointToOperation, ErrorResponses,
-    QueryParameters, ToSchema,
+    ApiToSpec, CollectOperations, EndpointDoc, EndpointToOperation, ErrorResponses, ExampleValue,
+    QueryParameters, ToSchema, auto_tag_operations, collect_security_schemes,
 };
-pub use spec::OpenApiSpec;
+pub use spec::{
+    Components, OpenApiSpec, SecurityRequirement, SecurityScheme,
+};

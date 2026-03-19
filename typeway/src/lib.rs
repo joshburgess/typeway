@@ -78,7 +78,10 @@ pub use typeway_client::{CallEndpoint, Client, ClientError};
 
 // --- OpenAPI (feature = "openapi") ---
 #[cfg(feature = "openapi")]
-pub use typeway_openapi::{ApiToSpec, EndpointToOperation, OpenApiSpec, ToSchema};
+pub use typeway_openapi::{
+    ApiToSpec, Components, EndpointToOperation, ExampleValue, OpenApiSpec, SecurityRequirement,
+    SecurityScheme, ToSchema,
+};
 
 /// Convenience prelude — import everything you typically need.
 pub mod prelude {
@@ -99,5 +102,8 @@ pub mod prelude {
     pub use typeway_client::{CallEndpoint, Client, ClientError};
 
     #[cfg(feature = "openapi")]
-    pub use typeway_openapi::{ApiToSpec, EndpointToOperation, OpenApiSpec, ToSchema};
+    pub use typeway_openapi::{
+    ApiToSpec, Components, EndpointToOperation, ExampleValue, OpenApiSpec, SecurityRequirement,
+    SecurityScheme, ToSchema,
+};
 }
