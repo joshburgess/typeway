@@ -501,6 +501,106 @@ To try it yourself: `cargo add typeway --features full`.
 
 ---
 
+## Beyond Servant: Three Features Haskell Doesn't Have
+
+Typeway started as a Servant port, but three recent features push it past what Servant offers — or what Haskell can express naturally without experimental extensions.
+
+### Session-Typed WebSockets
+
+A WebSocket connection is an untyped message pipe. You can send any message at any time, and if you send them in the wrong order, you find out at runtime — maybe. Session types fix this by encoding the protocol as a type: what message to send, what message to expect next, and when the conversation ends.
+
+Here's a protocol where the server sends a greeting, receives a name, sends a welcome, and closes:
+
+```rust
+use typeway::session::*;
+
+type GreetProtocol = Send<String, Recv<String, Send<String, End>>>;
+```
+
+And the handler:
+
+```rust
+use typeway::typed_ws::TypedWebSocket;
+
+async fn greet_handler(ws: TypedWebSocket<GreetProtocol>) {
+    let ws = ws.send("Hello! What is your name?".into()).await.unwrap();
+    let (name, ws) = ws.recv().await.unwrap();
+    let ws = ws.send(format!("Welcome, {name}!")).await.unwrap();
+    ws.close().await.unwrap();
+}
+```
+
+Each `.send()` consumes the channel and returns it at the next state. Each `.recv()` consumes the channel and returns the message plus the channel at the next state. When the protocol reaches `End`, the only available operation is `.close()`. If you try to call `.recv()` when the protocol says `Send`, the code does not compile — `TypedWebSocket<Send<String, Next>>` doesn't have a `recv` method.
+
+The trick is that Rust's ownership system enforces linearity for free. In session type theory, linearity means each channel must be used exactly once — you can't skip a step or reuse a previous state. In Haskell, enforcing this requires linear types (the `LinearTypes` GHC extension, still experimental and not widely adopted). In Rust, it falls out of the move semantics that every Rust programmer already uses. When `ws.send(msg)` takes `self` by value, the old `ws` is gone. There is no way to use the channel in the wrong state because the wrong state no longer exists.
+
+The `Dual` trait computes the mirror protocol automatically: `Send` becomes `Recv`, `Recv` becomes `Send`, `Offer` becomes `Select`. A single protocol definition generates both sides, and the type system guarantees compatibility. Branching (`Offer<L, R>` / `Select<L, R>`) and recursive protocols (`Rec<Body>` / `Var`) are supported, covering real-world protocols like chat rooms where the server loops receiving messages and broadcasting responses.
+
+Haskell has session type libraries (`session-types`, `sessions`), but they require linear types to enforce protocol adherence — and GHC's `LinearTypes` extension is still marked experimental with limited ecosystem support. Servant has no session-typed WebSocket story at all; `servant-websockets` provides raw message pipes. This is a case where Rust's ownership model gives it a genuine type-safety advantage over Haskell.
+
+### Content Negotiation as a Type-Level Coproduct
+
+HTTP content negotiation — the `Accept` header dance where the client says what formats it can handle and the server picks the best one — is straightforward in theory but tedious in practice. Most frameworks either hardcode JSON or make you write manual header parsing.
+
+In Typeway, the handler's return type declares which formats are available:
+
+```rust
+use typeway::negotiate::*;
+
+async fn get_user(accept: AcceptHeader) -> NegotiatedResponse<User, (JsonFormat, TextFormat)> {
+    negotiated(User { id: 1, name: "Alice".into() }, accept)
+}
+```
+
+`NegotiatedResponse<T, Formats>` is parameterized by a domain type `T` and a tuple of format markers. The `AcceptHeader` extractor pulls the header from the request. At response time, the framework parses the `Accept` value (including quality weights and wildcards), finds the best match among the declared formats, and serializes `T` using the corresponding `RenderAs<Format>` impl. Blanket impls cover `RenderAs<JsonFormat>` for any `T: Serialize` and `RenderAs<TextFormat>` for any `T: Display`, so most types work without extra code.
+
+The format tuple is a type-level coproduct: it declares the set of possible representations, and adding a new format is a type-level change that propagates through the system. If you add `CsvFormat` to the tuple but forget to implement `RenderAs<CsvFormat>` for your type, the compiler tells you. The OpenAPI spec could enumerate all supported representations automatically from the same tuple.
+
+### Type-Level API Versioning
+
+API versioning is where type-safe frameworks traditionally fall down. You define V1, you define V2, and the relationship between them — which endpoints were added, which were removed, which changed their types — exists only in your head or in a changelog file. Nothing prevents you from accidentally dropping an endpoint that clients depend on.
+
+Typeway encodes the relationship between versions as typed deltas:
+
+```rust
+use typeway::versioning::*;
+
+type V1 = (
+    GetEndpoint<UsersPath, Json<Vec<UserV1>>>,
+    GetEndpoint<UserByIdPath, Json<UserV1>>,
+    PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>,
+);
+
+type V2Changes = (
+    Added<GetEndpoint<UserProfilePath, Json<Profile>>>,
+    Replaced<
+        GetEndpoint<UserByIdPath, Json<UserV1>>,
+        GetEndpoint<UserByIdPath, Json<UserV2>>,
+    >,
+    Deprecated<PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>>,
+);
+
+type V2 = VersionedApi<V1, V2Changes, V2Resolved>;
+```
+
+V2 isn't defined from scratch — it's defined as V1 plus a set of typed changes. `Added`, `Removed`, `Replaced`, and `Deprecated` are change markers that carry the endpoint types as parameters. The `ApiChangelog` trait counts them at compile time: `V2Changes::ADDED == 1`, `V2Changes::REPLACED == 1`, `V2Changes::DEPRECATED == 1`.
+
+The compile-time compatibility check uses an index witness technique for type-level set membership. `HasEndpoint<E, Idx>` asserts that an endpoint type `E` exists in an API tuple, where `Idx` is a type-level natural number (`Here`, `There<Here>`, `There<There<Here>>`, ...) that tells the compiler which tuple position to check. Each position has a distinct index type, so there's no coherence conflict — the compiler finds exactly one impl per endpoint-position pair.
+
+```rust
+assert_api_compatible!(
+    (GetEndpoint<UsersPath, Json<Vec<UserV1>>>,
+     PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>),
+    V2Resolved
+);
+```
+
+This fails to compile if either endpoint is missing from `V2Resolved`. The error points at the specific endpoint that's absent. Endpoints that were intentionally replaced or removed are simply omitted from the compatibility check — the change markers document the intent, and the check covers what must be preserved.
+
+Nothing like this exists in Servant. Haskell's type system is powerful enough to express it, but nobody has built it — Servant APIs are versioned by maintaining separate type aliases with no typed relationship between them. Typeway makes API evolution a first-class concept in the type system, with machine-checkable backward compatibility guarantees.
+
+---
+
 ## What You Get
 
 If you're building APIs in Rust and you've ever been bitten by a missing route, a drifted client, or an out-of-date OpenAPI spec, Typeway eliminates those problems at the type level.

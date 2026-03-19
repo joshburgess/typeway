@@ -62,9 +62,10 @@ pub use serde_json;
 // --- Server (feature = "server") ---
 #[cfg(feature = "server")]
 pub use typeway_server::{
-    bind, body_from_stream, empty_body, serve, sse_body, BoundHandler, Extension, FromRequest,
-    FromRequestParts, Handler, Header, IntoResponse, Json, JsonError, LayeredServer, NamedHeader,
-    Path, Query, Router, RouterService, SecureHeadersLayer, Server, Serves, State,
+    bind, body_from_stream, empty_body, serve, sse_body, BoundHandler, EffectfulLayeredServer,
+    EffectfulServer, Extension, FromRequest, FromRequestParts, Handler, Header, IntoResponse, Json,
+    JsonError, LayeredServer, NamedHeader, Path, Query, Router, RouterService, SecureHeadersLayer,
+    Server, Serves, State,
 };
 
 /// Re-export tower-http for middleware (available when `server` feature is on).
@@ -88,10 +89,10 @@ pub mod prelude {
 
     #[cfg(feature = "server")]
     pub use typeway_server::{
-        bind, body_from_stream, empty_body, serve, sse_body, tower_http, BoundHandler, Extension,
-        FromRequest, FromRequestParts, Handler, Header, IntoResponse, Json, JsonError,
-        LayeredServer, NamedHeader, Path, Query, Router, RouterService, SecureHeadersLayer,
-        Server, Serves, State,
+        bind, body_from_stream, empty_body, serve, sse_body, tower_http, BoundHandler,
+        EffectfulLayeredServer, EffectfulServer, Extension, FromRequest, FromRequestParts, Handler,
+        Header, IntoResponse, Json, JsonError, LayeredServer, NamedHeader, Path, Query, Router,
+        RouterService, SecureHeadersLayer, Server, Serves, State,
     };
 
     #[cfg(feature = "client")]

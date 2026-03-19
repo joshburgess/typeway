@@ -48,6 +48,16 @@ impl<A: ApiSpec> Server<A> {
         }
     }
 
+    /// Create a server from a pre-built router.
+    ///
+    /// Used internally by [`EffectfulServer::ready`](crate::effects::EffectfulServer).
+    pub(crate) fn from_router(router: Arc<Router>) -> Self {
+        Server {
+            router,
+            _api: PhantomData,
+        }
+    }
+
     /// Set a path prefix for all routes in this server.
     ///
     /// Only requests whose path starts with the prefix will match. The prefix
@@ -494,7 +504,7 @@ pub struct LayeredServer<S> {
     /// The layered service. Exposed for advanced use cases (e.g., manual serving).
     pub service: S,
     /// Reference to the underlying router for post-layer configuration.
-    router: Arc<Router>,
+    pub(crate) router: Arc<Router>,
 }
 
 impl<S> LayeredServer<S> {

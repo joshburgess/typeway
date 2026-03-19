@@ -12,6 +12,7 @@
 use std::marker::PhantomData;
 
 use typeway_core::ApiSpec;
+use typeway_core::effects::{Effect, Requires};
 
 use crate::handler_for::BindableEndpoint;
 
@@ -213,5 +214,26 @@ impl<R: RateLimit, E: BindableEndpoint> BindableEndpoint for RateLimited<R, E> {
     }
     fn match_fn() -> crate::router::MatchFn {
         E::match_fn()
+    }
+}
+
+// ===========================================================================
+// Requires<E, T> — middleware effect requirement (BindableEndpoint delegation)
+// ===========================================================================
+
+/// `Requires<E, T>` delegates all endpoint metadata to the inner type `T`.
+///
+/// This allows `bind!()` to work with `Requires`-wrapped endpoints.
+/// The `Requires` wrapper is purely a compile-time marker — at runtime,
+/// routing behaves identically to the unwrapped endpoint.
+impl<E: Effect, T: BindableEndpoint> BindableEndpoint for Requires<E, T> {
+    fn method() -> http::Method {
+        T::method()
+    }
+    fn pattern() -> String {
+        T::pattern()
+    }
+    fn match_fn() -> crate::router::MatchFn {
+        T::match_fn()
     }
 }

@@ -5,6 +5,7 @@
 //! No I/O, no HTTP, no async — pure type-level Rust.
 
 pub mod api;
+pub mod effects;
 pub mod endpoint;
 pub mod method;
 pub mod negotiate;
@@ -13,6 +14,10 @@ pub mod session;
 pub mod versioning;
 
 pub use api::ApiSpec;
+pub use effects::{
+    AllProvided, AuthRequired, CorsRequired, ECons, EHere, ENil, EThere, Effect, HasEffect,
+    RateLimitRequired, Requires, TracingRequired,
+};
 pub use endpoint::{
     DeleteEndpoint, Endpoint, GetEndpoint, NoBody, PatchEndpoint, PostEndpoint, PutEndpoint,
 };

@@ -7,6 +7,7 @@ pub mod auth;
 #[cfg(feature = "axum-interop")]
 pub mod axum_interop;
 pub mod body;
+pub mod effects;
 pub mod error;
 pub mod extract;
 pub mod handler;
@@ -48,6 +49,7 @@ pub use negotiate::{
 pub use response::{IntoResponse, Json};
 pub use router::{Router, RouterService};
 pub use secure_headers::SecureHeadersLayer;
+pub use effects::{EffectfulLayeredServer, EffectfulServer};
 pub use server::{serve, LayeredServer, Server};
 pub use serves::Serves;
 
