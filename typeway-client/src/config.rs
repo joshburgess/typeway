@@ -3,7 +3,7 @@
 use std::fmt;
 use std::time::Duration;
 
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, ACCEPT};
 
 use crate::interceptor::{RequestInterceptor, ResponseInterceptor};
 use crate::retry::RetryPolicy;
@@ -44,18 +44,26 @@ pub struct ClientConfig {
     pub default_headers: HeaderMap,
     /// Whether to enable automatic cookie persistence across requests.
     pub cookie_store: bool,
+    /// Whether to enable built-in request/response tracing via the `tracing` crate.
+    ///
+    /// When enabled, every request logs the HTTP method, URL, response status,
+    /// and elapsed time at `DEBUG` level.
+    pub enable_tracing: bool,
 }
 
 impl Default for ClientConfig {
     fn default() -> Self {
+        let mut default_headers = HeaderMap::new();
+        default_headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
         Self {
             timeout: Some(Duration::from_secs(30)),
             connect_timeout: Some(Duration::from_secs(10)),
             retry_policy: RetryPolicy::default(),
             request_interceptors: Vec::new(),
             response_interceptors: Vec::new(),
-            default_headers: HeaderMap::new(),
+            default_headers,
             cookie_store: false,
+            enable_tracing: false,
         }
     }
 }
@@ -70,6 +78,7 @@ impl Clone for ClientConfig {
             response_interceptors: self.response_interceptors.clone(),
             default_headers: self.default_headers.clone(),
             cookie_store: self.cookie_store,
+            enable_tracing: self.enable_tracing,
         }
     }
 }
@@ -90,6 +99,7 @@ impl fmt::Debug for ClientConfig {
             )
             .field("default_headers", &self.default_headers)
             .field("cookie_store", &self.cookie_store)
+            .field("enable_tracing", &self.enable_tracing)
             .finish()
     }
 }
@@ -192,6 +202,15 @@ impl ClientConfig {
     /// behavior.
     pub fn cookie_store(mut self, enabled: bool) -> Self {
         self.cookie_store = enabled;
+        self
+    }
+
+    /// Enable built-in request/response tracing.
+    ///
+    /// When enabled, every HTTP request logs the method, URL, response status,
+    /// and elapsed time at `DEBUG` level via the [`tracing`] crate.
+    pub fn enable_tracing(mut self) -> Self {
+        self.enable_tracing = true;
         self
     }
 }
