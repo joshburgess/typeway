@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use typeway_server::error::JsonError;
 use typeway_server::extract::{Path, State};
-use typeway_server::negotiate::{AcceptHeader, JsonFormat, NegotiatedResponse, TextFormat};
+use typeway_server::negotiate::{AcceptHeader, JsonFormat, NegotiatedResponse, TextFormat, XmlFormat};
 use typeway_server::response::Json;
 
 use crate::api::*;
@@ -31,6 +31,7 @@ fn hash_password(password: &str) -> Result<String, JsonError> {
         .map_err(|e| JsonError::internal(format!("password hashing failed: {e}")))
 }
 
+#[allow(dead_code)]
 fn verify_password(password: &str, hash: &str) -> Result<(), JsonError> {
     let parsed = PasswordHash::new(hash)
         .map_err(|e| JsonError::internal(format!("invalid password hash: {e}")))?;
@@ -204,6 +205,7 @@ pub async fn register(
     Ok(Json(user_response(&user, token)))
 }
 
+#[allow(dead_code)]
 pub async fn login(
     state: State<Db>,
     body: Json<LoginRequest>,
@@ -217,6 +219,7 @@ pub async fn login(
     Ok(Json(user_response(&user, token)))
 }
 
+#[allow(dead_code)]
 pub async fn get_current_user(
     auth: AuthUser,
     state: State<Db>,
@@ -327,10 +330,11 @@ pub async fn get_feed(
 }
 
 pub async fn get_article(
+    accept: AcceptHeader,
     path: Path<ArticlePath>,
     opt_auth: OptionalAuth,
     state: State<Db>,
-) -> Result<Json<ArticleResponse>, JsonError> {
+) -> Result<NegotiatedResponse<ArticleResponse, (JsonFormat, TextFormat, XmlFormat)>, JsonError> {
     let (slug,) = path.0;
     let client = state
         .0
@@ -358,7 +362,10 @@ pub async fn get_article(
         updated_at: row.get("updated_at"),
     };
     let article = build_article(&state.0, &ar, opt_auth.0).await?;
-    Ok(Json(ArticleResponse { article }))
+    Ok(NegotiatedResponse::new(
+        ArticleResponse { article },
+        accept.0,
+    ))
 }
 
 pub async fn create_article(
@@ -710,18 +717,21 @@ pub async fn delete_comment(
 // Tags handler — demonstrates content negotiation
 // ---------------------------------------------------------------------------
 //
-// The return type `NegotiatedResponse<TagsResponse, (JsonFormat, TextFormat)>`
-// tells typeway this handler supports two content types:
+// The return type `NegotiatedResponse<TagsResponse, (JsonFormat, TextFormat, XmlFormat)>`
+// tells typeway this handler supports three content types:
 //   - application/json → serializes TagsResponse as JSON (default)
 //   - text/plain       → uses the Display impl for a comma-separated list
+//   - application/xml  → uses the RenderAsXml impl for an XML document
 //
 // The format is selected automatically based on the client's Accept header.
 // Try it: curl -H "Accept: text/plain" http://localhost:4000/api/tags
+//         curl -H "Accept: application/xml" http://localhost:4000/api/tags
 
+#[allow(dead_code)]
 pub async fn get_tags(
     accept: AcceptHeader,
     state: State<Db>,
-) -> Result<NegotiatedResponse<TagsResponse, (JsonFormat, TextFormat)>, JsonError> {
+) -> Result<NegotiatedResponse<TagsResponse, (JsonFormat, TextFormat, XmlFormat)>, JsonError> {
     let tags = db::get_tags(&state.0).await?;
     Ok(NegotiatedResponse::new(
         TagsResponse { tags },
@@ -736,8 +746,186 @@ pub async fn get_tags(
 pub async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
-        version: "2.0.0".to_string(),
+        version: "3.0.0".to_string(),
     })
+}
+
+// ---------------------------------------------------------------------------
+// Article search handler — V2 addition
+// ---------------------------------------------------------------------------
+//
+// Searches articles by a `?q=` query parameter, matching against title and
+// description. Reuses the existing article query infrastructure.
+
+pub async fn search_articles(
+    uri: http::Uri,
+    _opt_auth: OptionalAuth,
+    state: State<Db>,
+) -> Result<Json<ArticlesResponse>, JsonError> {
+    let query_str: Option<String> = uri.query().and_then(|q| {
+        q.split('&')
+            .find_map(|pair| pair.strip_prefix("q=").map(|v| v.to_string()))
+    });
+
+    let search = query_str.unwrap_or_default();
+    let pattern = format!("%{search}%");
+
+    let articles = build_articles_from_query(
+        &state.0,
+        &format!(
+            "{ARTICLES_QUERY_BASE} WHERE a.title ILIKE $1 OR a.description ILIKE $1 {ARTICLES_QUERY_TAIL}"
+        ),
+        &[&pattern],
+        None,
+    )
+    .await?;
+
+    let count = articles.len();
+    Ok(Json(ArticlesResponse {
+        articles,
+        articles_count: count,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Tags V2 handler — tags with usage counts
+// ---------------------------------------------------------------------------
+
+pub async fn get_tags_v2(
+    accept: AcceptHeader,
+    state: State<Db>,
+) -> Result<NegotiatedResponse<TagsResponseV2, (JsonFormat, TextFormat, XmlFormat)>, JsonError> {
+    let client = state
+        .0
+        .get()
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?;
+    let rows = client
+        .query(
+            "SELECT t.tag, COUNT(*) as cnt FROM tags t GROUP BY t.tag ORDER BY cnt DESC, t.tag",
+            &[],
+        )
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?;
+
+    let tags: Vec<TagWithCount> = rows
+        .iter()
+        .map(|r| TagWithCount {
+            tag: r.get("tag"),
+            count: r.get("cnt"),
+        })
+        .collect();
+
+    Ok(NegotiatedResponse::new(
+        TagsResponseV2 { tags },
+        accept.0,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Stats handler — V3 addition
+// ---------------------------------------------------------------------------
+
+pub async fn get_stats(
+    state: State<Db>,
+) -> Result<Json<StatsResponse>, JsonError> {
+    let client = state
+        .0
+        .get()
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?;
+
+    let users: i64 = client
+        .query_one("SELECT COUNT(*) as cnt FROM users", &[])
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?
+        .get("cnt");
+
+    let articles: i64 = client
+        .query_one("SELECT COUNT(*) as cnt FROM articles", &[])
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?
+        .get("cnt");
+
+    let comments: i64 = client
+        .query_one("SELECT COUNT(*) as cnt FROM comments", &[])
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?
+        .get("cnt");
+
+    Ok(Json(StatsResponse {
+        users,
+        articles,
+        comments,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Delete account handler — V3 addition
+// ---------------------------------------------------------------------------
+
+pub async fn delete_account(
+    auth: AuthUser,
+    state: State<Db>,
+) -> Result<http::StatusCode, JsonError> {
+    let client = state
+        .0
+        .get()
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?;
+
+    // ON DELETE CASCADE handles follows, articles, comments, favorites.
+    let n = client
+        .execute("DELETE FROM users WHERE id = $1", &[&auth.0])
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?;
+
+    if n == 0 {
+        return Err(JsonError::not_found("user not found"));
+    }
+    Ok(http::StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// Get current user V3 — extended with created_at and articles_count
+// ---------------------------------------------------------------------------
+
+pub async fn get_current_user_v3(
+    auth: AuthUser,
+    state: State<Db>,
+) -> Result<Json<UserResponseV3>, JsonError> {
+    let client = state
+        .0
+        .get()
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?;
+
+    let row = client
+        .query_opt(
+            "SELECT u.id, u.username, u.email, u.bio, u.image, u.created_at, \
+                    COUNT(a.id) as articles_count \
+             FROM users u \
+             LEFT JOIN articles a ON a.author_id = u.id \
+             WHERE u.id = $1 \
+             GROUP BY u.id",
+            &[&auth.0],
+        )
+        .await
+        .map_err(|e| JsonError::internal(e.to_string()))?
+        .ok_or_else(|| JsonError::not_found("user not found"))?;
+
+    let token = create_token(auth.0)?;
+    Ok(Json(UserResponseV3 {
+        user: UserBodyV3 {
+            email: row.get("email"),
+            token,
+            username: row.get("username"),
+            bio: row.get("bio"),
+            image: row.get("image"),
+            created_at: row.get("created_at"),
+            articles_count: row.get("articles_count"),
+        },
+    }))
 }
 
 // ---------------------------------------------------------------------------

@@ -336,6 +336,7 @@ pub async fn seed_data(pool: &Pool) {
 // User queries
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 pub async fn find_user_by_email(pool: &Pool, email: &str) -> Result<UserRow, JsonError> {
     let client = pool
         .get()
@@ -551,6 +552,7 @@ pub async fn unfollow_user(
 // Article queries
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 pub async fn get_tags(pool: &Pool) -> Result<Vec<String>, JsonError> {
     let client = pool
         .get()

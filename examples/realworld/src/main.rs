@@ -10,12 +10,14 @@
 //!    `.provide::<CorsRequired>()` below and it fails to compile.
 //!
 //! 2. **Content negotiation** (`NegotiatedResponse`):
-//!    `GET /api/tags` returns JSON or plain text based on the `Accept` header.
-//!    Try: `curl -H "Accept: text/plain" http://localhost:4000/api/tags`
+//!    `GET /api/tags` and `GET /api/articles/:slug` return JSON, plain text,
+//!    or XML based on the `Accept` header.
+//!    Try: `curl -H "Accept: application/xml" http://localhost:4000/api/tags`
 //!
 //! 3. **API versioning** (`VersionedApi` + `assert_api_compatible!`):
-//!    V2 adds a health check. Compile-time check ensures V1 endpoints are
-//!    preserved. See `api.rs`.
+//!    V1 → V2 → V3 evolution with typed deltas. V2 adds search + health,
+//!    replaces tags, deprecates login. V3 adds stats, upgrades user response,
+//!    removes deprecated login. See `api.rs`.
 //!
 //! 4. **Session-typed WebSocket** (`TypedWebSocket<FeedProtocol>`):
 //!    Protocol for live article updates is encoded as a session type.
@@ -64,9 +66,10 @@ async fn main() {
         // Registration: Validated<NewUserValidator, _> runs validation before handler.
         // bind_validated! creates a BoundHandler that enforces this at runtime.
         bind_validated!(handlers::register),
-        bind!(handlers::login),
+        // (V3: login endpoint removed — no handler needed)
         // Protected endpoints: compiler enforces AuthUser as first handler arg.
-        bind_auth!(handlers::get_current_user),
+        // V3: get_current_user now returns UserResponseV3 with created_at + articles_count.
+        bind_auth!(handlers::get_current_user_v3),
         bind_auth!(handlers::update_user),
         // Public read endpoints wrapped in Requires<CorsRequired, _>.
         bind!(handlers::get_profile),
@@ -84,10 +87,14 @@ async fn main() {
         bind!(handlers::get_comments),
         bind_auth!(handlers::add_comment),
         bind_auth!(handlers::delete_comment),
-        // Tags: handler uses content negotiation (NegotiatedResponse).
-        bind!(handlers::get_tags),
-        // V2 addition: health check endpoint.
+        // Tags: V2 handler with counts + content negotiation (JSON, text, XML).
+        bind!(handlers::get_tags_v2),
+        // V2 additions: health check and article search.
         bind!(handlers::health),
+        bind!(handlers::search_articles),
+        // V3 additions: site statistics and account deletion.
+        bind!(handlers::get_stats),
+        bind_auth!(handlers::delete_account),
     ))
     // Provide the CorsRequired effect, then apply the actual middleware.
     // This is the compile-time enforcement: the type says "I need CORS",
@@ -109,14 +116,17 @@ async fn main() {
     println!("  Frontend: http://localhost:{port}/");
     println!("  API:      http://localhost:{port}/api/");
     println!("  Health:   http://localhost:{port}/api/health");
+    println!("  Search:   http://localhost:{port}/api/articles/search?q=type");
+    println!("  Stats:    http://localhost:{port}/api/stats");
     println!("  Static:   {frontend_dir}");
     println!();
-    println!("20 endpoints + Elm frontend — 5 advanced features:");
+    println!("22 endpoints (V3) + Elm frontend — 6 advanced features:");
     println!("  1. Effects:     CorsRequired enforced at compile time");
-    println!("  2. Negotiation: curl -H 'Accept: text/plain' localhost:{port}/api/tags");
-    println!("  3. Versioning:  V1->V2 with assert_api_compatible! (api.rs)");
+    println!("  2. Negotiation: curl -H 'Accept: application/xml' localhost:{port}/api/tags");
+    println!("  3. Versioning:  V1->V2->V3 with assert_api_compatible! (api.rs)");
     println!("  4. WebSocket:   Session-typed protocol (handlers.rs::ws_feed)");
     println!("  5. Validation:  Registration + article creation (api.rs)");
+    println!("  6. XML support: Tags + articles support JSON/text/XML negotiation");
 
     server.serve(addr.parse().unwrap()).await.unwrap();
 }

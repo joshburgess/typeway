@@ -35,11 +35,13 @@ pub struct NewUser {
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct LoginRequest {
     pub user: LoginUser,
 }
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct LoginUser {
     pub email: String,
     pub password: String,
@@ -83,6 +85,25 @@ pub struct ProfileBody {
 #[derive(Debug, Serialize)]
 pub struct ArticleResponse {
     pub article: ArticleBody,
+}
+
+impl std::fmt::Display for ArticleResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} by {} — {}",
+            self.article.title, self.article.author.username, self.article.description
+        )
+    }
+}
+
+impl typeway_server::negotiate::RenderAsXml for ArticleResponse {
+    fn to_xml(&self) -> String {
+        format!(
+            "<?xml version=\"1.0\"?>\n<article>\n  <slug>{}</slug>\n  <title>{}</title>\n  <description>{}</description>\n  <body>{}</body>\n  <author>{}</author>\n</article>",
+            self.article.slug, self.article.title, self.article.description, self.article.body, self.article.author.username
+        )
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -185,26 +206,34 @@ impl std::fmt::Display for TagsResponse {
     }
 }
 
+// XML rendering for TagsResponse: produces a simple <tags> document.
+impl typeway_server::negotiate::RenderAsXml for TagsResponse {
+    fn to_xml(&self) -> String {
+        let mut xml = String::from("<?xml version=\"1.0\"?>\n<tags>\n");
+        for tag in &self.tags {
+            xml.push_str(&format!("  <tag>{tag}</tag>\n"));
+        }
+        xml.push_str("</tags>");
+        xml
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tags V2 (for API versioning demo)
 // ---------------------------------------------------------------------------
 
 /// V2 tags response includes usage counts per tag — a common API evolution.
-/// Included here to show how versioned response types look alongside V1 types.
 #[derive(Debug, Serialize)]
-#[allow(dead_code)]
 pub struct TagsResponseV2 {
     pub tags: Vec<TagWithCount>,
 }
 
 #[derive(Debug, Serialize)]
-#[allow(dead_code)]
 pub struct TagWithCount {
     pub tag: String,
     pub count: i64,
 }
 
-#[allow(dead_code)]
 impl std::fmt::Display for TagsResponseV2 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let parts: Vec<String> = self
@@ -227,6 +256,54 @@ pub struct HealthResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Tags V2 XML rendering
+// ---------------------------------------------------------------------------
+
+impl typeway_server::negotiate::RenderAsXml for TagsResponseV2 {
+    fn to_xml(&self) -> String {
+        let mut xml = String::from("<?xml version=\"1.0\"?>\n<tags>\n");
+        for t in &self.tags {
+            xml.push_str(&format!("  <tag count=\"{}\">{}</tag>\n", t.count, t.tag));
+        }
+        xml.push_str("</tags>");
+        xml
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Stats (V3 addition)
+// ---------------------------------------------------------------------------
+
+/// Site-wide statistics — total counts of users, articles, and comments.
+#[derive(Debug, Serialize)]
+pub struct StatsResponse {
+    pub users: i64,
+    pub articles: i64,
+    pub comments: i64,
+}
+
+// ---------------------------------------------------------------------------
+// User V3 — extended user response with created_at and article count
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct UserResponseV3 {
+    pub user: UserBodyV3,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserBodyV3 {
+    pub email: String,
+    pub token: String,
+    pub username: String,
+    pub bio: Option<String>,
+    pub image: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub articles_count: i64,
+}
+
+// ---------------------------------------------------------------------------
 // WebSocket live feed
 // ---------------------------------------------------------------------------
 
@@ -244,6 +321,7 @@ pub struct ArticleUpdate {
 // DB row types
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 pub struct UserRow {
     pub id: Uuid,
     pub username: String,

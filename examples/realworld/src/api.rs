@@ -1,18 +1,20 @@
 //! API type definition — the single source of truth for the RealWorld spec.
 //!
-//! This file demonstrates five typeway advanced features:
+//! This file demonstrates six typeway advanced features:
 //!
 //! 1. **Effects system**: `Requires<CorsRequired, E>` on public endpoints
 //!    declares that the server must provide CORS middleware. Forgetting
 //!    `.provide::<CorsRequired>()` in main.rs is a compile error.
 //!
-//! 2. **Content negotiation**: The `get_tags` handler returns
-//!    `NegotiatedResponse<TagsResponse, (JsonFormat, TextFormat)>`, picking the
-//!    format based on the `Accept` header.
+//! 2. **Content negotiation**: `get_tags` and `get_article` return
+//!    `NegotiatedResponse<T, (JsonFormat, TextFormat, XmlFormat)>`, picking
+//!    JSON, plain text, or XML based on the `Accept` header.
 //!
-//! 3. **API versioning**: V1 is the original 19-endpoint spec. V2 adds a health
-//!    check endpoint. `assert_api_compatible!` verifies backward compatibility
-//!    at compile time.
+//! 3. **API versioning**: V1 is the original 19-endpoint spec. V2 adds health,
+//!    search, replaces tags, and deprecates old login (21 endpoints). V3 adds
+//!    stats and account deletion, upgrades the user response, and removes
+//!    the deprecated login (22 endpoints). `assert_api_compatible!` verifies
+//!    backward compatibility at compile time.
 //!
 //! 4. **Session-typed WebSocket**: A live article feed uses `Send<ArticleUpdate, Rec<...>>`
 //!    to encode the push protocol. Defined in handlers.rs.
@@ -40,8 +42,12 @@ typeway_path!(pub type ArticleCommentsPath = "api" / "articles" / String / "comm
 typeway_path!(pub type ArticleCommentPath = "api" / "articles" / String / "comments" / i32);
 typeway_path!(pub type TagsPath = "api" / "tags");
 
-// V2 addition
+// V2 additions
 typeway_path!(pub type HealthPath = "api" / "health");
+typeway_path!(pub type ArticlesSearchPath = "api" / "articles" / "search");
+
+// V3 addition
+typeway_path!(pub type StatsPath = "api" / "stats");
 
 // ---------------------------------------------------------------------------
 // Imports
@@ -156,27 +162,34 @@ pub type RealWorldV1 = (
 );
 
 // ---------------------------------------------------------------------------
-// V2 API — versioned evolution with typed deltas (Feature 3)
+// V2 API — significant evolution with typed deltas (Feature 3)
 // ---------------------------------------------------------------------------
 //
-// V2 adds a single endpoint: GET /api/health.
-// This demonstrates the VersionedApi machinery:
-//   - V2Changes records what changed (one Added endpoint)
-//   - V2Resolved is the full 20-endpoint API after applying changes
-//   - assert_api_compatible! verifies every V1 endpoint is preserved
+// V2 is a substantial evolution from V1 (21 endpoints total):
+//   - Added:      GET /api/health (health check endpoint)
+//   - Added:      GET /api/articles/search (article search, new functionality)
+//   - Replaced:   Tags endpoint changes response from TagsResponse to TagsResponseV2
+//                 (V2 tags include per-tag usage counts)
+//   - Deprecated: POST /api/users/login (marked deprecated but still present)
 
-use typeway_core::versioning::{Added, VersionedApi};
+use typeway_core::versioning::{Added, Deprecated, Removed, Replaced, VersionedApi};
 
-/// Changes from V1 to V2: one new health check endpoint.
+/// Changes from V1 to V2: two additions, one replacement, one deprecation.
 type V2Changes = (
     Added<GetEndpoint<HealthPath, HealthResponse>>,
+    Added<GetEndpoint<ArticlesSearchPath, ArticlesResponse>>,
+    Replaced<
+        Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponse>>,
+        Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponseV2>>,
+    >,
+    Deprecated<PostEndpoint<UsersLoginPath, LoginRequest, UserResponse>>,
 );
 
-/// The resolved V2 API: all 19 V1 endpoints plus the health check (20 total).
-type RealWorldV2Resolved = (
+/// The resolved V2 API: 21 endpoints after applying V2Changes.
+pub type RealWorldV2Resolved = (
     // Auth
     Validated<NewUserValidator, PostEndpoint<UsersPath, NewUserRequest, UserResponse>>,
-    PostEndpoint<UsersLoginPath, LoginRequest, UserResponse>,
+    PostEndpoint<UsersLoginPath, LoginRequest, UserResponse>,  // deprecated but still present
     Protected<AuthUser, GetEndpoint<UserPath, UserResponse>>,
     Protected<AuthUser, PutEndpoint<UserPath, UpdateUserRequest, UserResponse>>,
     // Profiles
@@ -197,22 +210,21 @@ type RealWorldV2Resolved = (
     Requires<CorsRequired, GetEndpoint<ArticleCommentsPath, CommentsResponse>>,
     Protected<AuthUser, PostEndpoint<ArticleCommentsPath, NewCommentRequest, CommentResponse>>,
     Protected<AuthUser, DeleteEndpoint<ArticleCommentPath, ()>>,
-    // Tags
-    Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponse>>,
-    // V2 addition: health check
+    // Tags — REPLACED: now returns TagsResponseV2 with counts
+    Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponseV2>>,
+    // V2 additions
     GetEndpoint<HealthPath, HealthResponse>,
+    GetEndpoint<ArticlesSearchPath, ArticlesResponse>,
 );
 
-/// The V2 API type. Carries the full version history as type parameters:
-/// - Base: RealWorldV1 (the original API)
-/// - Changes: V2Changes (what was added)
-/// - Resolved: RealWorldV2Resolved (the actual endpoint tuple to serve)
+/// The V2 API type. Carries version lineage as type parameters.
 pub type RealWorldV2 = VersionedApi<RealWorldV1, V2Changes, RealWorldV2Resolved>;
 
-// Compile-time backward compatibility check (Feature 3):
-// Every V1 endpoint must exist in V2Resolved. If any endpoint were
-// accidentally removed during the V1→V2 evolution, this assertion
-// produces a compile error.
+// Compile-time backward compatibility check: V1 → V2
+// Every V1 endpoint must exist in V2Resolved. The tags endpoint was replaced,
+// so we list only the non-replaced V1 endpoints (all 18 that were preserved
+// unchanged). The old TagsResponse endpoint is intentionally omitted because
+// it was replaced with TagsResponseV2.
 typeway_core::assert_api_compatible!(
     (
         Validated<NewUserValidator, PostEndpoint<UsersPath, NewUserRequest, UserResponse>>,
@@ -233,13 +245,106 @@ typeway_core::assert_api_compatible!(
         Requires<CorsRequired, GetEndpoint<ArticleCommentsPath, CommentsResponse>>,
         Protected<AuthUser, PostEndpoint<ArticleCommentsPath, NewCommentRequest, CommentResponse>>,
         Protected<AuthUser, DeleteEndpoint<ArticleCommentPath, ()>>,
-        Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponse>>,
     ),
     RealWorldV2Resolved
 );
 
-/// The API type used by the server. V2 is a superset of V1.
-pub type RealWorldAPI = RealWorldV2;
+// ---------------------------------------------------------------------------
+// V3 API — breaking change with typed deltas (Feature 3)
+// ---------------------------------------------------------------------------
+//
+// V3 is a breaking evolution from V2 (22 endpoints total):
+//   - Added:    GET /api/stats (site-wide statistics)
+//   - Added:    DELETE /api/user (account deletion, protected)
+//   - Replaced: GET /api/user response changes from UserResponse to UserResponseV3
+//               (V3 adds created_at and articles_count fields)
+//   - Removed:  POST /api/users/login (the deprecated endpoint is now gone)
+
+type V3Changes = (
+    Added<GetEndpoint<StatsPath, StatsResponse>>,
+    Added<Protected<AuthUser, DeleteEndpoint<UserPath, ()>>>,
+    Replaced<
+        Protected<AuthUser, GetEndpoint<UserPath, UserResponse>>,
+        Protected<AuthUser, GetEndpoint<UserPath, UserResponseV3>>,
+    >,
+    Removed<PostEndpoint<UsersLoginPath, LoginRequest, UserResponse>>,
+);
+
+/// The resolved V3 API: 22 endpoints after applying V3Changes.
+/// Login is removed, user response upgraded, stats and delete_account added.
+pub type RealWorldV3Resolved = (
+    // Auth
+    Validated<NewUserValidator, PostEndpoint<UsersPath, NewUserRequest, UserResponse>>,
+    // (login removed in V3)
+    Protected<AuthUser, GetEndpoint<UserPath, UserResponseV3>>,  // REPLACED: now V3 response
+    Protected<AuthUser, PutEndpoint<UserPath, UpdateUserRequest, UserResponse>>,
+    // Profiles
+    Requires<CorsRequired, GetEndpoint<ProfilePath, ProfileResponse>>,
+    Protected<AuthUser, PostEndpoint<ProfileFollowPath, (), ProfileResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ProfileFollowPath, ProfileResponse>>,
+    // Articles
+    Requires<CorsRequired, GetEndpoint<ArticlesPath, ArticlesResponse>>,
+    Protected<AuthUser, GetEndpoint<ArticlesFeedPath, ArticlesResponse>>,
+    Requires<CorsRequired, GetEndpoint<ArticlePath, ArticleResponse>>,
+    Protected<AuthUser, Validated<NewArticleValidator, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>>,
+    Protected<AuthUser, PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ArticlePath, ()>>,
+    // Favorites
+    Protected<AuthUser, PostEndpoint<ArticleFavoritePath, (), ArticleResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ArticleFavoritePath, ArticleResponse>>,
+    // Comments
+    Requires<CorsRequired, GetEndpoint<ArticleCommentsPath, CommentsResponse>>,
+    Protected<AuthUser, PostEndpoint<ArticleCommentsPath, NewCommentRequest, CommentResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ArticleCommentPath, ()>>,
+    // Tags (V2 version with counts)
+    Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponseV2>>,
+    // V2 additions (carried forward)
+    GetEndpoint<HealthPath, HealthResponse>,
+    GetEndpoint<ArticlesSearchPath, ArticlesResponse>,
+    // V3 additions
+    GetEndpoint<StatsPath, StatsResponse>,
+    Protected<AuthUser, DeleteEndpoint<UserPath, ()>>,
+);
+
+/// The V3 API type: evolves from V2, carries full lineage.
+pub type RealWorldV3 = VersionedApi<RealWorldV2, V3Changes, RealWorldV3Resolved>;
+
+// V2 → V3: NOT backward compatible (login endpoint removed).
+// Uncommenting the line below would cause a compile error:
+// typeway_core::assert_api_compatible!(
+//     (PostEndpoint<UsersLoginPath, LoginRequest, UserResponse>,),
+//     RealWorldV3Resolved
+// );
+
+// However, V3 preserves all non-deprecated V2 endpoints (minus login and the
+// old UserResponse). We verify the 17 shared endpoints are present:
+typeway_core::assert_api_compatible!(
+    (
+        Validated<NewUserValidator, PostEndpoint<UsersPath, NewUserRequest, UserResponse>>,
+        Protected<AuthUser, PutEndpoint<UserPath, UpdateUserRequest, UserResponse>>,
+        Requires<CorsRequired, GetEndpoint<ProfilePath, ProfileResponse>>,
+        Protected<AuthUser, PostEndpoint<ProfileFollowPath, (), ProfileResponse>>,
+        Protected<AuthUser, DeleteEndpoint<ProfileFollowPath, ProfileResponse>>,
+        Requires<CorsRequired, GetEndpoint<ArticlesPath, ArticlesResponse>>,
+        Protected<AuthUser, GetEndpoint<ArticlesFeedPath, ArticlesResponse>>,
+        Requires<CorsRequired, GetEndpoint<ArticlePath, ArticleResponse>>,
+        Protected<AuthUser, Validated<NewArticleValidator, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>>,
+        Protected<AuthUser, PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>>,
+        Protected<AuthUser, DeleteEndpoint<ArticlePath, ()>>,
+        Protected<AuthUser, PostEndpoint<ArticleFavoritePath, (), ArticleResponse>>,
+        Protected<AuthUser, DeleteEndpoint<ArticleFavoritePath, ArticleResponse>>,
+        Requires<CorsRequired, GetEndpoint<ArticleCommentsPath, CommentsResponse>>,
+        Protected<AuthUser, PostEndpoint<ArticleCommentsPath, NewCommentRequest, CommentResponse>>,
+        Protected<AuthUser, DeleteEndpoint<ArticleCommentPath, ()>>,
+        Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponseV2>>,
+        GetEndpoint<HealthPath, HealthResponse>,
+        GetEndpoint<ArticlesSearchPath, ArticlesResponse>,
+    ),
+    RealWorldV3Resolved
+);
+
+/// The API type used by the server. V3 is the latest version.
+pub type RealWorldAPI = RealWorldV3;
 
 // ---------------------------------------------------------------------------
 // Session-typed WebSocket protocol for live article feed (Feature 4)

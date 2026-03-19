@@ -63,6 +63,30 @@ impl ContentFormat for CsvFormat {
     const CONTENT_TYPE: &'static str = "text/csv";
 }
 
+/// XML representation. Requires explicit [`RenderAsXml`] impls per type.
+pub struct XmlFormat;
+
+impl ContentFormat for XmlFormat {
+    const CONTENT_TYPE: &'static str = "application/xml";
+}
+
+// ---------------------------------------------------------------------------
+// RenderAsXml trait
+// ---------------------------------------------------------------------------
+
+/// Trait for types that can render as XML.
+/// Unlike JsonFormat/TextFormat which have blanket impls, XML rendering
+/// requires an explicit impl per type since there's no standard XML serialization trait.
+pub trait RenderAsXml {
+    fn to_xml(&self) -> String;
+}
+
+impl<T: RenderAsXml> RenderAs<XmlFormat> for T {
+    fn render(&self) -> Result<(Vec<u8>, &'static str), String> {
+        Ok((self.to_xml().into_bytes(), XmlFormat::CONTENT_TYPE))
+    }
+}
+
 // ---------------------------------------------------------------------------
 // RenderAs trait
 // ---------------------------------------------------------------------------

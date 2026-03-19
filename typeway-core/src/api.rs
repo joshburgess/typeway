@@ -55,6 +55,8 @@ impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q);
 impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R);
 impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S);
 impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
+impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U);
+impl_api_spec_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V);
 
 #[cfg(test)]
 #[allow(non_camel_case_types, unused_imports)]

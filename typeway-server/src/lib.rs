@@ -44,7 +44,7 @@ pub use handler::{into_boxed_handler, BoxedHandler, Handler, ResponseFuture};
 pub use handler_for::{bind, BindableEndpoint, BoundHandler};
 pub use negotiate::{
     AcceptHeader, CsvFormat, HtmlFormat, JsonFormat, NegotiateFormats, NegotiatedResponse, RenderAs,
-    TextFormat,
+    RenderAsXml, TextFormat, XmlFormat,
 };
 pub use response::{IntoResponse, Json};
 pub use router::{Router, RouterService};

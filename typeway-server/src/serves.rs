@@ -259,6 +259,53 @@ impl_serves_for_tuple!(
     (E18, 18),
     (E19, 19)
 );
+impl_serves_for_tuple!(
+    (E0, 0),
+    (E1, 1),
+    (E2, 2),
+    (E3, 3),
+    (E4, 4),
+    (E5, 5),
+    (E6, 6),
+    (E7, 7),
+    (E8, 8),
+    (E9, 9),
+    (E10, 10),
+    (E11, 11),
+    (E12, 12),
+    (E13, 13),
+    (E14, 14),
+    (E15, 15),
+    (E16, 16),
+    (E17, 17),
+    (E18, 18),
+    (E19, 19),
+    (E20, 20)
+);
+impl_serves_for_tuple!(
+    (E0, 0),
+    (E1, 1),
+    (E2, 2),
+    (E3, 3),
+    (E4, 4),
+    (E5, 5),
+    (E6, 6),
+    (E7, 7),
+    (E8, 8),
+    (E9, 9),
+    (E10, 10),
+    (E11, 11),
+    (E12, 12),
+    (E13, 13),
+    (E14, 14),
+    (E15, 15),
+    (E16, 16),
+    (E17, 17),
+    (E18, 18),
+    (E19, 19),
+    (E20, 20),
+    (E21, 21)
+);
 
 // VersionedApi<Base, Changes, Resolved> delegates Serves to the resolved API type.
 // This allows EffectfulServer::<VersionedApi<V1, Changes, V2Resolved>>::new(handlers)

@@ -217,6 +217,8 @@ impl_all_provided_for_tuple!(A, IA; B, IB; C, IC; D, ID; E, IE; F, IF; G, IG; H,
 impl_all_provided_for_tuple!(A, IA; B, IB; C, IC; D, ID; E, IE; F, IF; G, IG; H, IH; I, II; J, IJ; K, IK; L, IL; M, IM; N, IN; O, IO; P, IP; Q, IQ; R, IR);
 impl_all_provided_for_tuple!(A, IA; B, IB; C, IC; D, ID; E, IE; F, IF; G, IG; H, IH; I, II; J, IJ; K, IK; L, IL; M, IM; N, IN; O, IO; P, IP; Q, IQ; R, IR; S, IS);
 impl_all_provided_for_tuple!(A, IA; B, IB; C, IC; D, ID; E, IE; F, IF; G, IG; H, IH; I, II; J, IJ; K, IK; L, IL; M, IM; N, IN; O, IO; P, IP; Q, IQ; R, IR; S, IS; T, IT);
+impl_all_provided_for_tuple!(A, IA; B, IB; C, IC; D, ID; E, IE; F, IF; G, IG; H, IH; I, II; J, IJ; K, IK; L, IL; M, IM; N, IN; O, IO; P, IP; Q, IQ; R, IR; S, IS; T, IT; U, IU);
+impl_all_provided_for_tuple!(A, IA; B, IB; C, IC; D, ID; E, IE; F, IF; G, IG; H, IH; I, II; J, IJ; K, IK; L, IL; M, IM; N, IN; O, IO; P, IP; Q, IQ; R, IR; S, IS; T, IT; U, IU; V, IV);
 
 // ---------------------------------------------------------------------------
 // Tests
