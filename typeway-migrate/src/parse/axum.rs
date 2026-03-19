@@ -62,6 +62,7 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
         syn::parse_str(source).context("failed to parse Rust source file")?;
 
     let mut handler_fns: HashMap<String, &ItemFn> = HashMap::new();
+    let mut sync_fns: HashMap<String, &ItemFn> = HashMap::new();
     let mut raw_routes: Vec<RawRoute> = Vec::new();
     let mut layers: Vec<Expr> = Vec::new();
     let mut state_type: Option<syn::Type> = None;
@@ -70,35 +71,15 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
     let mut prefix: Option<String> = None;
     let mut warnings: Vec<String> = Vec::new();
 
-    // First pass: collect handler functions and identify the router function.
+    // First pass: categorize all items — collect functions by name.
     for item in &file.items {
         match item {
             Item::Fn(func) => {
+                let name = func.sig.ident.to_string();
                 if func.sig.asyncness.is_some() {
-                    handler_fns.insert(func.sig.ident.to_string(), func);
+                    handler_fns.insert(name, func);
                 } else {
-                    // Check if this is a router-building function.
-                    let routes_and_layers =
-                        extract_routes_from_fn(func);
-                    let has_router_content = !routes_and_layers.routes.is_empty()
-                        || routes_and_layers.prefix.is_some()
-                        || !routes_and_layers.layers.is_empty()
-                        || !routes_and_layers.warnings.is_empty()
-                        || routes_and_layers.state_type.is_some();
-
-                    if has_router_content {
-                        raw_routes.extend(routes_and_layers.routes);
-                        layers.extend(routes_and_layers.layers);
-                        if routes_and_layers.state_type.is_some() {
-                            state_type = routes_and_layers.state_type;
-                        }
-                        if routes_and_layers.prefix.is_some() {
-                            prefix = routes_and_layers.prefix;
-                        }
-                        warnings.extend(routes_and_layers.warnings);
-                    } else {
-                        passthrough_items.push(item.clone());
-                    }
+                    sync_fns.insert(name, func);
                 }
             }
             Item::Use(u) => {
@@ -110,11 +91,78 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
         }
     }
 
+    // Second pass: extract routes from sync functions, collecting merge references.
+    // We process all sync functions first to discover which ones are merge targets.
+    let mut fn_extractions: Vec<(String, RoutesAndLayers)> = Vec::new();
+    for (name, func) in &sync_fns {
+        let extracted = extract_routes_from_fn(func);
+        fn_extractions.push((name.clone(), extracted));
+    }
+
+    // Identify functions that are referenced as merge/nest targets.
+    let merge_targets: std::collections::HashSet<String> = fn_extractions
+        .iter()
+        .flat_map(|(_, ral)| ral.merged_fns.iter().map(|m| m.fn_name.clone()))
+        .collect();
+
+    // Third pass: only directly add routes from functions that are NOT merge targets.
+    // Merge targets will have their routes added during merge resolution.
+    let mut pending_merges: Vec<MergedFnRef> = Vec::new();
+    let mut processed_sync_fns: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+
+    for (name, extracted) in fn_extractions {
+        // Skip functions that are merge targets — their routes will be
+        // pulled in during merge resolution below.
+        if merge_targets.contains(&name) {
+            processed_sync_fns.insert(name);
+            continue;
+        }
+
+        let has_router_content = !extracted.routes.is_empty()
+            || extracted.prefix.is_some()
+            || !extracted.layers.is_empty()
+            || !extracted.warnings.is_empty()
+            || extracted.state_type.is_some()
+            || !extracted.merged_fns.is_empty();
+
+        if has_router_content {
+            raw_routes.extend(extracted.routes);
+            layers.extend(extracted.layers);
+            if extracted.state_type.is_some() {
+                state_type = extracted.state_type;
+            }
+            if extracted.prefix.is_some() {
+                prefix = extracted.prefix;
+            }
+            warnings.extend(extracted.warnings);
+            pending_merges.extend(extracted.merged_fns);
+            processed_sync_fns.insert(name);
+        }
+        // Non-router sync functions that aren't merge targets are passthrough.
+        // (They were already added to passthrough_items during item collection
+        // if they're not in sync_fns, but we handle them through the sync_fns map.)
+    }
+
+    // Add non-router sync functions to passthrough items.
+    for item in &file.items {
+        if let Item::Fn(func) = item {
+            if func.sig.asyncness.is_none() {
+                let name = func.sig.ident.to_string();
+                if !processed_sync_fns.contains(&name) {
+                    passthrough_items.push(item.clone());
+                }
+            }
+        }
+    }
+
     // If no routes found in sync functions, check async main or similar.
-    if raw_routes.is_empty() {
+    if raw_routes.is_empty() && pending_merges.is_empty() {
         for func in handler_fns.values() {
             let routes_and_layers = extract_routes_from_fn(func);
-            if !routes_and_layers.routes.is_empty() {
+            if !routes_and_layers.routes.is_empty()
+                || !routes_and_layers.merged_fns.is_empty()
+            {
                 raw_routes.extend(routes_and_layers.routes);
                 layers.extend(routes_and_layers.layers);
                 if routes_and_layers.state_type.is_some() {
@@ -124,7 +172,64 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
                     prefix = routes_and_layers.prefix;
                 }
                 warnings.extend(routes_and_layers.warnings);
+                pending_merges.extend(routes_and_layers.merged_fns);
             }
+        }
+    }
+
+    // Resolve merged/nested function references within the same file.
+    let mut resolved: std::collections::HashSet<String> = std::collections::HashSet::new();
+    while let Some(merge_ref) = pending_merges.pop() {
+        // Avoid infinite recursion if functions merge each other.
+        if !resolved.insert(merge_ref.fn_name.clone()) {
+            continue;
+        }
+
+        // Look up in sync functions first, then async functions.
+        let target_fn = sync_fns
+            .get(merge_ref.fn_name.as_str())
+            .or_else(|| handler_fns.get(merge_ref.fn_name.as_str()));
+
+        if let Some(func) = target_fn {
+            let sub = extract_routes_from_fn(func);
+
+            // Apply nest prefix to extracted routes if present.
+            for mut route in sub.routes {
+                if let Some(ref pfx) = merge_ref.nest_prefix {
+                    let pfx = pfx.trim_end_matches('/');
+                    if route.path_pattern.starts_with('/') {
+                        route.path_pattern = format!("{}{}", pfx, route.path_pattern);
+                    } else {
+                        route.path_pattern = format!("{}/{}", pfx, route.path_pattern);
+                    }
+                }
+                raw_routes.push(route);
+            }
+
+            layers.extend(sub.layers);
+            warnings.extend(sub.warnings);
+
+            // If the sub-function also has merges, queue them for resolution.
+            // Propagate nest prefix to nested merges.
+            for mut sub_merge in sub.merged_fns {
+                if let Some(ref pfx) = merge_ref.nest_prefix {
+                    // Compose prefixes: outer + inner.
+                    sub_merge.nest_prefix = Some(match sub_merge.nest_prefix {
+                        Some(inner) => {
+                            let pfx = pfx.trim_end_matches('/');
+                            let inner = inner.trim_start_matches('/');
+                            format!("{}/{}", pfx, inner)
+                        }
+                        None => pfx.clone(),
+                    });
+                }
+                pending_merges.push(sub_merge);
+            }
+        } else {
+            warnings.push(format!(
+                "Merged router from function `{}()` not found in this file — must be resolved manually",
+                merge_ref.fn_name,
+            ));
         }
     }
 
@@ -286,6 +391,15 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
     })
 }
 
+/// A function call that was passed to `.merge()` or `.nest()`.
+#[derive(Debug)]
+struct MergedFnRef {
+    /// The function name being called (e.g., `user_routes`).
+    fn_name: String,
+    /// If this came from `.nest("/prefix", fn())`, the prefix to prepend.
+    nest_prefix: Option<String>,
+}
+
 /// Results from scanning a function for route definitions.
 struct RoutesAndLayers {
     routes: Vec<RawRoute>,
@@ -293,6 +407,8 @@ struct RoutesAndLayers {
     state_type: Option<syn::Type>,
     prefix: Option<String>,
     warnings: Vec<String>,
+    /// Functions referenced via `.merge(fn())` or `.nest("/prefix", fn())`.
+    merged_fns: Vec<MergedFnRef>,
 }
 
 /// Scan a function body for `Router::new().route(...)` chains.
@@ -303,6 +419,7 @@ fn extract_routes_from_fn(func: &ItemFn) -> RoutesAndLayers {
         state_type: None,
         prefix: None,
         warnings: Vec::new(),
+        merged_fns: Vec::new(),
     };
 
     // Walk statements looking for expressions that are Router chains.
@@ -364,24 +481,49 @@ fn extract_from_expr(expr: &Expr, result: &mut RoutesAndLayers) {
                     }
                     extract_from_expr(&mc.receiver, result);
                 }
+                "merge" => {
+                    // .merge(fn_call()) — resolve the function to extract its routes.
+                    if let Some(Expr::Call(call)) = mc.args.first() {
+                        if let Expr::Path(p) = call.func.as_ref() {
+                            if let Some(seg) = p.path.segments.last() {
+                                result.merged_fns.push(MergedFnRef {
+                                    fn_name: seg.ident.to_string(),
+                                    nest_prefix: None,
+                                });
+                            }
+                        }
+                    }
+                    extract_from_expr(&mc.receiver, result);
+                }
                 "nest" => {
                     // Extract the prefix string from .nest("/prefix", sub_router).
-                    if let Some(Expr::Lit(lit)) = mc.args.first() {
+                    let nest_prefix = if let Some(Expr::Lit(lit)) = mc.args.first() {
                         if let Lit::Str(s) = &lit.lit {
-                            result.prefix = Some(s.value());
+                            Some(s.value())
+                        } else {
+                            None
                         }
-                    }
-                    // If the second arg is a function call, note as a TODO.
+                    } else {
+                        None
+                    };
+
+                    // If the second arg is a function call, resolve it with its prefix.
                     if let Some(Expr::Call(call)) = mc.args.get(1) {
                         if let Expr::Path(p) = call.func.as_ref() {
-                            let fn_name = p.path.segments.last()
-                                .map(|s| s.ident.to_string())
-                                .unwrap_or_default();
-                            result.warnings.push(
-                                format!("Nested router from function call `{}()` — must be inlined or converted separately", fn_name),
-                            );
+                            if let Some(seg) = p.path.segments.last() {
+                                result.merged_fns.push(MergedFnRef {
+                                    fn_name: seg.ident.to_string(),
+                                    nest_prefix: nest_prefix.clone(),
+                                });
+                            }
                         }
                     }
+
+                    // Also store the prefix for inline .nest() usage (no function call).
+                    if nest_prefix.is_some() && mc.args.get(1).is_none_or(|a| !matches!(a, Expr::Call(_))) {
+                        result.prefix = nest_prefix;
+                    }
+
                     extract_from_expr(&mc.receiver, result);
                 }
                 _ => {

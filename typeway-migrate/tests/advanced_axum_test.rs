@@ -3,12 +3,22 @@ use typeway_migrate::parse::axum::parse_axum_file;
 const FIXTURE: &str = include_str!("fixtures/advanced_axum.rs");
 
 #[test]
-fn detects_nest_prefix() {
+fn resolves_nested_routes_with_prefix() {
     let model = parse_axum_file(FIXTURE).expect("should parse");
-    assert_eq!(
-        model.prefix.as_deref(),
-        Some("/api/v1"),
-        "should detect the .nest(\"/api/v1\", ...) prefix"
+
+    // When .nest("/api/v1", api_routes()) is used and api_routes is in the
+    // same file, the parser now resolves the function and applies the prefix
+    // directly to each route's path pattern.
+    let paths: Vec<_> = model
+        .endpoints
+        .iter()
+        .map(|ep| ep.path.raw_pattern.clone())
+        .collect();
+
+    assert!(
+        paths.iter().all(|p| p.starts_with("/api/v1")),
+        "all paths should be prefixed with /api/v1, got: {:?}",
+        paths,
     );
 }
 
@@ -89,24 +99,34 @@ fn conversion_succeeds_with_warnings() {
 fn nest_prefix_appears_in_output() {
     let output =
         typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    // The nest prefix is now baked into path type names and path macro segments.
     assert!(
-        output.contains("/api/v1"),
-        "output should contain the nest prefix, got:\n{}",
+        output.contains("api") && output.contains("v1"),
+        "output should contain the nest prefix segments, got:\n{}",
         output
     );
 }
 
 #[test]
-fn nested_router_function_noted_in_warnings() {
+fn nested_router_function_resolved_without_warning() {
     let model = parse_axum_file(FIXTURE).expect("should parse");
-    let nested_warnings: Vec<_> = model
+    // api_routes() is in the same file and is resolved via .nest(), so
+    // there should be NO warning about it being unresolvable.
+    let unresolved_warnings: Vec<_> = model
         .warnings
         .iter()
-        .filter(|w| w.contains("api_routes"))
+        .filter(|w| w.contains("api_routes") && w.contains("not found"))
         .collect();
     assert!(
-        !nested_warnings.is_empty(),
-        "should note nested router function call in warnings, warnings: {:?}",
-        model.warnings
+        unresolved_warnings.is_empty(),
+        "api_routes should be resolved without warnings, got: {:?}",
+        unresolved_warnings,
+    );
+
+    // The routes from api_routes() should be present with the /api/v1 prefix.
+    assert!(
+        model.endpoints.len() == 3,
+        "should have 3 endpoints (resolved from api_routes), got {}",
+        model.endpoints.len(),
     );
 }

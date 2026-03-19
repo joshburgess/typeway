@@ -30,6 +30,15 @@ enum Command {
         /// Also update Cargo.toml (add typeway, comment out axum).
         #[arg(long)]
         update_cargo: bool,
+
+        /// Interactively prompt for decisions on ambiguous cases.
+        #[arg(long)]
+        interactive: bool,
+
+        /// Only convert endpoints matching these path patterns (comma-separated).
+        /// Example: --partial "/users,/users/{id}"
+        #[arg(long, value_delimiter = ',')]
+        partial: Option<Vec<String>>,
     },
 
     /// Convert Typeway code to Axum.
@@ -49,6 +58,10 @@ enum Command {
         /// Also update Cargo.toml (add axum, comment out typeway).
         #[arg(long)]
         update_cargo: bool,
+
+        /// Interactively prompt for decisions on ambiguous cases.
+        #[arg(long)]
+        interactive: bool,
     },
 
     /// Analyze Axum code and report what would be converted.
@@ -72,13 +85,15 @@ fn main() -> Result<()> {
             dir,
             dry_run,
             update_cargo,
+            interactive,
+            partial,
         } => {
             let files = collect_files(file.as_deref(), &dir)?;
             for path in files {
                 let source = std::fs::read_to_string(&path)
                     .with_context(|| format!("failed to read {}", path.display()))?;
 
-                match typeway_migrate::axum_to_typeway(&source) {
+                match typeway_migrate::axum_to_typeway_with_options(&source, interactive, partial.as_deref()) {
                     Ok(output) => {
                         if dry_run {
                             println!("// === {} ===\n{}", path.display(), output);
@@ -136,13 +151,14 @@ fn main() -> Result<()> {
             dir,
             dry_run,
             update_cargo,
+            interactive,
         } => {
             let files = collect_files(file.as_deref(), &dir)?;
             for path in files {
                 let source = std::fs::read_to_string(&path)
                     .with_context(|| format!("failed to read {}", path.display()))?;
 
-                match typeway_migrate::typeway_to_axum(&source) {
+                match typeway_migrate::typeway_to_axum_with_options(&source, interactive) {
                     Ok(output) => {
                         if dry_run {
                             println!("// === {} ===\n{}", path.display(), output);
