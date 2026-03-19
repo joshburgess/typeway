@@ -8,12 +8,14 @@ default = []
 openapi = ["dep:wayward-openapi"]
 axum-interop = ["dep:axum"]
 ws = ["dep:tokio-tungstenite", "dep:sha1_smol", "dep:base64"]
+tls = ["dep:tokio-rustls", "dep:rustls-pemfile"]
+multipart = ["dep:multer"]
 
 [dependencies]
 wayward-core = { path = "../wayward-core" }
 wayward-openapi = { path = "../wayward-openapi", optional = true }
 hyper = { version = "1", features = ["full"] }
-hyper-util = { version = "0.1", features = ["tokio", "service"] }
+hyper-util = { version = "0.1", features = ["tokio", "service", "http1", "http2", "server-auto"] }
 tower = { version = "0.5", features = ["util"] }
 tower-service = "0.3"
 tower-layer = "0.3"
@@ -22,6 +24,9 @@ uuid = { version = "1", features = ["v4"] }
 tokio-tungstenite = { version = "0.26", optional = true }
 sha1_smol = { version = "1", optional = true }
 base64 = { version = "0.22", optional = true }
+tokio-rustls = { version = "0.26", optional = true }
+rustls-pemfile = { version = "2", optional = true }
+multer = { version = "3", optional = true }
 axum = { version = "0.8", optional = true }
 tokio = { version = "1", features = ["full"] }
 http = "1"
@@ -33,6 +38,7 @@ serde_json = "1"
 serde_urlencoded = "0.7"
 indexmap = "2"
 futures = "0.3"
+tracing = "0.1"
 pin-project-lite = "0.2"
 
 [dev-dependencies]

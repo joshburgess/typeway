@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use hyper_util::rt::TokioIo;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpListener;
 
 use wayward_core::ApiSpec;
@@ -254,7 +254,7 @@ impl<A: ApiSpec> Server<A> {
         let html = match std::fs::read_to_string(&index_path) {
             Ok(contents) => Arc::new(contents),
             Err(e) => {
-                eprintln!(
+                tracing::warn!(
                     "WARNING: SPA fallback file not found: {} ({}). \
                      Unmatched routes will show an error page.",
                     index_path.display(),
@@ -390,6 +390,31 @@ impl<A: ApiSpec> Server<A> {
         }
     }
 
+    /// Start serving HTTPS with TLS.
+    ///
+    /// Requires `feature = "tls"`.
+    ///
+    /// ```ignore
+    /// let tls = TlsConfig::from_pem("cert.pem", "key.pem")?;
+    /// Server::<API>::new(handlers)
+    ///     .serve_tls("0.0.0.0:443".parse()?, tls)
+    ///     .await?;
+    /// ```
+    #[cfg(feature = "tls")]
+    pub async fn serve_tls(
+        self,
+        addr: SocketAddr,
+        tls: crate::tls::TlsConfig,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let listener = TcpListener::bind(addr).await?;
+        tracing::info!("Listening on https://{addr}");
+        let router = self.router.clone();
+        crate::tls::serve_tls_loop(listener, tls, move || {
+            hyper_util::service::TowerToHyperService::new(RouterService::new(router.clone()))
+        })
+        .await
+    }
+
     /// Get the inner [`RouterService`] as a Tower service.
     pub fn into_service(self) -> RouterService {
         RouterService::new(self.router)
@@ -408,13 +433,14 @@ impl<A: ApiSpec> Server<A> {
         addr: SocketAddr,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let listener = TcpListener::bind(addr).await?;
-        eprintln!("Listening on http://{addr}");
+        tracing::info!("Listening on http://{addr}");
         self.serve_with_shutdown(listener, std::future::pending())
             .await
     }
 
     /// Start serving with graceful shutdown.
     ///
+    /// Supports both HTTP/1.1 and HTTP/2 via automatic protocol detection.
     /// The server stops accepting new connections when the `shutdown` future
     /// completes. Existing connections are allowed to finish.
     ///
@@ -426,7 +452,6 @@ impl<A: ApiSpec> Server<A> {
     ///
     /// server.serve_with_shutdown(listener, async {
     ///     tokio::signal::ctrl_c().await.ok();
-    ///     eprintln!("shutting down...");
     /// }).await?;
     /// ```
     pub async fn serve_with_shutdown(
@@ -445,16 +470,16 @@ impl<A: ApiSpec> Server<A> {
                     let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
 
                     tokio::task::spawn(async move {
-                        if let Err(e) = hyper::server::conn::http1::Builder::new()
+                        if let Err(e) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
                             .serve_connection(io, hyper_svc)
                             .await
                         {
-                            eprintln!("Connection error: {e}");
+                            tracing::debug!("Connection closed: {e}");
                         }
                     });
                 }
                 () = &mut shutdown => {
-                    eprintln!("Shutting down gracefully...");
+                    tracing::info!("Shutting down gracefully...");
                     return Ok(());
                 }
             }
@@ -579,7 +604,7 @@ impl<S> LayeredServer<S> {
         let html = match std::fs::read_to_string(&index_path) {
             Ok(contents) => Arc::new(contents),
             Err(e) => {
-                eprintln!(
+                tracing::warn!(
                     "WARNING: SPA fallback file not found: {} ({})",
                     index_path.display(),
                     e
@@ -654,7 +679,7 @@ where
         addr: SocketAddr,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let listener = TcpListener::bind(addr).await?;
-        eprintln!("Listening on http://{addr}");
+        tracing::info!("Listening on http://{addr}");
         self.serve_with_shutdown(listener, std::future::pending())
             .await
     }
@@ -676,16 +701,16 @@ where
                     let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
 
                     tokio::task::spawn(async move {
-                        if let Err(e) = hyper::server::conn::http1::Builder::new()
+                        if let Err(e) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
                             .serve_connection(io, hyper_svc)
                             .await
                         {
-                            eprintln!("Connection error: {e}");
+                            tracing::debug!("Connection closed: {e}");
                         }
                     });
                 }
                 () = &mut shutdown => {
-                    eprintln!("Shutting down gracefully...");
+                    tracing::info!("Shutting down gracefully...");
                     return Ok(());
                 }
             }

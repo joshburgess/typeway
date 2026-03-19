@@ -244,6 +244,111 @@ impl<T: Clone + Send + Sync + 'static> FromRequestParts for Extension<T> {
 }
 
 // ---------------------------------------------------------------------------
+// Cookie extractor
+// ---------------------------------------------------------------------------
+
+/// Trait for types that extract a specific named cookie.
+///
+/// # Example
+///
+/// ```
+/// use wayward_server::extract::{Cookie, NamedCookie};
+///
+/// struct SessionId(String);
+///
+/// impl NamedCookie for SessionId {
+///     const COOKIE_NAME: &'static str = "session_id";
+///     fn from_value(value: &str) -> Result<Self, String> {
+///         Ok(SessionId(value.to_string()))
+///     }
+/// }
+///
+/// async fn handler(Cookie(session): Cookie<SessionId>) -> String {
+///     format!("session: {}", session.0)
+/// }
+/// ```
+pub trait NamedCookie: Sized + Send {
+    /// The cookie name to extract.
+    const COOKIE_NAME: &'static str;
+    /// Parse the cookie value string into this type.
+    fn from_value(value: &str) -> Result<Self, String>;
+}
+
+/// Extracts a single cookie by name.
+pub struct Cookie<T>(pub T);
+
+impl<T: NamedCookie + 'static> FromRequestParts for Cookie<T> {
+    type Error = (StatusCode, String);
+
+    fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error> {
+        let cookies = parts
+            .headers
+            .get(http::header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+
+        for pair in cookies.split(';') {
+            let pair = pair.trim();
+            if let Some(value) = pair
+                .strip_prefix(T::COOKIE_NAME)
+                .and_then(|s| s.strip_prefix('='))
+            {
+                return T::from_value(value)
+                    .map(Cookie)
+                    .map_err(|e| (StatusCode::BAD_REQUEST, e));
+            }
+        }
+
+        Err((
+            StatusCode::BAD_REQUEST,
+            format!("missing cookie: {}", T::COOKIE_NAME),
+        ))
+    }
+}
+
+/// Extracts all cookies as a key-value map.
+///
+/// ```
+/// use wayward_server::extract::CookieJar;
+///
+/// async fn handler(cookies: CookieJar) -> String {
+///     let session = cookies.get("session_id").unwrap_or("none");
+///     format!("session: {session}")
+/// }
+/// ```
+pub struct CookieJar(pub std::collections::HashMap<String, String>);
+
+impl CookieJar {
+    /// Get a cookie value by name.
+    pub fn get(&self, name: &str) -> Option<&str> {
+        self.0.get(name).map(|s| s.as_str())
+    }
+}
+
+impl FromRequestParts for CookieJar {
+    type Error = (StatusCode, String);
+
+    fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error> {
+        let cookies = parts
+            .headers
+            .get(http::header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+
+        let map = cookies
+            .split(';')
+            .filter_map(|pair| {
+                let pair = pair.trim();
+                let (name, value) = pair.split_once('=')?;
+                Some((name.to_string(), value.to_string()))
+            })
+            .collect();
+
+        Ok(CookieJar(map))
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Method extractor
 // ---------------------------------------------------------------------------
 
