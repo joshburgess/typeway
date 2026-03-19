@@ -169,12 +169,22 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
 
         let response_type = handler.return_type.clone();
 
+        // Detect auth extractors.
+        let (requires_auth, auth_type, bind_macro) = detect_auth_extractor(&handler);
+
+        // Detect validation patterns in handler body.
+        let has_validation = detect_validation_patterns(&handler);
+
         endpoints.push(EndpointModel {
             method: route.method,
             path: path_model,
             handler,
             request_body,
             response_type,
+            requires_auth,
+            auth_type,
+            has_validation,
+            bind_macro,
         });
     }
 
@@ -183,7 +193,7 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
         fill_capture_types(endpoint, &path_models);
     }
 
-    // Detect `impl IntoResponse` return types and custom extractors.
+    // Detect `impl IntoResponse` return types, custom extractors, and auth patterns.
     for endpoint in &endpoints {
         if is_impl_into_response(&endpoint.response_type) {
             warnings.push(format!(
@@ -191,10 +201,37 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
                 endpoint.handler.name,
             ));
         }
+
+        // Emit auth detection warnings.
+        if endpoint.requires_auth {
+            if let Some(ref auth_ty) = endpoint.auth_type {
+                warnings.push(format!(
+                    "Detected auth extractor `{}` in handler `{}` — wrapped in Protected<{}, E>. \
+                     Verify the auth extractor implements FromRequestParts.",
+                    auth_ty, endpoint.handler.name, auth_ty,
+                ));
+            }
+        }
+
+        // Emit validation detection warnings.
+        if endpoint.has_validation {
+            warnings.push(format!(
+                "Handler `{}` may contain manual validation logic — consider using Validated<T, E> wrapper",
+                endpoint.handler.name,
+            ));
+        }
+
         for ext in &endpoint.handler.extractors {
             if ext.kind == ExtractorKind::Unknown {
                 let ty = &ext.full_type;
                 let ty_str = quote!(#ty).to_string();
+                // Don't emit the generic "unknown extractor" warning for auth types
+                // that we've already recognized.
+                if endpoint.requires_auth
+                    && endpoint.auth_type.as_deref() == Some(&ty_str)
+                {
+                    continue;
+                }
                 warnings.push(format!(
                     "Handler `{}` uses unknown extractor type `{}` — review after conversion",
                     endpoint.handler.name,
@@ -204,6 +241,9 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
         }
     }
 
+    // Detect middleware effects from layer expressions.
+    let detected_effects = detect_effects_from_layers(&layers);
+
     Ok(ApiModel {
         endpoints,
         state_type,
@@ -212,6 +252,7 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
         use_items,
         prefix,
         warnings,
+        detected_effects,
     })
 }
 
@@ -460,6 +501,117 @@ fn fill_capture_types(
     if let Some(canonical) = path_models.get(&endpoint.path.raw_pattern) {
         // Use the canonical type name.
         endpoint.path.typeway_type_name = canonical.typeway_type_name.clone();
+    }
+}
+
+/// Detect whether a handler's first argument is an auth extractor.
+///
+/// Heuristic: the first extractor is `Unknown` kind (not a recognized
+/// framework extractor like Path/State/Json/Query/etc.), and its type name
+/// matches common auth patterns (ends with Auth, User, Claims, Token, Session),
+/// OR it is a generic `Extension<T>` where T matches auth patterns.
+fn detect_auth_extractor(handler: &HandlerModel) -> (bool, Option<String>, BindMacro) {
+    if handler.extractors.is_empty() {
+        return (false, None, BindMacro::Bind);
+    }
+
+    let first = &handler.extractors[0];
+
+    // Check if the first extractor is an unknown kind (custom type).
+    if first.kind == ExtractorKind::Unknown {
+        let ty_str = extract_type_name_string(&first.full_type);
+        if is_auth_type_name(&ty_str) || !ty_str.is_empty() {
+            // If the name matches known auth suffixes, high confidence.
+            // If it's just an unknown type as the first arg, still flag it
+            // but only if it matches auth naming patterns.
+            if is_auth_type_name(&ty_str) {
+                return (true, Some(ty_str), BindMacro::BindAuth);
+            }
+        }
+    }
+
+    // Check for Extension<Claims>-style auth.
+    if first.kind == ExtractorKind::Extension {
+        if let Some(ref inner) = first.inner_type {
+            let inner_str = extract_type_name_string(inner);
+            if is_auth_type_name(&inner_str) {
+                return (true, Some(inner_str), BindMacro::BindAuth);
+            }
+        }
+    }
+
+    (false, None, BindMacro::Bind)
+}
+
+/// Extract a simple type name string from a Type for display/matching.
+fn extract_type_name_string(ty: &syn::Type) -> String {
+    match ty {
+        syn::Type::Path(syn::TypePath { path, .. }) => {
+            path.segments.last()
+                .map(|s| s.ident.to_string())
+                .unwrap_or_default()
+        }
+        _ => String::new(),
+    }
+}
+
+/// Detect potential validation patterns in a handler body.
+///
+/// This is a rough heuristic — we look for common validation idioms like
+/// `.is_empty()`, `.len()`, or `Err(` combined with field access patterns.
+fn detect_validation_patterns(handler: &HandlerModel) -> bool {
+    let body_str = handler
+        .body
+        .iter()
+        .map(|stmt| quote!(#stmt).to_string())
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    body_str.contains(".is_empty()")
+        || body_str.contains(".len()")
+        || (body_str.contains("Err(") && body_str.contains("valid"))
+}
+
+/// Detect middleware effects from layer expressions.
+///
+/// Scans each layer expression for known middleware patterns and returns
+/// a list of `DetectedEffect` values that should become type-level
+/// requirements in the generated Typeway code.
+fn detect_effects_from_layers(layers: &[Expr]) -> Vec<DetectedEffect> {
+    let mut effects = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for layer in layers {
+        if let Some(effect_name) = classify_layer_effect(layer) {
+            if seen.insert(effect_name.clone()) {
+                effects.push(DetectedEffect {
+                    effect_name,
+                    layer_expr: Some(layer.clone()),
+                });
+            }
+        }
+    }
+
+    effects
+}
+
+/// Classify a layer expression into a known effect name, if recognized.
+///
+/// Matches on type/function names appearing in the expression:
+/// - `CorsLayer::*` or anything containing "Cors" => "CorsRequired"
+/// - `TraceLayer::*` or anything containing "Trace" => "TracingRequired"
+/// - `RateLimitLayer::*` or anything containing "RateLimit" => "RateLimitRequired"
+fn classify_layer_effect(expr: &Expr) -> Option<String> {
+    let expr_str = quote!(#expr).to_string();
+
+    if expr_str.contains("Cors") {
+        Some("CorsRequired".to_string())
+    } else if expr_str.contains("Trace") {
+        Some("TracingRequired".to_string())
+    } else if expr_str.contains("RateLimit") {
+        Some("RateLimitRequired".to_string())
+    } else {
+        None
     }
 }
 

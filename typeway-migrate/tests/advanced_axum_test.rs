@@ -45,14 +45,16 @@ fn impl_into_response_produces_warning() {
 #[test]
 fn custom_extractor_produces_warning() {
     let model = parse_axum_file(FIXTURE).expect("should parse");
+    // CustomAuth is now recognized as an auth extractor, so it produces
+    // an auth detection warning instead of the generic "unknown extractor" one.
     let extractor_warnings: Vec<_> = model
         .warnings
         .iter()
-        .filter(|w| w.contains("unknown extractor"))
+        .filter(|w| w.contains("unknown extractor") || w.contains("Detected auth extractor"))
         .collect();
     assert!(
         !extractor_warnings.is_empty(),
-        "should produce a warning for unknown/custom extractors, warnings: {:?}",
+        "should produce a warning for custom extractors (auth or unknown), warnings: {:?}",
         model.warnings
     );
 }

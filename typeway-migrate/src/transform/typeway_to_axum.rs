@@ -211,6 +211,25 @@ fn emit_single_handler(endpoint: &EndpointModel) -> TokenStream {
                 params.push(quote! { Json(#var): #full_type });
                 destructured_vars.insert(var.to_string());
             }
+            ExtractorKind::Query => {
+                // Query<T> passes through to Axum style with destructuring.
+                let var = ext
+                    .var_name
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("query"));
+                let full_type = &ext.full_type;
+                params.push(quote! { Query(#var): #full_type });
+                destructured_vars.insert(var.to_string());
+            }
+            ExtractorKind::Unknown if endpoint.requires_auth => {
+                // Auth extractor: emit as a plain argument (Axum custom extractor).
+                let var = ext
+                    .var_name
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("auth"));
+                let full_type = &ext.full_type;
+                params.push(quote! { #var: #full_type });
+            }
             _ => {
                 let pat = &ext.pattern;
                 let ty = &ext.full_type;

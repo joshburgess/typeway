@@ -114,6 +114,10 @@ pub fn parse_typeway_file(source: &str) -> Result<ApiModel> {
             handler,
             request_body,
             response_type,
+            requires_auth: raw_ep.requires_auth,
+            auth_type: raw_ep.auth_type.clone(),
+            has_validation: raw_ep.has_validation,
+            bind_macro: raw_ep.bind_macro.clone(),
         });
     }
 
@@ -125,6 +129,7 @@ pub fn parse_typeway_file(source: &str) -> Result<ApiModel> {
         use_items,
         prefix: None,
         warnings: Vec::new(),
+        detected_effects: Vec::new(),
     })
 }
 
@@ -135,6 +140,10 @@ struct RawEndpoint {
     path: PathModel,
     request_body: Option<Type>,
     response_type: Type,
+    requires_auth: bool,
+    auth_type: Option<String>,
+    has_validation: bool,
+    bind_macro: BindMacro,
 }
 
 /// Information extracted from a `Server::<API>::new(...)` call.
@@ -243,8 +252,78 @@ fn parse_api_type_alias(
     endpoints
 }
 
-/// Parse a single endpoint type like `GetEndpoint<UsersPath, Json<Vec<User>>>`.
+/// Parse a single endpoint type like `GetEndpoint<UsersPath, Json<Vec<User>>>`,
+/// or a `Protected<AuthUser, GetEndpoint<...>>` wrapper.
 fn parse_endpoint_type(
+    ty: &Type,
+    path_types: &HashMap<String, PathModel>,
+) -> Option<RawEndpoint> {
+    let type_path = match ty {
+        Type::Path(TypePath { path, .. }) => path,
+        _ => return None,
+    };
+
+    let last_seg = type_path.segments.last()?;
+    let outer_name = last_seg.ident.to_string();
+
+    // Check for Protected<AuthType, InnerEndpoint> wrapper.
+    if outer_name == "Protected" {
+        let args = match &last_seg.arguments {
+            syn::PathArguments::AngleBracketed(ab) => &ab.args,
+            _ => return None,
+        };
+
+        let type_args: Vec<&Type> = args
+            .iter()
+            .filter_map(|arg| match arg {
+                syn::GenericArgument::Type(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+
+        if type_args.len() < 2 {
+            return None;
+        }
+
+        // First arg is the auth type, second is the inner endpoint.
+        let auth_type_name = type_to_ident_string(type_args[0])?;
+        let mut raw_ep = parse_inner_endpoint_type(type_args[1], path_types)?;
+        raw_ep.requires_auth = true;
+        raw_ep.auth_type = Some(auth_type_name);
+        raw_ep.bind_macro = BindMacro::BindAuth;
+        return Some(raw_ep);
+    }
+
+    // Check for Validated<V, InnerEndpoint> wrapper.
+    if outer_name == "Validated" {
+        let args = match &last_seg.arguments {
+            syn::PathArguments::AngleBracketed(ab) => &ab.args,
+            _ => return None,
+        };
+
+        let type_args: Vec<&Type> = args
+            .iter()
+            .filter_map(|arg| match arg {
+                syn::GenericArgument::Type(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+
+        if type_args.len() < 2 {
+            return None;
+        }
+
+        let mut raw_ep = parse_inner_endpoint_type(type_args[1], path_types)?;
+        raw_ep.has_validation = true;
+        raw_ep.bind_macro = BindMacro::BindValidated;
+        return Some(raw_ep);
+    }
+
+    parse_inner_endpoint_type(ty, path_types)
+}
+
+/// Parse a bare endpoint type (not wrapped in Protected/Validated).
+fn parse_inner_endpoint_type(
     ty: &Type,
     path_types: &HashMap<String, PathModel>,
 ) -> Option<RawEndpoint> {
@@ -309,6 +388,10 @@ fn parse_endpoint_type(
         path,
         request_body,
         response_type,
+        requires_auth: false,
+        auth_type: None,
+        has_validation: false,
+        bind_macro: BindMacro::Bind,
     })
 }
 
@@ -455,12 +538,14 @@ fn extract_bind_handler_names(expr: &Expr) -> Vec<String> {
     names
 }
 
-/// Extract the handler name from a `bind!(handler_name)` macro call.
+/// Extract the handler name from a `bind!(handler_name)`, `bind_auth!(handler_name)`,
+/// or `bind_validated!(handler_name)` macro call.
 fn extract_single_bind_name(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Macro(mac) => {
             let path = mac.mac.path.segments.last()?;
-            if path.ident == "bind" {
+            let ident = path.ident.to_string();
+            if ident == "bind" || ident == "bind_auth" || ident == "bind_validated" {
                 let tokens_str = mac.mac.tokens.to_string();
                 Some(tokens_str.trim().to_string())
             } else {

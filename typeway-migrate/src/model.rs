@@ -1,5 +1,7 @@
 //! Intermediate representation shared by both parse and emit stages.
 
+use std::fmt;
+
 use syn::{Ident, Pat, Type};
 
 /// The full API model extracted from source code.
@@ -19,6 +21,18 @@ pub struct ApiModel {
     pub prefix: Option<String>,
     /// Warnings produced during parsing (e.g., unsupported patterns).
     pub warnings: Vec<String>,
+    /// Detected middleware effects that should become type-level requirements.
+    pub detected_effects: Vec<DetectedEffect>,
+}
+
+/// A middleware effect detected from layer calls that should become a
+/// type-level requirement in the generated Typeway code.
+#[derive(Debug, Clone)]
+pub struct DetectedEffect {
+    /// The effect name (e.g., "CorsRequired", "TracingRequired").
+    pub effect_name: String,
+    /// The original layer expression that provides this effect.
+    pub layer_expr: Option<syn::Expr>,
 }
 
 /// A single HTTP endpoint.
@@ -29,6 +43,41 @@ pub struct EndpointModel {
     pub handler: HandlerModel,
     pub request_body: Option<Type>,
     pub response_type: Type,
+    /// Whether this endpoint requires authentication.
+    /// Detected from auth-related extractors in the handler.
+    pub requires_auth: bool,
+    /// The auth extractor type name, if detected (e.g., "AuthUser", "Claims").
+    pub auth_type: Option<String>,
+    /// Whether this endpoint has request body validation.
+    pub has_validation: bool,
+    /// The bind macro to use: "bind", "bind_auth", or "bind_validated".
+    pub bind_macro: BindMacro,
+}
+
+/// Which bind macro to use when emitting Typeway server construction.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BindMacro {
+    Bind,
+    BindAuth,
+    BindValidated,
+}
+
+impl fmt::Display for BindMacro {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            BindMacro::Bind => write!(f, "bind"),
+            BindMacro::BindAuth => write!(f, "bind_auth"),
+            BindMacro::BindValidated => write!(f, "bind_validated"),
+        }
+    }
+}
+
+/// Auth-related type name suffixes used for heuristic detection.
+const AUTH_TYPE_SUFFIXES: &[&str] = &["Auth", "User", "Claims", "Token", "Session"];
+
+/// Check whether a type name looks like an auth extractor.
+pub fn is_auth_type_name(name: &str) -> bool {
+    AUTH_TYPE_SUFFIXES.iter().any(|suffix| name.ends_with(suffix))
 }
 
 /// HTTP methods.

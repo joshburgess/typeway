@@ -7,7 +7,7 @@ use crate::model::*;
 
 /// Transform an `ApiModel` into a complete Typeway source file.
 pub fn emit_typeway(model: &ApiModel) -> TokenStream {
-    let use_stmts = emit_use_statements();
+    let use_stmts = emit_use_statements(model);
     let passthrough = emit_passthrough_items(&model.passthrough_items);
     let path_decls = emit_path_declarations(model);
     let api_type = emit_api_type(model);
@@ -41,9 +41,28 @@ pub fn emit_warning_lines(model: &ApiModel) -> Vec<String> {
     lines
 }
 
-fn emit_use_statements() -> TokenStream {
-    quote! {
-        use typeway::prelude::*;
+fn emit_use_statements(model: &ApiModel) -> TokenStream {
+    let has_effects = !model.detected_effects.is_empty();
+
+    if has_effects {
+        let effect_names: Vec<TokenStream> = model
+            .detected_effects
+            .iter()
+            .map(|e| {
+                let ident = format_ident!("{}", e.effect_name);
+                quote! { #ident }
+            })
+            .collect();
+
+        quote! {
+            use typeway::prelude::*;
+            use typeway_core::effects::{#(#effect_names,)* Requires};
+            use typeway_server::EffectfulServer;
+        }
+    } else {
+        quote! {
+            use typeway::prelude::*;
+        }
     }
 }
 
@@ -115,6 +134,11 @@ fn emit_path_segments(segments: &[PathSegment]) -> TokenStream {
 
 /// Emit the `type API = (...)` declaration.
 fn emit_api_type(model: &ApiModel) -> TokenStream {
+    let has_cors = model
+        .detected_effects
+        .iter()
+        .any(|e| e.effect_name == "CorsRequired");
+
     let endpoints: Vec<TokenStream> = model
         .endpoints
         .iter()
@@ -122,7 +146,7 @@ fn emit_api_type(model: &ApiModel) -> TokenStream {
             let path_type = &ep.path.typeway_type_name;
             let res_type = &ep.response_type;
 
-            match ep.method {
+            let inner = match ep.method {
                 HttpMethod::Get | HttpMethod::Delete | HttpMethod::Head | HttpMethod::Options => {
                     let endpoint_name =
                         format_ident!("{}", ep.method.typeway_endpoint_name());
@@ -138,6 +162,27 @@ fn emit_api_type(model: &ApiModel) -> TokenStream {
                         quote! { #endpoint_name<#path_type, (), #res_type> }
                     }
                 }
+            };
+
+            // Wrap in Protected<AuthType, ...> if auth is required.
+            let wrapped = if ep.requires_auth {
+                if let Some(ref auth_ty) = ep.auth_type {
+                    let auth_ident = format_ident!("{}", auth_ty);
+                    quote! { Protected<#auth_ident, #inner> }
+                } else {
+                    inner
+                }
+            } else {
+                inner
+            };
+
+            // Wrap public GET endpoints in Requires<CorsRequired, E> when CORS is detected.
+            // Heuristic: endpoints NOT wrapped in Protected and using GET method are
+            // the public-facing endpoints browsers access.
+            if has_cors && !ep.requires_auth && ep.method == HttpMethod::Get {
+                quote! { Requires<CorsRequired, #wrapped> }
+            } else {
+                wrapped
             }
         })
         .collect();
@@ -231,6 +276,45 @@ fn emit_single_handler(endpoint: &EndpointModel) -> TokenStream {
                     });
                 }
             }
+            ExtractorKind::Query => {
+                // Query<T> works the same in both frameworks — pass through.
+                let var = ext
+                    .var_name
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("query"));
+                let full_type = &ext.full_type;
+                params.push(quote! { #var: #full_type });
+
+                if matches!(&ext.pattern, syn::Pat::TupleStruct(_)) {
+                    body_prefix.push(quote! {
+                        let #var = #var.0;
+                    });
+                }
+            }
+            ExtractorKind::Header | ExtractorKind::HeaderMap => {
+                // Header/HeaderMap extractors pass through unchanged.
+                let var = ext
+                    .var_name
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("headers"));
+                let full_type = &ext.full_type;
+                params.push(quote! { #var: #full_type });
+
+                if matches!(&ext.pattern, syn::Pat::TupleStruct(_)) {
+                    body_prefix.push(quote! {
+                        let #var = #var.0;
+                    });
+                }
+            }
+            ExtractorKind::Unknown if endpoint.requires_auth => {
+                // Auth extractor: keep as first argument for bind_auth!.
+                let var = ext
+                    .var_name
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("auth"));
+                let full_type = &ext.full_type;
+                params.push(quote! { #var: #full_type });
+            }
             _ => {
                 // Pass through other extractors unchanged.
                 let pat = &ext.pattern;
@@ -253,12 +337,18 @@ fn emit_single_handler(endpoint: &EndpointModel) -> TokenStream {
 
 /// Emit the Server construction and serve call.
 fn emit_server(model: &ApiModel) -> TokenStream {
+    let has_effects = !model.detected_effects.is_empty();
+
     let binds: Vec<TokenStream> = model
         .endpoints
         .iter()
         .map(|ep| {
             let name = &ep.handler.name;
-            quote! { bind!(#name) }
+            match ep.bind_macro {
+                BindMacro::BindAuth => quote! { bind_auth!(#name) },
+                BindMacro::BindValidated => quote! { bind_validated!(#name) },
+                BindMacro::Bind => quote! { bind!(#name) },
+            }
         })
         .collect();
 
@@ -284,16 +374,43 @@ fn emit_server(model: &ApiModel) -> TokenStream {
         }
     });
 
-    quote! {
-        async fn serve(addr: std::net::SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            Server::<API>::new((
-                #(#binds,)*
-            ))
-            #(#layers)*
-            #state
-            #nest
-            .serve(addr)
-            .await
+    if has_effects {
+        // Generate .provide::<EffectName>() calls for each detected effect.
+        let provides: Vec<TokenStream> = model
+            .detected_effects
+            .iter()
+            .map(|e| {
+                let effect_ident = format_ident!("{}", e.effect_name);
+                quote! { .provide::<#effect_ident>() }
+            })
+            .collect();
+
+        quote! {
+            async fn serve(addr: std::net::SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                EffectfulServer::<API>::new((
+                    #(#binds,)*
+                ))
+                #(#provides)*
+                #(#layers)*
+                #state
+                #nest
+                .ready()
+                .serve(addr)
+                .await
+            }
+        }
+    } else {
+        quote! {
+            async fn serve(addr: std::net::SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Server::<API>::new((
+                    #(#binds,)*
+                ))
+                #(#layers)*
+                #state
+                #nest
+                .serve(addr)
+                .await
+            }
         }
     }
 }
