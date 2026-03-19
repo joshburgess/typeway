@@ -1,83 +1,75 @@
 # Remaining Priorities
 
-The framework is feature-complete for v0.1. Everything below is post-v0.1 work, organized by category.
+Updated status of all planned work. Checked items are complete.
 
 ---
 
 ## Research Features (from DESIGN.md §14)
 
-These push typeway beyond what Servant offers. Each is a significant design effort.
-
-### Middleware as Type-Level Effects
-
-Encode middleware requirements in the API type. A `Protected<AuthUser, E>` endpoint that's missing an auth middleware layer should be a compile error, not a runtime 500. The `Protected` wrapper exists today but only enforces that the handler accepts an `AuthUser` argument — it doesn't verify the corresponding middleware is actually applied via `.layer()`. The goal is a `Requires<AuthLayer>` bound on the endpoint type that the `Server` builder discharges at construction time.
-
-### Session-Typed WebSocket Routes
-
-Encode WebSocket message protocols as session types. The type system enforces message ordering: if the protocol says "server sends Greeting, client sends Auth, server sends Ok", sending out of order is a compile error. Ownership-based enforcement — after sending `Greeting`, the handle transitions to a type that can only receive `Auth`. This is novel; Servant doesn't have it.
-
-### Content Negotiation Coproducts
-
-A response type like `OneOf<Json<User>, Xml<User>, Html<UserPage>>` that automatically negotiates based on `Accept` headers. The OpenAPI spec would list all representations. Fits naturally into the existing `EndpointToOperation` trait system.
-
-### Type-Level API Versioning
-
-`Extends<V1, Changes>` for expressing API evolution with compile-time backward compatibility checks. V2 is a delta on V1 — added endpoints, changed response types — and the compiler verifies that V1 clients can still call V2 servers for unchanged endpoints.
+- [x] **Middleware as type-level effects** — `Requires<E, Endpoint>`, `EffectfulServer`, `.provide::<E>().ready()`
+- [x] **Session-typed WebSocket routes** — `Send`, `Recv`, `Offer`, `Select`, `Rec`/`Var`, `TypedWebSocket<S>`, `Dual` trait
+- [x] **Content negotiation coproducts** — `NegotiatedResponse<T, (JsonFormat, TextFormat, XmlFormat)>`, `RenderAs<Format>`, `AcceptHeader`
+- [x] **Type-level API versioning** — `VersionedApi<Base, Changes, Resolved>`, `Added`/`Removed`/`Replaced`/`Deprecated`, `assert_api_compatible!`
 
 ---
 
 ## Practical Improvements
 
-### Better Client Ergonomics
-
-The client works but is minimal. Improvements:
-- Generated method names: `.get_user(42)` instead of `.call::<Endpoint>((42,))`
-- Cookie/session persistence across requests
-- Request/response interceptors (logging, auth token injection)
-- Streaming response body support
-- Builder pattern for complex requests (custom headers, query params)
-
-### OpenAPI Enhancements
-
-- Response examples via a trait (`ExampleValue`)
-- Request body examples
-- Security scheme declarations from `Protected<Auth, E>` wrappers
-- Automatic tag grouping by path prefix
-- Markdown descriptions from doc comments on handler functions
-
-### gRPC / Tonic Interop
-
-Same idea as the Axum interop but for Tonic. Both are Tower-based, so `Server::into_tonic_router()` should be feasible. Would allow a single service to serve both REST (typeway) and gRPC (tonic) endpoints with shared middleware.
-
-### Publish to crates.io
-
-All crates are at 0.1.0 but not published. Steps:
-- Final review of public API surface
-- Ensure all doc tests pass (there's a pre-existing doctest failure in `typeway/src/lib.rs`)
-- Add `license`, `description`, `repository`, `keywords`, `categories` to each Cargo.toml
-- Publish in dependency order: core → macros → server → client → openapi → facade
-- Create a GitHub release with changelog
+- [x] **Client ergonomics** — `client_api!` macro, interceptors, cookies, streaming, per-call builder, `TypedResponse`, query params, Accept header, tracing
+- [x] **OpenAPI enhancements** — `ExampleValue`, security schemes from `Protected`, auto-tag grouping, deprecated marking, `EndpointToOperation` for wrappers
+- [ ] **OpenAPI: doc comment extraction** — Extract handler/struct doc comments into OpenAPI description fields. Requires proc-macro or build script to read source.
+- [ ] **gRPC / Tonic interop** — Design analysis complete (see GRPC-INTEROP-DESIGN.md). Items 1-3 work today (shared middleware, side-by-side serving, dual serialization). Item 4 (API type → .proto generation) is a v0.2 feature.
+- [ ] **Publish to crates.io** — On hold per user request.
 
 ---
 
-## Migration Tool
+## Migration Tool (`typeway-migrate`)
 
-### Phase 4 Polish (remaining)
+### What the tool handles (84 tests):
 
-- Interactive mode (`--interactive`) for ambiguous cases
-- VSCode extension integration (convert selected code)
-- `--partial` flag to convert only specific routes
-- Detect and handle `axum::Router::merge()` across functions
+| Feature | Axum→Typeway | Typeway→Axum | Detection |
+|---|---|---|---|
+| Routes (GET/POST/PUT/DELETE/PATCH) | Full | Full | Yes |
+| Path captures (single, multiple) | Full | Full | Yes |
+| Json body extraction | Full | Full | Yes |
+| State extraction | Full | Full | Yes |
+| Query extraction | Full | Full | Yes |
+| Header/HeaderMap | Passthrough | Passthrough | Yes |
+| Cookie/CookieJar | Passthrough | Passthrough | Yes |
+| Multipart/Form | Passthrough | Passthrough | Yes |
+| WebSocket upgrade | Passthrough + warning | Passthrough | Yes |
+| Tower middleware layers | Full | Full | Yes |
+| `.nest()` prefixes | Full | Full | Yes |
+| `.with_state()` | Full | Full | Yes |
+| Auth detection (Protected) | Full | Full | Yes |
+| Effects (EffectfulServer) | Full | Partial | Yes |
+| Validation (Validated) | Scaffolding | Full | Yes |
+| OpenAPI setup | Auto-added | N/A | N/A |
+| `bind!`/`bind_auth!`/`bind_validated!` | Correct selection | Recognized | Yes |
+| `from_fn` middleware | Warning | N/A | Yes |
+| `impl IntoResponse` | Warning | N/A | Yes |
+| Custom extractors | Warning | Passthrough | Yes |
+| Cargo.toml dependencies | `--update-cargo` | `--update-cargo` | N/A |
+| Roundtrip fidelity | Tested | Tested | 14 roundtrip tests |
+
+### What the tool does NOT handle:
+
+- [ ] **Content negotiation conversion** — Axum has no equivalent; typeway-specific opt-in
+- [ ] **API versioning scaffolding** — No `VersionedApi` generation (user designs versions manually)
+- [ ] **Client code generation** — No `client_api!` macro output from API type
+- [ ] **`from_fn` middleware conversion** — Warns but doesn't convert to Tower layer
+- [ ] **`impl IntoResponse` type inference** — Warns but can't resolve opaque types
+
+### Polish remaining:
+
+- [ ] **Interactive mode** (`--interactive`) for ambiguous cases
+- [ ] **VSCode extension** integration
+- [ ] **`--partial` flag** to convert only specific routes
+- [ ] **`Router::merge()`** across functions
 
 ---
 
 ## Infrastructure
 
-### Benchmark Regression Gating
-
-The last unchecked item from PRODUCTION-HARDENING.md. Criterion benchmarks exist but no automated baseline comparison in CI. Options: `bencher.dev`, `github-action-benchmark`, or custom artifact diff.
-
-### Pre-existing Issues to Clean Up
-
-- Doctest failure in `typeway/src/lib.rs` (the `?` operator on `Box<dyn Error>`)
-- 5 rustdoc warnings (broken intra-doc links in `typeway-server`)
+- [ ] **Benchmark regression gating** — Criterion benchmarks exist but no CI baseline comparison. Options: `bencher.dev`, `github-action-benchmark`, custom artifact diff.
+- [x] **Pre-existing cleanup** — Doctest failure fixed, all rustdoc warnings resolved.
