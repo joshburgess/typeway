@@ -180,7 +180,7 @@ type API = (
 
 This isn't a DSL or a macro that generates code behind your back. It's a plain Rust type alias. The compiler understands it, IDE tooling works with it, and you can inspect it in `cargo doc`. The server, client, and OpenAPI spec are all projections of this one type.
 
-This is directly inspired by Haskell's [Servant](https://docs.servant.dev/en/stable/), which pioneered the idea of APIs as types. Typeway brings that idea to Rust without requiring nightly features, GATs, or const generics for strings.
+This is directly inspired by Haskell's [Servant](https://docs.servant.dev/en/stable/), which pioneered the idea of APIs as types. Typeway brings that idea to Rust on stable, working around the absence of const generic `&'static str` parameters (still unstable) by using marker types with a `LitSegment` trait.
 
 ### Compile-Time Handler Completeness
 
