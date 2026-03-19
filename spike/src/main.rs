@@ -1,6 +1,6 @@
 #![allow(dead_code, clippy::upper_case_acronyms)]
 // ============================================================================
-// Wayward Spike: Type-Level Web Framework Proof of Concept
+// Typeway Spike: Type-Level Web Framework Proof of Concept
 // ============================================================================
 //
 // This spike proves three core concepts on stable Rust:
@@ -309,7 +309,7 @@ fn _assert_handler_matching() {
 // --- Runtime verification ---
 
 fn main() {
-    println!("=== Wayward Spike ===\n");
+    println!("=== Typeway Spike ===\n");
 
     println!("Step 0.2: Type-level path segments");
     println!("  Path1 = /users         → Captures = ()");
