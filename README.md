@@ -363,7 +363,7 @@ Every non-trivial async Rust application already depends on Tokio. By building o
 
 The Axum compatibility layer is the strongest practical argument for this foundation choice. Axum is the most widely adopted Rust web framework, and it sits on the exact same Tower/Hyper/Tokio stack. This creates a unique opportunity:
 
-- **Targeted type safety.** You don't have to use typeway for everything. Use it for the endpoints where type-level correctness matters most — a payment API, a permissions system, an integration contract between services — and keep the rest of your application in Axum. A single project can have hundreds of Axum routes and a handful of typeway routes, all sharing the same middleware, runtime, and deployment.
+- **Targeted type safety.** You don't have to use typeway for everything. Use it for the endpoints where type-level correctness matters most — a payment API, a permissions system, an integration contract between services — and keep the rest of your application in Axum. A single project can have hundreds of Axum routes and a handful of typeway routes, all sharing the same middleware, runtime, and binary.
 
 - **Team autonomy.** In organizations with multiple teams contributing to a shared service, typeway and Axum coexist naturally. A team that values functional programming patterns and compile-time guarantees can use typeway for their domain. A team that prefers Axum's imperative routing style keeps working the way they always have. Both teams share the same Tower middleware stack, the same Tokio runtime, and the same binary. No separate services, no microservice overhead — just different routing strategies in the same application.
 
