@@ -5,8 +5,12 @@
 
 pub mod call;
 pub mod client;
+pub mod config;
 pub mod error;
+pub mod retry;
 
 pub use call::CallEndpoint;
 pub use client::Client;
+pub use config::ClientConfig;
 pub use error::ClientError;
+pub use retry::RetryPolicy;

@@ -2736,7 +2736,9 @@ dependencies = [
 name = "typeway-client"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "http",
+ "http-body-util",
  "hyper",
  "hyper-util",
  "reqwest",

@@ -17,6 +17,7 @@ pub mod multipart;
 pub mod openapi;
 pub mod request_id;
 pub mod response;
+pub mod secure_headers;
 pub mod router;
 pub mod server;
 pub mod serves;
@@ -38,6 +39,7 @@ pub use handler::{into_boxed_handler, BoxedHandler, Handler, ResponseFuture};
 pub use handler_for::{bind, BindableEndpoint, BoundHandler};
 pub use response::{IntoResponse, Json};
 pub use router::{Router, RouterService};
+pub use secure_headers::SecureHeadersLayer;
 pub use server::{serve, LayeredServer, Server};
 pub use serves::Serves;
 

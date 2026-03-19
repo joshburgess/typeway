@@ -11,5 +11,8 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+rust-version = "1.80"
+
 [workspace.lints.clippy]
 upper_case_acronyms = "allow"

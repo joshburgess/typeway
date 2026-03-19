@@ -64,7 +64,7 @@ pub use serde_json;
 pub use typeway_server::{
     bind, body_from_stream, empty_body, serve, sse_body, BoundHandler, Extension, FromRequest,
     FromRequestParts, Handler, Header, IntoResponse, Json, JsonError, LayeredServer, NamedHeader,
-    Path, Query, Router, RouterService, Server, Serves, State,
+    Path, Query, Router, RouterService, SecureHeadersLayer, Server, Serves, State,
 };
 
 /// Re-export tower-http for middleware (available when `server` feature is on).
@@ -90,7 +90,8 @@ pub mod prelude {
     pub use typeway_server::{
         bind, body_from_stream, empty_body, serve, sse_body, tower_http, BoundHandler, Extension,
         FromRequest, FromRequestParts, Handler, Header, IntoResponse, Json, JsonError,
-        LayeredServer, NamedHeader, Path, Query, Router, RouterService, Server, Serves, State,
+        LayeredServer, NamedHeader, Path, Query, Router, RouterService, SecureHeadersLayer,
+        Server, Serves, State,
     };
 
     #[cfg(feature = "client")]
