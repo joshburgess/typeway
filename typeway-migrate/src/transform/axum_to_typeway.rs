@@ -453,6 +453,40 @@ fn emit_single_handler(endpoint: &EndpointModel) -> TokenStream {
                     });
                 }
             }
+            ExtractorKind::Cookie | ExtractorKind::CookieJar => {
+                // Cookie/CookieJar extractors pass through unchanged.
+                let var = ext
+                    .var_name
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("cookie"));
+                let full_type = &ext.full_type;
+                params.push(quote! { #var: #full_type });
+
+                if matches!(&ext.pattern, syn::Pat::TupleStruct(_)) {
+                    body_prefix.push(quote! {
+                        let #var = #var.0;
+                    });
+                }
+            }
+            ExtractorKind::Multipart | ExtractorKind::Form => {
+                // Multipart/Form extractors pass through unchanged.
+                let var = ext
+                    .var_name
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("form"));
+                let full_type = &ext.full_type;
+                params.push(quote! { #var: #full_type });
+            }
+            ExtractorKind::WebSocketUpgrade => {
+                // WebSocket upgrade extractor passes through (untyped).
+                // TODO: Consider using session-typed WebSocket with `TypedWebSocket<Protocol>` for protocol safety.
+                let var = ext
+                    .var_name
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("ws"));
+                let full_type = &ext.full_type;
+                params.push(quote! { #var: #full_type });
+            }
             ExtractorKind::Unknown if endpoint.requires_auth => {
                 // Auth extractor: keep as first argument for bind_auth!.
                 let var = ext

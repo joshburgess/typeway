@@ -259,6 +259,11 @@ pub enum ExtractorKind {
     Uri,
     Bytes,
     RawString,
+    Cookie,
+    CookieJar,
+    Multipart,
+    Form,
+    WebSocketUpgrade,
     /// An extractor not recognized by the tool.
     Unknown,
 }
@@ -282,6 +287,11 @@ impl ExtractorKind {
             "Uri" => Self::Uri,
             "Bytes" => Self::Bytes,
             "String" => Self::RawString,
+            "Cookie" => Self::Cookie,
+            "CookieJar" => Self::CookieJar,
+            "Multipart" => Self::Multipart,
+            "Form" => Self::Form,
+            "WebSocketUpgrade" => Self::WebSocketUpgrade,
             _ => Self::Unknown,
         }
     }

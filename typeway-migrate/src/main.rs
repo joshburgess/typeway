@@ -342,6 +342,137 @@ fn main() -> Result<()> {
                             }
                         }
 
+                        // Cookie extractor report.
+                        let cookie_endpoints: Vec<_> = model
+                            .endpoints
+                            .iter()
+                            .filter(|ep| {
+                                ep.handler
+                                    .extractors
+                                    .iter()
+                                    .any(|e| {
+                                        e.kind == typeway_migrate::model::ExtractorKind::Cookie
+                                            || e.kind == typeway_migrate::model::ExtractorKind::CookieJar
+                                    })
+                            })
+                            .collect();
+                        if !cookie_endpoints.is_empty() {
+                            println!("  Cookie extractors:");
+                            for ep in &cookie_endpoints {
+                                let ext = ep
+                                    .handler
+                                    .extractors
+                                    .iter()
+                                    .find(|e| {
+                                        e.kind == typeway_migrate::model::ExtractorKind::Cookie
+                                            || e.kind == typeway_migrate::model::ExtractorKind::CookieJar
+                                    });
+                                let type_str = if let Some(ext) = ext {
+                                    let ty = &ext.full_type;
+                                    format!("{}", quote::quote! { #ty })
+                                } else {
+                                    "Cookie".to_string()
+                                };
+                                println!(
+                                    "    {}: {}",
+                                    ep.handler.name, type_str
+                                );
+                            }
+                        }
+
+                        // Form/Multipart extractor report.
+                        let form_endpoints: Vec<_> = model
+                            .endpoints
+                            .iter()
+                            .filter(|ep| {
+                                ep.handler
+                                    .extractors
+                                    .iter()
+                                    .any(|e| {
+                                        e.kind == typeway_migrate::model::ExtractorKind::Form
+                                            || e.kind == typeway_migrate::model::ExtractorKind::Multipart
+                                    })
+                            })
+                            .collect();
+                        if !form_endpoints.is_empty() {
+                            println!("  Form/Multipart extractors:");
+                            for ep in &form_endpoints {
+                                let ext = ep
+                                    .handler
+                                    .extractors
+                                    .iter()
+                                    .find(|e| {
+                                        e.kind == typeway_migrate::model::ExtractorKind::Form
+                                            || e.kind == typeway_migrate::model::ExtractorKind::Multipart
+                                    });
+                                let type_str = if let Some(ext) = ext {
+                                    let ty = &ext.full_type;
+                                    format!("{}", quote::quote! { #ty })
+                                } else {
+                                    "Form/Multipart".to_string()
+                                };
+                                println!(
+                                    "    {}: {}",
+                                    ep.handler.name, type_str
+                                );
+                            }
+                        }
+
+                        // WebSocket extractor report.
+                        let ws_endpoints: Vec<_> = model
+                            .endpoints
+                            .iter()
+                            .filter(|ep| {
+                                ep.handler
+                                    .extractors
+                                    .iter()
+                                    .any(|e| {
+                                        e.kind == typeway_migrate::model::ExtractorKind::WebSocketUpgrade
+                                    })
+                            })
+                            .collect();
+                        if !ws_endpoints.is_empty() {
+                            println!("  WebSocket endpoints:");
+                            for ep in &ws_endpoints {
+                                println!(
+                                    "    {}: WebSocketUpgrade",
+                                    ep.handler.name
+                                );
+                            }
+                        }
+
+                        // Bind macro report (Typeway sources).
+                        if is_typeway {
+                            let bind_count = model
+                                .endpoints
+                                .iter()
+                                .filter(|ep| ep.bind_macro == typeway_migrate::model::BindMacro::Bind)
+                                .count();
+                            let bind_auth_count = model
+                                .endpoints
+                                .iter()
+                                .filter(|ep| ep.bind_macro == typeway_migrate::model::BindMacro::BindAuth)
+                                .count();
+                            let bind_validated_count = model
+                                .endpoints
+                                .iter()
+                                .filter(|ep| ep.bind_macro == typeway_migrate::model::BindMacro::BindValidated)
+                                .count();
+
+                            if bind_auth_count > 0 || bind_validated_count > 0 {
+                                println!("  Bind macros:");
+                                if bind_count > 0 {
+                                    println!("    bind!: {}", bind_count);
+                                }
+                                if bind_auth_count > 0 {
+                                    println!("    bind_auth!: {}", bind_auth_count);
+                                }
+                                if bind_validated_count > 0 {
+                                    println!("    bind_validated!: {}", bind_validated_count);
+                                }
+                            }
+                        }
+
                         // Check for impl IntoResponse handlers.
                         let impl_into_response_handlers: Vec<_> = model
                             .endpoints

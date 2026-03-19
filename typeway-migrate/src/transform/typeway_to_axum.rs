@@ -221,6 +221,37 @@ fn emit_single_handler(endpoint: &EndpointModel) -> TokenStream {
                 params.push(quote! { Query(#var): #full_type });
                 destructured_vars.insert(var.to_string());
             }
+            ExtractorKind::Cookie | ExtractorKind::CookieJar => {
+                // Cookie/CookieJar extractors pass through unchanged.
+                let var = ext
+                    .var_name
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("cookie"));
+                let full_type = &ext.full_type;
+                params.push(quote! { #var: #full_type });
+
+                if matches!(&ext.pattern, syn::Pat::TupleStruct(_)) {
+                    destructured_vars.insert(var.to_string());
+                }
+            }
+            ExtractorKind::Multipart | ExtractorKind::Form => {
+                // Multipart/Form extractors pass through unchanged.
+                let var = ext
+                    .var_name
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("form"));
+                let full_type = &ext.full_type;
+                params.push(quote! { #var: #full_type });
+            }
+            ExtractorKind::WebSocketUpgrade => {
+                // WebSocket upgrade extractor passes through.
+                let var = ext
+                    .var_name
+                    .clone()
+                    .unwrap_or_else(|| format_ident!("ws"));
+                let full_type = &ext.full_type;
+                params.push(quote! { #var: #full_type });
+            }
             ExtractorKind::Unknown if endpoint.requires_auth => {
                 // Auth extractor: emit as a plain argument (Axum custom extractor).
                 let var = ext

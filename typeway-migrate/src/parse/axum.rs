@@ -245,6 +245,13 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
         }
 
         for ext in &endpoint.handler.extractors {
+            if ext.kind == ExtractorKind::WebSocketUpgrade {
+                warnings.push(format!(
+                    "Handler `{}` uses WebSocket upgrade — consider defining a session type protocol for type-safe message ordering",
+                    endpoint.handler.name,
+                ));
+            }
+
             if ext.kind == ExtractorKind::Unknown {
                 let ty = &ext.full_type;
                 let ty_str = quote!(#ty).to_string();
