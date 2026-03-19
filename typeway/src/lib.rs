@@ -30,14 +30,14 @@
 //!
 //! // 4. Serve — the compiler verifies every endpoint has a handler
 //! #[tokio::main]
-//! async fn main() {
+//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //!     Server::<API>::new((
-//!         bind::<_, _, _>(hello),
-//!         bind::<_, _, _>(greet),
+//!         bind!(hello),
+//!         bind!(greet),
 //!     ))
-//!     .serve("0.0.0.0:3000".parse().unwrap())
-//!     .await
-//!     .unwrap();
+//!     .serve("0.0.0.0:3000".parse()?)
+//!     .await?;
+//!     Ok(())
 //! }
 //! ```
 //!
