@@ -175,6 +175,28 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
         // Detect validation patterns in handler body.
         let has_validation = detect_validation_patterns(&handler);
 
+        // Generate validator name from the Json<T> extractor's inner type.
+        let validator_name = if has_validation {
+            request_body.as_ref().and_then(|ty| {
+                let name = extract_type_name_string(ty);
+                if name.is_empty() {
+                    None
+                } else {
+                    Some(format!("{}Validator", name))
+                }
+            })
+        } else {
+            None
+        };
+
+        // If validation is detected but no auth, upgrade bind_macro to BindValidated.
+        // If auth is also present, auth takes precedence (bind_auth handles both).
+        let bind_macro = if has_validation && validator_name.is_some() && !requires_auth {
+            BindMacro::BindValidated
+        } else {
+            bind_macro
+        };
+
         endpoints.push(EndpointModel {
             method: route.method,
             path: path_model,
@@ -184,6 +206,7 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
             requires_auth,
             auth_type,
             has_validation,
+            validator_name,
             bind_macro,
         });
     }
@@ -559,6 +582,10 @@ fn extract_type_name_string(ty: &syn::Type) -> String {
 ///
 /// This is a rough heuristic — we look for common validation idioms like
 /// `.is_empty()`, `.len()`, or `Err(` combined with field access patterns.
+///
+/// Note: `quote!` inserts spaces around `.` and `(`, producing strings like
+/// `body . username . is_empty ()`. We match against both compact and
+/// space-separated forms.
 fn detect_validation_patterns(handler: &HandlerModel) -> bool {
     let body_str = handler
         .body
@@ -568,8 +595,11 @@ fn detect_validation_patterns(handler: &HandlerModel) -> bool {
         .join(" ");
 
     body_str.contains(".is_empty()")
+        || body_str.contains(". is_empty ()")
         || body_str.contains(".len()")
+        || body_str.contains(". len ()")
         || (body_str.contains("Err(") && body_str.contains("valid"))
+        || (body_str.contains("Err (") && body_str.contains("valid"))
 }
 
 /// Detect middleware effects from layer expressions.

@@ -117,6 +117,7 @@ pub fn parse_typeway_file(source: &str) -> Result<ApiModel> {
             requires_auth: raw_ep.requires_auth,
             auth_type: raw_ep.auth_type.clone(),
             has_validation: raw_ep.has_validation,
+            validator_name: raw_ep.validator_name.clone(),
             bind_macro: raw_ep.bind_macro.clone(),
         });
     }
@@ -143,6 +144,7 @@ struct RawEndpoint {
     requires_auth: bool,
     auth_type: Option<String>,
     has_validation: bool,
+    validator_name: Option<String>,
     bind_macro: BindMacro,
 }
 
@@ -338,8 +340,12 @@ fn parse_endpoint_type(
             return None;
         }
 
+        // Extract validator name from the first type argument.
+        let validator_name = type_to_ident_string(type_args[0]);
+
         let mut raw_ep = parse_inner_endpoint_type(type_args[1], path_types)?;
         raw_ep.has_validation = true;
+        raw_ep.validator_name = validator_name;
         raw_ep.bind_macro = BindMacro::BindValidated;
         return Some(raw_ep);
     }
@@ -416,6 +422,7 @@ fn parse_inner_endpoint_type(
         requires_auth: false,
         auth_type: None,
         has_validation: false,
+        validator_name: None,
         bind_macro: BindMacro::Bind,
     })
 }

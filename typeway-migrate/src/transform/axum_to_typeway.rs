@@ -10,6 +10,7 @@ pub fn emit_typeway(model: &ApiModel) -> TokenStream {
     let use_stmts = emit_use_statements(model);
     let passthrough = emit_passthrough_items(&model.passthrough_items);
     let path_decls = emit_path_declarations(model);
+    let validator_structs = emit_validator_structs(model);
     let api_type = emit_api_type(model);
     let handlers = emit_handlers(model);
     let server = emit_server(model);
@@ -20,6 +21,8 @@ pub fn emit_typeway(model: &ApiModel) -> TokenStream {
         #passthrough
 
         #path_decls
+
+        #validator_structs
 
         #api_type
 
@@ -43,8 +46,14 @@ pub fn emit_warning_lines(model: &ApiModel) -> Vec<String> {
 
 fn emit_use_statements(model: &ApiModel) -> TokenStream {
     let has_effects = !model.detected_effects.is_empty();
+    let has_validation = model
+        .endpoints
+        .iter()
+        .any(|ep| ep.has_validation && ep.validator_name.is_some());
 
-    if has_effects {
+    let base = quote! { use typeway::prelude::*; };
+
+    let effects_import = if has_effects {
         let effect_names: Vec<TokenStream> = model
             .detected_effects
             .iter()
@@ -55,14 +64,37 @@ fn emit_use_statements(model: &ApiModel) -> TokenStream {
             .collect();
 
         quote! {
-            use typeway::prelude::*;
             use typeway_core::effects::{#(#effect_names,)* Requires};
             use typeway_server::EffectfulServer;
         }
     } else {
-        quote! {
-            use typeway::prelude::*;
+        TokenStream::new()
+    };
+
+    let validation_import = if has_validation {
+        let bind_validated_needed = model
+            .endpoints
+            .iter()
+            .any(|ep| ep.bind_macro == BindMacro::BindValidated);
+
+        if bind_validated_needed {
+            quote! {
+                use typeway_server::typed::{Validate, Validated};
+                use typeway_server::bind_validated;
+            }
+        } else {
+            quote! {
+                use typeway_server::typed::{Validate, Validated};
+            }
         }
+    } else {
+        TokenStream::new()
+    };
+
+    quote! {
+        #base
+        #effects_import
+        #validation_import
     }
 }
 
@@ -92,6 +124,112 @@ fn emit_path_declarations(model: &ApiModel) -> TokenStream {
         tokens.extend(quote! {
             typeway_path!(type #type_name = #segments);
         });
+    }
+
+    tokens
+}
+
+/// Emit validator struct skeletons for endpoints with detected validation.
+fn emit_validator_structs(model: &ApiModel) -> TokenStream {
+    let mut tokens = TokenStream::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for endpoint in &model.endpoints {
+        if let Some(ref validator_name) = endpoint.validator_name {
+            if seen.contains(validator_name) {
+                continue;
+            }
+            seen.insert(validator_name.clone());
+
+            let validator_ident = format_ident!("{}", validator_name);
+
+            // Determine the request body type name for the impl.
+            let body_type = match &endpoint.request_body {
+                Some(ty) => ty.clone(),
+                None => continue,
+            };
+
+            // Collect detected validation pattern hints from the handler body.
+            let body_str: String = endpoint
+                .handler
+                .body
+                .iter()
+                .map(|stmt| quote!(#stmt).to_string())
+                .collect::<Vec<_>>()
+                .join(" ");
+
+            let mut hints = Vec::new();
+            if body_str.contains(".is_empty()") {
+                hints.push("  //   - .is_empty() checks");
+            }
+            if body_str.contains(".len()") {
+                hints.push("  //   - .len() checks");
+            }
+            if body_str.contains("Err(") && body_str.contains("valid") {
+                hints.push("  //   - Err(...) with validation messages");
+            }
+
+            let body_type_str = quote!(#body_type).to_string();
+            let doc_line = format!(
+                " TODO: Implement validation logic for {}.",
+                body_type_str
+            );
+            let gen_line =
+                " This validator was auto-generated because the handler contained";
+            let move_line = " manual validation patterns. Move your validation logic here.";
+
+            let hints_comment = if hints.is_empty() {
+                TokenStream::new()
+            } else {
+                let hint_lines: Vec<TokenStream> = std::iter::once(
+                    "  // Detected patterns in the original handler:".to_string(),
+                )
+                .chain(hints.iter().map(|h| h.to_string()))
+                .map(|line| {
+                    let line_str = line;
+                    quote! {
+                        #[doc = #line_str]
+                    }
+                })
+                .collect();
+                // We use a different approach: emit as regular comments via a trick.
+                // Since quote! can't emit raw comments, we build them as doc attributes
+                // that will be rendered by prettyplease.
+                // Actually, let's just use a simpler approach with the code body.
+                let _ = hint_lines;
+                TokenStream::new()
+            };
+
+            let _ = hints_comment;
+
+            // Build the hint string for the Ok(()) body comment.
+            let pattern_hint = if hints.is_empty() {
+                String::new()
+            } else {
+                let mut s = String::from(
+                    "\n        // Detected patterns in the original handler:\n",
+                );
+                for h in &hints {
+                    s.push_str(&format!("        {}\n", h.trim()));
+                }
+                s
+            };
+            let _ = pattern_hint;
+
+            tokens.extend(quote! {
+                #[doc = #doc_line]
+                #[doc = #gen_line]
+                #[doc = #move_line]
+                struct #validator_ident;
+
+                impl Validate<#body_type> for #validator_ident {
+                    fn validate(body: &#body_type) -> Result<(), String> {
+                        // TODO: Add validation rules here.
+                        Ok(())
+                    }
+                }
+            });
+        }
     }
 
     tokens
@@ -164,16 +302,25 @@ fn emit_api_type(model: &ApiModel) -> TokenStream {
                 }
             };
 
+            // Wrap in Validated<Validator, ...> if validation is detected.
+            // Validated goes inside Protected (Protected outside, Validated inside).
+            let validated = if let Some(ref validator_name) = ep.validator_name {
+                let validator_ident = format_ident!("{}", validator_name);
+                quote! { Validated<#validator_ident, #inner> }
+            } else {
+                inner
+            };
+
             // Wrap in Protected<AuthType, ...> if auth is required.
             let wrapped = if ep.requires_auth {
                 if let Some(ref auth_ty) = ep.auth_type {
                     let auth_ident = format_ident!("{}", auth_ty);
-                    quote! { Protected<#auth_ident, #inner> }
+                    quote! { Protected<#auth_ident, #validated> }
                 } else {
-                    inner
+                    validated
                 }
             } else {
-                inner
+                validated
             };
 
             // Wrap public GET endpoints in Requires<CorsRequired, E> when CORS is detected.
@@ -374,6 +521,9 @@ fn emit_server(model: &ApiModel) -> TokenStream {
         }
     });
 
+    // OpenAPI setup comment — emitted as a doc attr on the serve function.
+    let openapi_call = quote! { .with_openapi("API", "1.0.0") };
+
     if has_effects {
         // Generate .provide::<EffectName>() calls for each detected effect.
         let provides: Vec<TokenStream> = model
@@ -386,6 +536,8 @@ fn emit_server(model: &ApiModel) -> TokenStream {
             .collect();
 
         quote! {
+            // Requires: typeway = { version = "0.1", features = ["openapi"] }
+            // OpenAPI spec at /openapi.json, Swagger UI at /docs
             async fn serve(addr: std::net::SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 EffectfulServer::<API>::new((
                     #(#binds,)*
@@ -394,6 +546,7 @@ fn emit_server(model: &ApiModel) -> TokenStream {
                 #(#layers)*
                 #state
                 #nest
+                #openapi_call
                 .ready()
                 .serve(addr)
                 .await
@@ -401,6 +554,8 @@ fn emit_server(model: &ApiModel) -> TokenStream {
         }
     } else {
         quote! {
+            // Requires: typeway = { version = "0.1", features = ["openapi"] }
+            // OpenAPI spec at /openapi.json, Swagger UI at /docs
             async fn serve(addr: std::net::SocketAddr) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Server::<API>::new((
                     #(#binds,)*
@@ -408,6 +563,7 @@ fn emit_server(model: &ApiModel) -> TokenStream {
                 #(#layers)*
                 #state
                 #nest
+                #openapi_call
                 .serve(addr)
                 .await
             }

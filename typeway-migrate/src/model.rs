@@ -50,6 +50,8 @@ pub struct EndpointModel {
     pub auth_type: Option<String>,
     /// Whether this endpoint has request body validation.
     pub has_validation: bool,
+    /// The generated validator struct name, if validation is detected.
+    pub validator_name: Option<String>,
     /// The bind macro to use: "bind", "bind_auth", or "bind_validated".
     pub bind_macro: BindMacro,
 }
