@@ -1,8 +1,8 @@
 [package]
-name = "wayward-spike"
+name = "typeway-spike"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [dependencies]
-wayward-core = { path = "../wayward-core" }
+typeway-core = { path = "../typeway-core" }

@@ -1,0 +1,20 @@
+[package]
+name = "typeway-macros"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"
+
+[dev-dependencies]
+trybuild = "1"
+typeway-core = { path = "../typeway-core" }
+typeway-server = { path = "../typeway-server" }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+http = "1"

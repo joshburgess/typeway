@@ -26,7 +26,7 @@ jobs:
         run: cargo test --workspace --all-features
 
       - name: Run tests (no default features)
-        run: cargo test -p wayward --no-default-features
+        run: cargo test -p typeway --no-default-features
         # Verify the core compiles without server/client/openapi
 
   clippy:

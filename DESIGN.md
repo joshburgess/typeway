@@ -1,6 +1,6 @@
-# Wayward Design Document
+# Typeway Design Document
 
-This document is the architectural contract for the Wayward web framework.
+This document is the architectural contract for the Typeway web framework.
 All implementation decisions in subsequent phases must be consistent with
 the designs described here. Changes require updating this document first.
 
@@ -73,7 +73,7 @@ pub trait LitSegment {
 Each unique string literal generates a marker type in a private module:
 
 ```rust
-mod __wayward_lit {
+mod __typeway_lit {
     pub struct users;
     impl super::LitSegment for users {
         const VALUE: &'static str = "users";
@@ -87,7 +87,7 @@ literals:
 ```rust
 path!("users" / u32 / "posts")
 // expands to:
-HCons<Lit<__wayward_lit::users>, HCons<Capture<u32>, HCons<Lit<__wayward_lit::posts>, HNil>>>
+HCons<Lit<__typeway_lit::users>, HCons<Capture<u32>, HCons<Lit<__typeway_lit::posts>, HNil>>>
 ```
 
 ### Capture Segments
@@ -455,19 +455,19 @@ impl<A: ApiSpec> Server<A> {
 ## 11. Macro Layer
 
 All macros are syntactic sugar. They desugar to exactly the types in
-`wayward-core`. No macro introduces runtime behavior.
+`typeway-core`. No macro introduces runtime behavior.
 
 ### `path!` Macro
 
 ```rust
 path!()                          → HNil
-path!("users")                   → HCons<Lit<__wayward_lit::users>, HNil>
-path!("users" / u32)             → HCons<Lit<__wayward_lit::users>, HCons<Capture<u32>, HNil>>
+path!("users")                   → HCons<Lit<__typeway_lit::users>, HNil>
+path!("users" / u32)             → HCons<Lit<__typeway_lit::users>, HCons<Capture<u32>, HNil>>
 path!("users" / u32 / "posts")   → HCons<Lit<...>, HCons<Capture<u32>, HCons<Lit<...>, HNil>>>
 ```
 
 Implemented as a proc-macro. Generates `LitSegment` marker types in a
-private `__wayward_lit` module scoped to avoid collisions (each
+private `__typeway_lit` module scoped to avoid collisions (each
 invocation's literals are deduplicated within the crate).
 
 ### Route Convenience Macros
@@ -584,8 +584,8 @@ serialization. No `TypeId`, no `Any` downcasting in the hot path.
 
 | Scenario | Target (cold build, release) |
 |---|---|
-| `wayward-core` alone | < 2s |
-| `wayward-server` + `wayward-core` | < 8s |
+| `typeway-core` alone | < 2s |
+| `typeway-server` + `typeway-core` | < 8s |
 | Example with 5 routes, no openapi | < 15s |
 | Example with 5 routes, full features | < 25s |
 | Example with 20 routes, full features | < 45s |
@@ -597,7 +597,7 @@ If exceeded, investigate before adding features.
 - Tokio ecosystem only (no async-std)
 - Pin major versions, never use `*`
 - OpenAPI (`schemars`) and client (`reqwest`) behind feature flags
-- `wayward-core` has minimal dependencies (only `http` crate)
+- `typeway-core` has minimal dependencies (only `http` crate)
 
 ### Arity Caps
 

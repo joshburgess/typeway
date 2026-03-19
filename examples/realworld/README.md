@@ -1,8 +1,8 @@
-# Wayward Word
+# Typeway Word
 
-A Medium-style blogging platform built with wayward, implementing the [RealWorld](https://github.com/gothinkster/realworld) API spec.
+A Medium-style blogging platform built with typeway, implementing the [RealWorld](https://github.com/gothinkster/realworld) API spec.
 
-This demonstrates wayward in a realistic application with:
+This demonstrates typeway in a realistic application with:
 - 19 endpoints defined as a single API type
 - Elm + Tailwind frontend (single-page app with client-side routing)
 - JWT authentication via custom `AuthUser` extractor
@@ -42,12 +42,12 @@ elm make src/Main.elm --output=public/elm.js
 cd ../../..
 
 # 3. Run (from the workspace root)
-cargo run -p wayward-realworld
+cargo run -p typeway-realworld
 
 # With custom database config:
 DATABASE_HOST=localhost DATABASE_PORT=5432 DATABASE_USER=postgres \
   DATABASE_PASSWORD=postgres DATABASE_NAME=realworld \
-  cargo run -p wayward-realworld
+  cargo run -p typeway-realworld
 ```
 
 ## API Endpoints

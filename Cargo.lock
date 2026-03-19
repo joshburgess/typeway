@@ -2650,6 +2650,148 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
+name = "typeway"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "bytes",
+ "criterion",
+ "http",
+ "hyper",
+ "hyper-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower",
+ "trybuild",
+ "typeway-client",
+ "typeway-core",
+ "typeway-macros",
+ "typeway-openapi",
+ "typeway-server",
+]
+
+[[package]]
+name = "typeway-client"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "hyper",
+ "hyper-util",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "typeway-core",
+ "typeway-macros",
+ "typeway-server",
+ "url",
+]
+
+[[package]]
+name = "typeway-core"
+version = "0.1.0"
+dependencies = [
+ "http",
+]
+
+[[package]]
+name = "typeway-macros"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "syn",
+ "tokio",
+ "trybuild",
+ "typeway-core",
+ "typeway-server",
+]
+
+[[package]]
+name = "typeway-openapi"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "indexmap",
+ "schemars",
+ "serde",
+ "serde_json",
+ "typeway-core",
+ "typeway-macros",
+]
+
+[[package]]
+name = "typeway-realworld"
+version = "0.1.0"
+dependencies = [
+ "argon2",
+ "bytes",
+ "chrono",
+ "deadpool-postgres",
+ "http",
+ "jsonwebtoken",
+ "postgres-types",
+ "rand_core 0.6.4",
+ "serde",
+ "serde_json",
+ "slug",
+ "tokio",
+ "tokio-postgres",
+ "typeway",
+ "typeway-core",
+ "typeway-macros",
+ "typeway-server",
+ "uuid",
+]
+
+[[package]]
+name = "typeway-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "base64",
+ "bytes",
+ "futures",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "indexmap",
+ "multer",
+ "pin-project-lite",
+ "reqwest",
+ "rustls-pemfile",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "sha1_smol",
+ "tokio",
+ "tokio-rustls",
+ "tokio-tungstenite",
+ "tower",
+ "tower-http",
+ "tower-layer",
+ "tower-service",
+ "tracing",
+ "typeway-core",
+ "typeway-macros",
+ "typeway-openapi",
+ "uuid",
+]
+
+[[package]]
+name = "typeway-spike"
+version = "0.1.0"
+dependencies = [
+ "typeway-core",
+]
+
+[[package]]
 name = "unicase"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2894,148 +3036,6 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap",
  "semver",
-]
-
-[[package]]
-name = "wayward"
-version = "0.1.0"
-dependencies = [
- "axum",
- "bytes",
- "criterion",
- "http",
- "hyper",
- "hyper-util",
- "serde",
- "serde_json",
- "tokio",
- "tower",
- "trybuild",
- "wayward-client",
- "wayward-core",
- "wayward-macros",
- "wayward-openapi",
- "wayward-server",
-]
-
-[[package]]
-name = "wayward-client"
-version = "0.1.0"
-dependencies = [
- "http",
- "hyper",
- "hyper-util",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "url",
- "wayward-core",
- "wayward-macros",
- "wayward-server",
-]
-
-[[package]]
-name = "wayward-core"
-version = "0.1.0"
-dependencies = [
- "http",
-]
-
-[[package]]
-name = "wayward-macros"
-version = "0.1.0"
-dependencies = [
- "http",
- "proc-macro2",
- "quote",
- "serde",
- "syn",
- "tokio",
- "trybuild",
- "wayward-core",
- "wayward-server",
-]
-
-[[package]]
-name = "wayward-openapi"
-version = "0.1.0"
-dependencies = [
- "http",
- "indexmap",
- "schemars",
- "serde",
- "serde_json",
- "wayward-core",
- "wayward-macros",
-]
-
-[[package]]
-name = "wayward-realworld"
-version = "0.1.0"
-dependencies = [
- "argon2",
- "bytes",
- "chrono",
- "deadpool-postgres",
- "http",
- "jsonwebtoken",
- "postgres-types",
- "rand_core 0.6.4",
- "serde",
- "serde_json",
- "slug",
- "tokio",
- "tokio-postgres",
- "uuid",
- "wayward",
- "wayward-core",
- "wayward-macros",
- "wayward-server",
-]
-
-[[package]]
-name = "wayward-server"
-version = "0.1.0"
-dependencies = [
- "axum",
- "base64",
- "bytes",
- "futures",
- "http",
- "http-body",
- "http-body-util",
- "hyper",
- "hyper-util",
- "indexmap",
- "multer",
- "pin-project-lite",
- "reqwest",
- "rustls-pemfile",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sha1_smol",
- "tokio",
- "tokio-rustls",
- "tokio-tungstenite",
- "tower",
- "tower-http",
- "tower-layer",
- "tower-service",
- "tracing",
- "uuid",
- "wayward-core",
- "wayward-macros",
- "wayward-openapi",
-]
-
-[[package]]
-name = "wayward-spike"
-version = "0.1.0"
-dependencies = [
- "wayward-core",
 ]
 
 [[package]]

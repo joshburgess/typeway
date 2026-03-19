@@ -1,7 +1,7 @@
-//! # Wayward RealWorld Example App
+//! # Typeway RealWorld Example App
 //!
 //! A full implementation of the [RealWorld](https://github.com/gothinkster/realworld)
-//! ("Conduit") API spec using wayward, with an Elm + Tailwind frontend.
+//! ("Conduit") API spec using typeway, with an Elm + Tailwind frontend.
 //!
 //! ## Running
 //!
@@ -18,7 +18,7 @@
 //!
 //! 3. Run the server (from the workspace root):
 //!    ```sh
-//!    cargo run -p wayward-realworld
+//!    cargo run -p typeway-realworld
 //!    ```
 //!
 //! Open `http://localhost:3000` for the full app.
@@ -29,9 +29,9 @@ mod db;
 mod handlers;
 mod models;
 
-use wayward_server::request_id::RequestIdLayer;
-use wayward_server::tower_http::cors::CorsLayer;
-use wayward_server::{bind, bind_auth, Server};
+use typeway_server::request_id::RequestIdLayer;
+use typeway_server::tower_http::cors::CorsLayer;
+use typeway_server::{bind, bind_auth, Server};
 
 use api::RealWorldAPI;
 
@@ -45,8 +45,8 @@ async fn main() {
     let frontend_dir = std::env::var("FRONTEND_DIR")
         .unwrap_or_else(|_| "examples/realworld/frontend/public".to_string());
 
-    // Build the wayward API server with all 19 endpoints.
-    // Static file serving and SPA fallback are built into wayward — no Axum needed.
+    // Build the typeway API server with all 19 endpoints.
+    // Static file serving and SPA fallback are built into typeway — no Axum needed.
     let server = Server::<RealWorldAPI>::new((
         // Auth (public)
         bind!(handlers::register),
@@ -84,12 +84,12 @@ async fn main() {
     let port = std::env::var("PORT").unwrap_or_else(|_| "4000".to_string());
     let addr = format!("0.0.0.0:{port}");
 
-    println!("Wayward Word running on http://localhost:{port}");
+    println!("Typeway Word running on http://localhost:{port}");
     println!("  Frontend: http://localhost:{port}/");
     println!("  API:      http://localhost:{port}/api/");
     println!("  Static:   {frontend_dir}");
     println!();
-    println!("19 API endpoints + Elm frontend — pure wayward, no Axum");
+    println!("19 API endpoints + Elm frontend — pure typeway, no Axum");
 
     server.serve(addr.parse().unwrap()).await.unwrap();
 }

@@ -87,11 +87,11 @@ the verbosity.
 **Refinement**: Namespace generated marker types in a private module to avoid collisions:
 
 ```rust
-mod __wayward_lit {
+mod __typeway_lit {
     pub struct users;
     pub struct posts;
 }
-type Path = HCons<Lit<__wayward_lit::users>, HNil>;
+type Path = HCons<Lit<__typeway_lit::users>, HNil>;
 ```
 
 ### Problem: The Handler Adapter Pattern (H1/H2) Must Be Replaced
@@ -331,7 +331,7 @@ Based on this review, the following decisions should be adopted:
 
 1. **HList for paths, flat tuples for APIs.** Do not change this.
 
-2. **Marker types + proc-macro for literal segments.** Namespace in `__wayward_lit`.
+2. **Marker types + proc-macro for literal segments.** Namespace in `__typeway_lit`.
 
 3. **Adopt the Captures-as-Extractor pattern.** Eliminate H1/H2 adapters. Use
    Axum-style extractor-based handler dispatch with a `Compatible<Route>` bridge

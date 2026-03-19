@@ -1,4 +1,4 @@
-# Wayward
+# Typeway
 
 [![CI](https://github.com/joshburgess/wayward/actions/workflows/ci.yml/badge.svg)](https://github.com/joshburgess/wayward/actions/workflows/ci.yml)
 
@@ -11,11 +11,11 @@ Built on Tokio, Tower, and Hyper — fully compatible with the Axum ecosystem.
 ## Quick Start
 
 ```rust
-use wayward::prelude::*;
+use typeway::prelude::*;
 
 // 1. Define path types
-wayward_path!(type HelloPath = "hello");
-wayward_path!(type GreetPath = "greet" / String);
+typeway_path!(type HelloPath = "hello");
+typeway_path!(type GreetPath = "greet" / String);
 
 // 2. Define the API as a type
 type API = (
@@ -65,13 +65,13 @@ This single type drives:
 
 ```toml
 [dependencies]
-wayward = "0.1"
+typeway = "0.1"
 
 # Optional features:
-# wayward = { version = "0.1", features = ["client"] }       # type-safe HTTP client
-# wayward = { version = "0.1", features = ["openapi"] }      # OpenAPI spec generation
-# wayward = { version = "0.1", features = ["axum-interop"] } # Axum interoperability
-# wayward = { version = "0.1", features = ["full"] }         # server + client + openapi
+# typeway = { version = "0.1", features = ["client"] }       # type-safe HTTP client
+# typeway = { version = "0.1", features = ["openapi"] }      # OpenAPI spec generation
+# typeway = { version = "0.1", features = ["axum-interop"] } # Axum interoperability
+# typeway = { version = "0.1", features = ["full"] }         # server + client + openapi
 ```
 
 ## Feature Flags
@@ -81,7 +81,7 @@ wayward = "0.1"
 | `server` | yes | HTTP/1.1 + HTTP/2 server (Tower/Hyper) |
 | `client` | no | Type-safe HTTP client (reqwest) |
 | `openapi` | no | OpenAPI 3.1 spec generation + embedded docs UI |
-| `axum-interop` | no | Embed wayward in Axum apps and vice versa |
+| `axum-interop` | no | Embed typeway in Axum apps and vice versa |
 | `tls` | no | HTTPS via tokio-rustls |
 | `ws` | no | WebSocket upgrade support |
 | `multipart` | no | Multipart form upload (file uploads) |
@@ -92,8 +92,8 @@ wayward = "0.1"
 Wayward supports the full Tower middleware ecosystem:
 
 ```rust
-use wayward::tower_http::cors::CorsLayer;
-use wayward::tower_http::timeout::TimeoutLayer;
+use typeway::tower_http::cors::CorsLayer;
+use typeway::tower_http::timeout::TimeoutLayer;
 
 Server::<API>::new(handlers)
     .layer(CorsLayer::permissive())
@@ -120,16 +120,16 @@ Server::<API>::new(handlers)
 
 ## Axum Interoperability
 
-Embed wayward APIs in Axum apps:
+Embed typeway APIs in Axum apps:
 
 ```rust
-let wayward_api = Server::<API>::new(handlers);
+let typeway_api = Server::<API>::new(handlers);
 let app = axum::Router::new()
-    .nest("/api/v1", wayward_api.into_axum_router())
+    .nest("/api/v1", typeway_api.into_axum_router())
     .route("/health", get(|| async { "ok" }));
 ```
 
-Or embed Axum routes in wayward:
+Or embed Axum routes in typeway:
 
 ```rust
 let axum_routes = axum::Router::new()
@@ -157,12 +157,12 @@ let user = client.call::<GetEndpoint<UserByIdPath, User>>((42u32,)).await?;
 
 | Crate | Description |
 |-------|-------------|
-| `wayward` | Facade crate — re-exports everything |
-| `wayward-core` | Type-level primitives (path segments, methods, HList) |
-| `wayward-server` | Tower/Hyper server integration |
-| `wayward-client` | Type-safe HTTP client |
-| `wayward-openapi` | OpenAPI 3.1 spec derivation |
-| `wayward-macros` | Proc macros (`wayward_path!`, `#[handler]`, `#[api_description]`) |
+| `typeway` | Facade crate — re-exports everything |
+| `typeway-core` | Type-level primitives (path segments, methods, HList) |
+| `typeway-server` | Tower/Hyper server integration |
+| `typeway-client` | Type-safe HTTP client |
+| `typeway-openapi` | OpenAPI 3.1 spec derivation |
+| `typeway-macros` | Proc macros (`typeway_path!`, `#[handler]`, `#[api_description]`) |
 
 ## What Makes Wayward Different
 
@@ -180,11 +180,11 @@ type API = (
 
 This isn't a DSL or a macro that generates code behind your back. It's a plain Rust type alias. The compiler understands it, IDE tooling works with it, and you can inspect it in `cargo doc`. The server, client, and OpenAPI spec are all projections of this one type.
 
-This is directly inspired by Haskell's [Servant](https://docs.servant.dev/en/stable/), which pioneered the idea of APIs as types. Wayward brings that idea to Rust without requiring nightly features, GATs, or const generics for strings.
+This is directly inspired by Haskell's [Servant](https://docs.servant.dev/en/stable/), which pioneered the idea of APIs as types. Typeway brings that idea to Rust without requiring nightly features, GATs, or const generics for strings.
 
 ### Compile-Time Handler Completeness
 
-In Axum, if you forget to register a handler for a route, you get a 404 at runtime. In wayward, you get a compile error:
+In Axum, if you forget to register a handler for a route, you get a 404 at runtime. In typeway, you get a compile error:
 
 ```rust
 // API has 3 endpoints but you only provided 2 handlers — doesn't compile
@@ -225,7 +225,7 @@ URL paths are encoded as heterogeneous lists at the type level:
 HCons<Lit<users>, HCons<Capture<u32>, HCons<Lit<posts>, HCons<Capture<u32>, HNil>>>>
 
 // Ergonomic macro form:
-wayward_path!(type UserPostsPath = "users" / u32 / "posts" / u32);
+typeway_path!(type UserPostsPath = "users" / u32 / "posts" / u32);
 ```
 
 This is a type-level catamorphism (fold) — the `PathSpec` trait recurses over the HList to compute the capture tuple type. A path with captures `u32` and `String` produces `Captures = (u32, String)` at compile time. The runtime path parser is structurally derived from the same type.
@@ -237,10 +237,10 @@ Why HLists instead of flat tuples? Paths are inherently recursive: match one seg
 Wayward doesn't ask you to choose between it and the existing Tower/Axum ecosystem. It composes with both:
 
 - **Tower middleware** works directly via `.layer()` — CorsLayer, TraceLayer, TimeoutLayer, your own custom layers
-- **Axum interop** is bidirectional: nest wayward inside Axum (`into_axum_router()`), or nest Axum inside wayward (`with_axum_fallback()`)
+- **Axum interop** is bidirectional: nest typeway inside Axum (`into_axum_router()`), or nest Axum inside wayward (`with_axum_fallback()`)
 - **Hyper 1.x** is the transport layer — no custom HTTP implementation
 
-You can adopt wayward for part of your API and keep the rest in Axum. Or start with Axum and gradually migrate endpoints to wayward for stronger type guarantees. No all-or-nothing commitment.
+You can adopt typeway for part of your API and keep the rest in Axum. Or start with Axum and gradually migrate endpoints to typeway for stronger type guarantees. No all-or-nothing commitment.
 
 ### Structured Errors as Types, Not Strings
 
@@ -259,7 +259,7 @@ Custom extractors can use the same error type, so a missing auth token produces 
 
 ## Performance: The Cost of Type Safety
 
-Type-level frameworks invite skepticism about runtime cost. Wayward's type erasure and extractor machinery add overhead — but we've measured it, and it's negligible compared to real handler work.
+Type-level frameworks invite skepticism about runtime cost. Typeway's type erasure and extractor machinery add overhead — but we've measured it, and it's negligible compared to real handler work.
 
 ### Dispatch Overhead
 
@@ -281,13 +281,13 @@ The **878 ns dispatch floor** is the framework's fixed cost per request. Everyth
 
 A typical JSON API handler that queries a database and returns a response takes **1–100 ms**. The 878 ns dispatch overhead is **0.001–0.09%** of that. You cannot measure it in production.
 
-The extractor costs (~300 ns each) are dominated by `TypeId`-keyed hashmap lookups in `http::Extensions`. These are the same lookups Axum performs — wayward doesn't add extra indirection beyond what any extractor-based framework does.
+The extractor costs (~300 ns each) are dominated by `TypeId`-keyed hashmap lookups in `http::Extensions`. These are the same lookups Axum performs — typeway doesn't add extra indirection beyond what any extractor-based framework does.
 
 Body bytes are reference-counted (`Bytes`), so passing the pre-collected body to handlers costs 14 ns regardless of payload size. There is no copy.
 
 ### Where Wayward Is Slower Than Axum
 
-Wayward's router uses a linear scan with method indexing and first-segment prefix rejection. Axum uses a radix trie (`matchit`). For 10 routes, wayward is ~30% slower at route matching:
+Typeway's router uses a linear scan with method indexing and first-segment prefix rejection. Axum uses a radix trie (`matchit`). For 10 routes, wayward is ~30% slower at route matching:
 
 | Scenario (10 routes) | Axum | Wayward | Ratio |
 |----------------------|------|---------|-------|
@@ -317,11 +317,11 @@ Wayward trades ~1 µs of dispatch overhead for compile-time guarantees that elim
 
 ### How Wayward Improves on Servant
 
-Wayward owes a direct intellectual debt to Haskell's [Servant](https://docs.servant.dev/en/stable/), which pioneered the idea of APIs as types. Servant proved the concept; wayward refines and extends it by leveraging Rust's ecosystem in ways that Haskell's cannot match.
+Wayward owes a direct intellectual debt to Haskell's [Servant](https://docs.servant.dev/en/stable/), which pioneered the idea of APIs as types. Servant proved the concept; typeway refines and extends it by leveraging Rust's ecosystem in ways that Haskell's cannot match.
 
 **Built-in vs. fragmented ecosystem.** Servant's power is split across dozens of packages: `servant-server`, `servant-client`, `servant-swagger`, `servant-auth`, `servant-multipart`, `servant-websockets`, each with its own maintainer, version constraints, and compatibility matrix. A real Servant project often pulls in 10+ servant-* packages and navigating their interactions is a source of friction. Wayward ships everything in one workspace: server, client, OpenAPI, auth extractors, WebSocket support, streaming, structured errors, and middleware — all designed to work together from day one. There is no version matrix to debug.
 
-**Middleware is a first-class citizen.** Servant has no standard middleware story. WAI middleware exists, but it operates below Servant's type level — you can't express "this endpoint requires authentication" in the type and have middleware enforce it. Wayward inherits Tower's middleware architecture, where layers compose naturally with `.layer()`, and custom extractors (like `AuthUser`) participate in the type system. A missing auth token is a compile-time extractor error, not a runtime WAI filter.
+**Middleware is a first-class citizen.** Servant has no standard middleware story. WAI middleware exists, but it operates below Servant's type level — you can't express "this endpoint requires authentication" in the type and have middleware enforce it. Typeway inherits Tower's middleware architecture, where layers compose naturally with `.layer()`, and custom extractors (like `AuthUser`) participate in the type system. A missing auth token is a compile-time extractor error, not a runtime WAI filter.
 
 **Compile time discipline.** Servant is notorious for slow compile times. A 50-endpoint API can take minutes to compile because GHC resolves deeply nested type families and type-class instances at every use site. Wayward attacks this head-on: flat tuple impls generated by `macro_rules!` replace recursive type-class chains, method-indexed routing avoids O(routes) type-level dispatch, and type erasure at the router boundary (`BoundHandler`) prevents monomorphization blowup. The result is compile times that scale linearly, not exponentially.
 
@@ -329,21 +329,21 @@ Wayward owes a direct intellectual debt to Haskell's [Servant](https://docs.serv
 
 **Error messages are actionable.** Servant's type errors are legendary for their inscrutability — pages of GHC output about overlapping instances and ambiguous type variables. Wayward uses `#[diagnostic::on_unimplemented]` on key traits to produce errors like `` `NotAResponse` cannot be used as an HTTP response `` with a list of valid alternatives. The `#[handler]` macro catches mistakes at the function definition, not at the distant `Server::new` call site.
 
-**Gradual adoption.** There is no equivalent of wayward's Axum interop in Servant's world. You either use Servant for your entire API or you don't use it at all. Wayward lets you nest a single type-safe endpoint group inside an existing Axum application, or add Axum routes as a fallback inside wayward. This makes adoption incremental — you can prove the value on one service boundary before committing to the approach.
+**Gradual adoption.** There is no equivalent of typeway's Axum interop in Servant's world. You either use Servant for your entire API or you don't use it at all. Typeway lets you nest a single type-safe endpoint group inside an existing Axum application, or add Axum routes as a fallback inside typeway. This makes adoption incremental — you can prove the value on one service boundary before committing to the approach.
 
 ## Why Tower, Hyper, and Tokio
 
-Wayward is built on Tower, Hyper, and Tokio — the same foundation as Axum, Tonic (gRPC), and most of the production Rust web ecosystem. This is a deliberate architectural choice, not a default, and it provides concrete benefits that a custom stack would not.
+Typeway is built on Tower, Hyper, and Tokio — the same foundation as Axum, Tonic (gRPC), and most of the production Rust web ecosystem. This is a deliberate architectural choice, not a default, and it provides concrete benefits that a custom stack would not.
 
 ### Tower: Middleware Without Reinvention
 
-Tower's `Service` trait is the `Iterator` of async request/response processing: a universal interface that middleware, load balancers, and service meshes all understand. By implementing `tower::Service` for wayward's router, every Tower-compatible middleware works out of the box:
+Tower's `Service` trait is the `Iterator` of async request/response processing: a universal interface that middleware, load balancers, and service meshes all understand. By implementing `tower::Service` for typeway's router, every Tower-compatible middleware works out of the box:
 
 - **tower-http** gives you CORS, compression, tracing, timeouts, rate limiting, request IDs, and content-type validation — battle-tested layers used in production by thousands of services.
-- **Custom middleware** follows the same pattern. Write a `Layer` and it works with wayward, Axum, Tonic, and any other Tower-based framework.
-- **Service composition** means you can wrap a wayward API in a retry layer, put it behind a circuit breaker, or load-balance across backends — all without wayward knowing or caring.
+- **Custom middleware** follows the same pattern. Write a `Layer` and it works with typeway, Axum, Tonic, and any other Tower-based framework.
+- **Service composition** means you can wrap a typeway API in a retry layer, put it behind a circuit breaker, or load-balance across backends — all without wayward knowing or caring.
 
-The alternative — building a custom middleware system — would mean reimplementing CORS handling, compression negotiation, timeout logic, and every other cross-cutting concern from scratch. Tower's ecosystem represents years of production hardening that wayward inherits for free.
+The alternative — building a custom middleware system — would mean reimplementing CORS handling, compression negotiation, timeout logic, and every other cross-cutting concern from scratch. Tower's ecosystem represents years of production hardening that typeway inherits for free.
 
 ### Hyper: HTTP Without Opinions
 
@@ -353,19 +353,19 @@ This means:
 
 - **Protocol correctness** — Hyper's HTTP implementation is exhaustively tested and fuzzed. Wayward doesn't need to worry about edge cases in chunked encoding or connection lifecycle.
 - **Performance** — Hyper is one of the fastest HTTP implementations in any language. Wayward adds only the routing and extraction layer on top; the hot path of connection handling is pure Hyper.
-- **Upgrade support** — WebSocket upgrades, HTTP/2, and future protocol extensions come from Hyper. Wayward's WebSocket support is a thin adapter over Hyper's upgrade mechanism, not a custom implementation.
+- **Upgrade support** — WebSocket upgrades, HTTP/2, and future protocol extensions come from Hyper. Typeway's WebSocket support is a thin adapter over Hyper's upgrade mechanism, not a custom implementation.
 
 ### Tokio: The Runtime Everyone Already Has
 
-Every non-trivial async Rust application already depends on Tokio. By building on Tokio directly, wayward avoids the dual-runtime problem that plagues frameworks built on `async-std` or custom executors. Your database driver, your Redis client, your message queue consumer, and your wayward server all share one runtime with one set of configuration knobs.
+Every non-trivial async Rust application already depends on Tokio. By building on Tokio directly, wayward avoids the dual-runtime problem that plagues frameworks built on `async-std` or custom executors. Your database driver, your Redis client, your message queue consumer, and your typeway server all share one runtime with one set of configuration knobs.
 
 ### Axum Interop: The Ecosystem Multiplier
 
 The Axum compatibility layer is the strongest practical argument for this foundation choice. Axum is the most widely adopted Rust web framework, and it sits on the exact same Tower/Hyper/Tokio stack. This creates a unique opportunity:
 
-- **Gradual migration.** Nest a wayward API inside an existing Axum application at `/api/v2` while the rest of the app stays unchanged. Migrate endpoints one at a time. No big-bang rewrite.
-- **Ecosystem access.** Every Axum extractor, every Axum middleware, every Axum tutorial and blog post is potentially relevant. If someone has solved a problem in Axum, the solution likely works with wayward's router too, since both speak Tower.
-- **Risk reduction.** Adopting a new framework is risky. Axum interop means you're never locked in — if wayward doesn't work for a particular endpoint, fall back to Axum for that route and keep wayward for the rest. The cost of trying wayward is near zero.
-- **Bidirectional embedding.** This isn't just "wayward can call Axum." It's fully bidirectional: Axum routes can be the fallback inside a wayward server. This means you can use Axum's mature WebSocket handling, static file serving, or any other Axum feature alongside wayward's type-safe endpoints.
+- **Gradual migration.** Nest a typeway API inside an existing Axum application at `/api/v2` while the rest of the app stays unchanged. Migrate endpoints one at a time. No big-bang rewrite.
+- **Ecosystem access.** Every Axum extractor, every Axum middleware, every Axum tutorial and blog post is potentially relevant. If someone has solved a problem in Axum, the solution likely works with typeway's router too, since both speak Tower.
+- **Risk reduction.** Adopting a new framework is risky. Axum interop means you're never locked in — if typeway doesn't work for a particular endpoint, fall back to Axum for that route and keep typeway for the rest. The cost of trying wayward is near zero.
+- **Bidirectional embedding.** This isn't just "wayward can call Axum." It's fully bidirectional: Axum routes can be the fallback inside a typeway server. This means you can use Axum's mature WebSocket handling, static file serving, or any other Axum feature alongside typeway's type-safe endpoints.
 
-No other type-safe web framework offers this kind of ecosystem integration. Servant can't embed a WAI app inside a Servant server. Dropshot has no interop with Axum or Actix. Wayward's tower-native architecture makes it a participant in the ecosystem rather than an island.
+No other type-safe web framework offers this kind of ecosystem integration. Servant can't embed a WAI app inside a Servant server. Dropshot has no interop with Axum or Actix. Typeway's tower-native architecture makes it a participant in the ecosystem rather than an island.

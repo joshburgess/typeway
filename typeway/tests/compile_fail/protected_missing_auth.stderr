@@ -1,0 +1,22 @@
+error[E0277]: the trait bound `Protected<AuthUser, Endpoint<Get, HCons<Lit<__lit_hello>, HNil>, NoBody, std::string::String>>: BindableEndpoint` is not satisfied
+  --> tests/compile_fail/protected_missing_auth.rs:28:33
+   |
+28 |     let _ = Server::<API>::new((bind!(no_auth),));
+   |                                 ^^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+   = help: the trait `BindableEndpoint` is not implemented for `Protected<AuthUser, Endpoint<Get, HCons<Lit<__lit_hello>, HNil>, NoBody, std::string::String>>`
+   = help: the following other types implement trait `BindableEndpoint`:
+             ContentType<C, E>
+             Endpoint<M, P, Req, Res, Q, Err>
+             RateLimited<R, E>
+             Validated<V, E>
+             Versioned<V, E>
+note: required by a bound in `typeway::bind`
+  --> $WORKSPACE/typeway-server/src/handler_for.rs
+   |
+   | pub fn bind<E, H, Args>(handler: H) -> BoundHandler<E>
+   |        ---- required by a bound in this function
+   | where
+   |     E: BindableEndpoint,
+   |        ^^^^^^^^^^^^^^^^ required by this bound in `bind`
+   = note: this error originates in the macro `bind` (in Nightly builds, run with -Z macro-backtrace for more info)

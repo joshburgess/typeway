@@ -493,7 +493,7 @@ update msg model =
 
 view : Model -> Browser.Document Msg
 view model =
-    { title = "Wayward Word"
+    { title = "Typeway Word"
     , body =
         [ viewNav model
         , div [ class "max-w-4xl mx-auto px-4 py-8" ]
@@ -509,7 +509,7 @@ viewNav : Model -> Html Msg
 viewNav model =
     nav [ class "bg-white shadow-sm border-b" ]
         [ div [ class "max-w-4xl mx-auto px-4 py-3 flex items-center justify-between" ]
-            [ a [ href "/", class "text-xl font-bold text-brand" ] [ text "wayward word" ]
+            [ a [ href "/", class "text-xl font-bold text-brand" ] [ text "typeway word" ]
             , div [ class "flex gap-4 text-sm" ]
                 (case model.user of
                     Just user ->
@@ -578,7 +578,7 @@ viewHome : HomeModel -> Html Msg
 viewHome home =
     div []
         [ div [ class "bg-brand text-white text-center py-10 -mx-4 mb-8 rounded-lg" ]
-            [ h1 [ class "text-3xl font-bold" ] [ text "wayward word" ]
+            [ h1 [ class "text-3xl font-bold" ] [ text "typeway word" ]
             , p [ class "mt-2 text-green-100" ] [ text "Words that wander. Ideas that stick." ]
             ]
         , div [ class "flex gap-8" ]

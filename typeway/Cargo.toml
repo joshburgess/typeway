@@ -1,0 +1,61 @@
+[package]
+name = "typeway"
+version = "0.1.0"
+edition = "2021"
+description = "Type-level web framework for Rust — your API is a type"
+
+[features]
+default = ["server"]
+server = ["dep:typeway-server"]
+client = ["dep:typeway-client"]
+openapi = ["dep:typeway-openapi", "typeway-server?/openapi"]
+axum-interop = ["server", "typeway-server/axum-interop"]
+full = ["server", "client", "openapi"]
+
+[dependencies]
+typeway-core = { path = "../typeway-core" }
+typeway-macros = { path = "../typeway-macros" }
+typeway-server = { path = "../typeway-server", optional = true }
+typeway-client = { path = "../typeway-client", optional = true }
+typeway-openapi = { path = "../typeway-openapi", optional = true }
+
+# Re-export common deps so users don't need to depend on them directly
+http = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
+criterion = { version = "0.5", features = ["async_tokio"] }
+trybuild = "1"
+typeway-server = { path = "../typeway-server" }
+typeway-core = { path = "../typeway-core" }
+typeway-macros = { path = "../typeway-macros" }
+axum = "0.8"
+tower = { version = "0.5", features = ["util"] }
+bytes = "1"
+
+[[bench]]
+name = "routing"
+harness = false
+required-features = ["server", "axum-interop"]
+
+[[bench]]
+name = "dispatch"
+harness = false
+required-features = ["server"]
+
+[[example]]
+name = "hello_world"
+required-features = ["server"]
+
+[[example]]
+name = "users_api"
+required-features = ["server"]
+
+[[example]]
+name = "client_server"
+required-features = ["full"]

@@ -4,7 +4,7 @@ use deadpool_postgres::{Config, ManagerConfig, Pool, RecyclingMethod, Runtime};
 use tokio_postgres::NoTls;
 use uuid::Uuid;
 
-use wayward_server::error::JsonError;
+use typeway_server::error::JsonError;
 
 pub use crate::models::ArticleRow;
 use crate::models::*;
@@ -157,7 +157,7 @@ pub async fn seed_data(pool: &Pool) {
             "How zero-sized type parameters can enforce invariants at compile time",
             "Phantom types carry no runtime data but constrain what operations are valid. \
              In Rust, PhantomData<T> lets you tie a type parameter to a struct without storing T. \
-             This is the foundation of wayward's Endpoint<M, P, Req, Res> — the method, path, \
+             This is the foundation of typeway's Endpoint<M, P, Req, Res> — the method, path, \
              request body, and response types exist only at compile time.\n\n\
              Consider a state machine encoded as types: struct Locked; struct Unlocked; \
              struct Door<State>(PhantomData<State>). The open() method only exists on \
@@ -178,14 +178,14 @@ pub async fn seed_data(pool: &Pool) {
              HCons<Lit<users>, HCons<Capture<u32>, HCons<Lit<posts>, HNil>>>.\n\n\
              Flat tuples would need a separate impl for every possible combination of literal \
              and capture segments. HLists give O(n) impls via recursion. This is why Servant \
-             in Haskell and wayward in Rust both use list-like structures for paths.",
+             in Haskell and typeway in Rust both use list-like structures for paths.",
             &["rust", "haskell", "hlists", "type-level"],
         ),
         (
             "The Catamorphism Hiding in Your Web Framework",
             "Path parsing as a fold over type-level structure",
             "A catamorphism is a fold — the fundamental way to consume an inductive data structure. \
-             When wayward's PathSpec trait computes the capture tuple from a path HList, it's \
+             When typeway's PathSpec trait computes the capture tuple from a path HList, it's \
              performing a type-level catamorphism.\n\n\
              Base case: HNil has Captures = (). Recursive case: HCons<Capture<T>, Tail> prepends T \
              to Tail::Captures. HCons<Lit<S>, Tail> passes through Tail::Captures unchanged.\n\n\
@@ -197,9 +197,9 @@ pub async fn seed_data(pool: &Pool) {
         ),
         (
             "Type Erasure: The Bridge Between Static Types and Dynamic Dispatch",
-            "How wayward stores heterogeneous handlers in a flat vector",
+            "How typeway stores heterogeneous handlers in a flat vector",
             "Type-level programming gives you compile-time guarantees, but at some point you need \
-             runtime dispatch. wayward's handlers are all different types — an async fn(Path<P>) -> Json<T> \
+             runtime dispatch. typeway's handlers are all different types — an async fn(Path<P>) -> Json<T> \
              is a different type from async fn(State<S>) -> String. Yet they must live in the same Vec.\n\n\
              The solution: type erasure via Box<dyn Fn(Parts, Bytes) -> Pin<Box<dyn Future>>>. \
              The bind() function captures the handler's specific type, verifies it against the \
@@ -213,17 +213,17 @@ pub async fn seed_data(pool: &Pool) {
         (
             "Servant vs Wayward: Type-Level Web Frameworks Across Languages",
             "Comparing Haskell's pioneer with Rust's new contender",
-            "Haskell's Servant pioneered the idea that an HTTP API can be a type. Wayward brings \
+            "Haskell's Servant pioneered the idea that an HTTP API can be a type. Typeway brings \
              that idea to Rust. Both derive server, client, and OpenAPI from one type. But the \
              implementations differ due to language constraints.\n\n\
              Servant uses GHC's type-level strings and type operators (:<|>, :>). Wayward uses \
              HLists with marker types and trait-level computation — achieving similar results \
              without nightly Rust features.\n\n\
              Servant's ecosystem is fragmented across 10+ packages. Wayward ships everything in \
-             one workspace. Servant has no middleware story; wayward inherits Tower's entire \
-             ecosystem. Servant's compile times scale poorly; wayward uses flat tuple impls to \
+             one workspace. Servant has no middleware story; typeway inherits Tower's entire \
+             ecosystem. Servant's compile times scale poorly; typeway uses flat tuple impls to \
              stay linear.\n\n\
-             The biggest difference: wayward integrates with Axum bidirectionally. You can adopt \
+             The biggest difference: typeway integrates with Axum bidirectionally. You can adopt \
              it incrementally. Servant is all-or-nothing.",
             &["haskell", "rust", "servant", "comparison"],
         ),
@@ -232,14 +232,14 @@ pub async fn seed_data(pool: &Pool) {
             "Measuring the actual overhead of type-level programming in Rust",
             "Rust promises zero-cost abstractions, but type-level frameworks add real overhead. \
              How much? We measured it.\n\n\
-             Direct async fn call: 0.79 ns. Through wayward's BoxedHandler: 878 ns. That's two \
+             Direct async fn call: 0.79 ns. Through typeway's BoxedHandler: 878 ns. That's two \
              heap allocations (closure box + future box) plus a virtual call. Each extractor adds \
              ~300 ns for a TypeId hashmap lookup.\n\n\
              Is this zero-cost? No. But for an API handler that takes 1-100ms to query a database \
              and serialize a response, 878 ns is 0.001-0.09% of the total time. You literally \
              cannot measure it in production.\n\n\
              The real cost is compile time, not runtime. Type-level programming makes rustc do \
-             more work. wayward mitigates this with flat tuple impls instead of recursive trait \
+             more work. typeway mitigates this with flat tuple impls instead of recursive trait \
              chains, keeping compile times linear.",
             &["rust", "performance", "benchmarks", "zero-cost"],
         ),
@@ -261,25 +261,25 @@ pub async fn seed_data(pool: &Pool) {
         ),
         (
             "Tower of Abstractions: Why Middleware Matters for Type-Safe Frameworks",
-            "How wayward inherits years of production-hardened middleware for free",
+            "How typeway inherits years of production-hardened middleware for free",
             "Most type-safe web frameworks reinvent middleware from scratch. Servant has no standard \
-             middleware story. Dropshot has limited layer support. wayward takes a different approach: \
+             middleware story. Dropshot has limited layer support. typeway takes a different approach: \
              it implements tower::Service and gets the entire Tower ecosystem for free.\n\n\
              CorsLayer, TraceLayer, TimeoutLayer, CompressionLayer, RateLimitLayer — all battle-tested \
-             in production by Axum, Tonic, and thousands of other services. wayward's .layer() method \
-             accepts any Tower layer. Write a custom layer once, use it with wayward, Axum, and gRPC.\n\n\
+             in production by Axum, Tonic, and thousands of other services. typeway's .layer() method \
+             accepts any Tower layer. Write a custom layer once, use it with typeway, Axum, and gRPC.\n\n\
              This isn't just convenience — it's a network effect. Every Tower middleware written by \
-             anyone in the Rust ecosystem is automatically available to wayward users. No other \
+             anyone in the Rust ecosystem is automatically available to typeway users. No other \
              type-safe framework offers this.",
             &["rust", "tower", "middleware", "ecosystem"],
         ),
         (
             "From Types to OpenAPI: Deriving Documentation From Code",
-            "How wayward generates OpenAPI 3.1 specs without annotations",
+            "How typeway generates OpenAPI 3.1 specs without annotations",
             "Most frameworks require you to annotate your code with documentation metadata — \
              #[openapi(description = '...')], YAML files, or separate spec documents. These \
              inevitably drift from the actual implementation.\n\n\
-             wayward takes a different approach: the API type IS the spec. GetEndpoint<UsersPath, Json<Vec<User>>> \
+             typeway takes a different approach: the API type IS the spec. GetEndpoint<UsersPath, Json<Vec<User>>> \
              tells us the method (GET), the path (/users), and the response schema (array of User). \
              The OpenAPI generator walks the type at startup and produces a complete spec.\n\n\
              Path parameters come from Capture<T> segments. Request bodies come from the Req type parameter. \
@@ -293,7 +293,7 @@ pub async fn seed_data(pool: &Pool) {
             "Compile-Time Completeness: Why Missing Handlers Should Be Errors",
             "The case for making your compiler verify your API contract",
             "In Axum, if you forget to register a handler for /users/:id, you get a 404 at runtime. \
-             Maybe in production. Maybe at 3 AM. In wayward, you get a compile error.\n\n\
+             Maybe in production. Maybe at 3 AM. In typeway, you get a compile error.\n\n\
              The Serves<API> trait checks that the handler tuple has exactly the right number of \
              BoundHandler entries, one per endpoint in the API type. The compiler does this check at \
              build time with zero runtime cost.\n\n\

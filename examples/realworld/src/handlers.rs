@@ -3,9 +3,9 @@
 use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use uuid::Uuid;
 
-use wayward_server::error::JsonError;
-use wayward_server::extract::{Path, State};
-use wayward_server::response::Json;
+use typeway_server::error::JsonError;
+use typeway_server::extract::{Path, State};
+use typeway_server::response::Json;
 
 use crate::api::*;
 use crate::auth::{create_token, AuthUser, OptionalAuth};

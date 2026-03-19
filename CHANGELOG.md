@@ -19,7 +19,7 @@
 - **`Strict<E>`** — handler return type must exactly match the declared Res type
 - **`endpoint!` macro** — builder syntax for composing wrappers without manual nesting
 
-### Server (`wayward-server`)
+### Server (`typeway-server`)
 - **HTTP/1.1 + HTTP/2**: automatic protocol detection via `hyper_util::server::conn::auto`
 - **TLS/HTTPS** (feature `tls`): `TlsConfig::from_pem()` + `Server::serve_tls()`
 - **Structured logging**: `tracing` crate integration throughout
@@ -38,20 +38,20 @@
 - **Multipart upload** (feature `multipart`): `Multipart` extractor wraps `multer`
 - **`LayeredServer` config**: all config methods (`with_state`, `nest`, `with_static_files`, etc.) work after `.layer()` calls
 
-### Macros (`wayward-macros`)
-- `wayward_path!`: ergonomic path type definitions (`wayward_path!(type P = "users" / u32)`)
-- `wayward_api!`: inline API type definitions with method/path/body syntax
+### Macros (`typeway-macros`)
+- `typeway_path!`: ergonomic path type definitions (`typeway_path!(type P = "users" / u32)`)
+- `typeway_api!`: inline API type definitions with method/path/body syntax
 - `endpoint!`: builder macro for composing type-level wrappers
 - `#[handler]`: validates handler functions at definition site
 - `#[api_description]`: trait-based API definition with auto-generated endpoint types
 - `bind!()`, `bind_auth!()`, `bind_strict!()`, `bind_validated!()`, `bind_content_type!()`: handler binding macros
 
-### Client (`wayward-client`)
+### Client (`typeway-client`)
 - Type-safe HTTP client derived from the same API types as the server
 - `Client::call::<Endpoint>(args)` with compile-time verification
 - Supports all HTTP methods, path captures, and request/response bodies
 
-### OpenAPI (`wayward-openapi`)
+### OpenAPI (`typeway-openapi`)
 - OpenAPI 3.1 spec generation from API types at startup
 - Embedded docs UI at `/docs` (no CDN dependencies)
 - Spec served at `/openapi.json`
@@ -61,8 +61,8 @@
 - `ToSchema` impls for common types + `schemars` bridge (feature-gated)
 
 ### Axum Interoperability (feature `axum-interop`)
-- `Server::into_axum_router()` — embed wayward in Axum apps
-- `Server::with_axum_fallback()` — embed Axum routes in wayward
+- `Server::into_axum_router()` — embed typeway in Axum apps
+- `Server::with_axum_fallback()` — embed Axum routes in typeway
 - Bidirectional body type conversion
 
 ### WebSocket Support (feature `ws`)
@@ -74,7 +74,7 @@
 - Comprehensive trybuild test suite (pass + fail cases)
 - Criterion benchmarks measuring dispatch overhead and routing performance
 - CI pipeline: test, clippy, fmt, docs
-- RealWorld ("Wayward Word") example: 19-endpoint Medium clone with Elm frontend, PostgreSQL, JWT auth, Docker Compose
+- RealWorld ("Typeway Word") example: 19-endpoint Medium clone with Elm frontend, PostgreSQL, JWT auth, Docker Compose
 
 ### Performance
 - Type erasure overhead: ~878ns per dispatch (< 0.1% of real handler time)

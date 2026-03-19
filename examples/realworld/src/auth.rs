@@ -5,10 +5,10 @@ use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation}
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use wayward_server::error::JsonError;
-use wayward_server::extract::FromRequestParts;
+use typeway_server::error::JsonError;
+use typeway_server::extract::FromRequestParts;
 
-const SECRET: &[u8] = b"wayward-realworld-secret-change-in-production";
+const SECRET: &[u8] = b"typeway-realworld-secret-change-in-production";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {

@@ -1,0 +1,19 @@
+[package]
+name = "typeway-openapi"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+schemars = ["dep:schemars"]
+
+[dependencies]
+typeway-core = { path = "../typeway-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+indexmap = { version = "2", features = ["serde"] }
+http = "1"
+schemars = { version = "0.8", optional = true }
+
+[dev-dependencies]
+typeway-macros = { path = "../typeway-macros" }

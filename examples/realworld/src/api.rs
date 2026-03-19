@@ -1,31 +1,31 @@
 //! API type definition — the single source of truth for the RealWorld spec.
 
 use crate::models::*;
-use wayward_macros::wayward_path;
+use typeway_macros::typeway_path;
 
 // ---------------------------------------------------------------------------
 // Path types
 // ---------------------------------------------------------------------------
 
-wayward_path!(pub type UsersPath = "api" / "users");
-wayward_path!(pub type UsersLoginPath = "api" / "users" / "login");
-wayward_path!(pub type UserPath = "api" / "user");
-wayward_path!(pub type ProfilePath = "api" / "profiles" / String);
-wayward_path!(pub type ProfileFollowPath = "api" / "profiles" / String / "follow");
-wayward_path!(pub type ArticlesPath = "api" / "articles");
-wayward_path!(pub type ArticlesFeedPath = "api" / "articles" / "feed");
-wayward_path!(pub type ArticlePath = "api" / "articles" / String);
-wayward_path!(pub type ArticleFavoritePath = "api" / "articles" / String / "favorite");
-wayward_path!(pub type ArticleCommentsPath = "api" / "articles" / String / "comments");
-wayward_path!(pub type ArticleCommentPath = "api" / "articles" / String / "comments" / i32);
-wayward_path!(pub type TagsPath = "api" / "tags");
+typeway_path!(pub type UsersPath = "api" / "users");
+typeway_path!(pub type UsersLoginPath = "api" / "users" / "login");
+typeway_path!(pub type UserPath = "api" / "user");
+typeway_path!(pub type ProfilePath = "api" / "profiles" / String);
+typeway_path!(pub type ProfileFollowPath = "api" / "profiles" / String / "follow");
+typeway_path!(pub type ArticlesPath = "api" / "articles");
+typeway_path!(pub type ArticlesFeedPath = "api" / "articles" / "feed");
+typeway_path!(pub type ArticlePath = "api" / "articles" / String);
+typeway_path!(pub type ArticleFavoritePath = "api" / "articles" / String / "favorite");
+typeway_path!(pub type ArticleCommentsPath = "api" / "articles" / String / "comments");
+typeway_path!(pub type ArticleCommentPath = "api" / "articles" / String / "comments" / i32);
+typeway_path!(pub type TagsPath = "api" / "tags");
 
 // ---------------------------------------------------------------------------
 // API type
 // ---------------------------------------------------------------------------
 
-use wayward_core::{DeleteEndpoint, GetEndpoint, PostEndpoint, PutEndpoint};
-use wayward_server::auth::Protected;
+use typeway_core::{DeleteEndpoint, GetEndpoint, PostEndpoint, PutEndpoint};
+use typeway_server::auth::Protected;
 
 use crate::auth::AuthUser;
 

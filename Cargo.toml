@@ -1,11 +1,11 @@
 [workspace]
 members = [
-    "wayward-core",
-    "wayward-server",
-    "wayward-client",
-    "wayward-openapi",
-    "wayward-macros",
-    "wayward",
+    "typeway-core",
+    "typeway-server",
+    "typeway-client",
+    "typeway-openapi",
+    "typeway-macros",
+    "typeway",
     "spike",
     "examples/realworld",
 ]
