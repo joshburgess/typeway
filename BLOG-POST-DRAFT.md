@@ -361,6 +361,146 @@ The whole system is a shallow embedding of an API description language into Rust
 
 ---
 
+## Type System Design Choices: What I Used and What I Didn't
+
+Typeway runs on stable Rust. Every type-level trick in the framework compiles without nightly. But that doesn't mean I used every stable feature available — and it doesn't mean there aren't unstable features I'm actively waiting on. The choices about what *not* to use were as deliberate as the choices about what to use.
+
+### GATs: Stable, But Not Worth It Here
+
+Generic Associated Types stabilized in Rust 1.65. They let you write associated types with their own generic parameters:
+
+```rust
+trait StreamingExtractor {
+    type Body<'a>: AsyncRead + 'a;
+    fn extract<'a>(req: &'a mut Request) -> Self::Body<'a>;
+}
+```
+
+I chose not to use them for the core API. The patterns that drive Typeway — HList path recursion, flat tuple impls via macros, PhantomData markers — are simpler constructs that don't benefit from GATs. Adding GATs to the core traits would increase trait complexity, produce harder-to-read error messages, and raise compile-time costs from resolving GAT bounds, all without improving the user-facing API.
+
+Where GATs *could* help: a future streaming extractor that borrows from the request instead of returning owned `Bytes`. Currently, `FromRequest` returns owned data. A GAT-based version could return data with a lifetime tied to the request. That's a potential enhancement for advanced use cases, not a reason to restructure the foundation.
+
+The general principle: don't adopt a feature because it's technically available. Adopt it because it makes the framework simpler to use and easier to debug.
+
+### Const Generic Integers: Stable, But Named Types Are Clearer
+
+Integer const generics have been stable since Rust 1.51. They let you parameterize types by numbers:
+
+```rust
+struct RateLimited<const MAX: u32, const WINDOW_SECS: u64, E>(PhantomData<E>);
+type Limited = RateLimited<100, 60, GetEndpoint<UsersPath, String>>;
+```
+
+I could use this for rate limiting, max body sizes, timeout durations. I mostly don't. The trait-based approach is more readable at the call site:
+
+```rust
+// Const generics: concise but opaque
+type E = RateLimited<100, 60, GetEndpoint<...>>;
+
+// Trait-based: more lines to define, but self-documenting
+struct StandardRate;
+impl RateLimit for StandardRate {
+    const MAX_REQUESTS: u32 = 100;
+    const WINDOW_SECS: u64 = 60;
+}
+type E = RateLimited<StandardRate, GetEndpoint<...>>;
+```
+
+With const generics, `100, 60` is anonymous — you can't tell what those numbers mean without context, and you can't reuse them across endpoints without repeating them. With a named type like `StandardRate`, the meaning is self-documenting and the configuration is defined once.
+
+I may adopt integer const generics selectively for simple, well-understood constants where a named type would be overkill. But for the typical case, named trait impls win on readability.
+
+### Three Unstable Features I'm Waiting On
+
+**Const generic `&'static str` — the big one.** This is gated behind `adt_const_params`, unstable since 2021 with no stabilization timeline. It would let me write `Lit<"users">` instead of generating a marker type per literal string. Here's what the framework looks like with and without it:
+
+```rust
+// Today (marker types via proc macro):
+typeway_path!(type UsersPath = "users" / u32);
+// Generates hidden module with __lit_users struct implementing LitSegment
+
+// With const generic strings (no macro needed):
+type UsersPath = HCons<Lit<"users">, HCons<Capture<u32>, HNil>>;
+```
+
+This single feature would eliminate `typeway_path!` entirely, remove the hidden `__wp_*` modules that pollute `cargo doc` output, make two paths with the same literal automatically the same type, and simplify compiler error messages from `Lit<__wp_UsersPath::__lit_users>` to `Lit<"users">`. The `LitSegment` trait, all marker type generation, and the module-scoping machinery become unnecessary. It's the single biggest ergonomic improvement waiting on the language.
+
+The architecture is ready for it. When `adt_const_params` stabilizes, `Lit<"string">` becomes a drop-in replacement behind a feature flag. The existing macro approach stays as a backward-compatible alternative.
+
+**Specialization — unifying handler traits.** Currently, I maintain separate handler traits for different patterns: `Handler`, `AuthHandler`, `StrictHandler`. Overlapping trait impls aren't allowed on stable, so I use marker types (`WithBody<Parts, Body>`, `AuthWithBody<Parts, Body>`) to disambiguate. Specialization would collapse these into a single `Handler` trait where the more specific impl wins. It's been unstable since 2016 with known soundness issues. Impact if stabilized: moderate — fewer traits, fewer marker types, same user-facing API.
+
+**Negative trait impls — enabling the type-level builder.** I experimented with a type-level builder pattern where you construct endpoint types incrementally and the compiler ensures all required fields are set before use. This requires expressing "T does NOT implement trait `Unset`" — which Rust can't do. Without negative impls, the `NotUnset` marker trait had to be manually implemented for every user type, making the pattern impractical. The `endpoint!` macro is the pragmatic alternative. If negative impls stabilize, `impl<T: !Unset> NotUnset for T {}` makes the builder pattern viable without manual impls.
+
+### The Underlying Principle
+
+Every decision above follows the same logic: prefer simpler constructs that produce better error messages over technically impressive ones that produce inscrutable errors. GATs are powerful but make trait errors harder to parse. Const generic integers are concise but make configurations anonymous. The framework's job is to catch mistakes at compile time *and tell you what went wrong in plain language*. If a feature makes the type system more expressive but the error messages worse, it's not worth it for a framework that developers interact with through those error messages daily.
+
+---
+
+## The Ecosystem Advantage: Why Tower/Hyper/Tokio Beats a Custom Stack
+
+The decision to build on Tower, Hyper, and Tokio isn't just about reusing code. It's about inheriting a production-ready ecosystem that no custom stack — and no Haskell web framework — can match in breadth and battle-testing.
+
+### Tower Middleware: Already Solved
+
+Tower's `Service` trait is the universal interface for async request/response processing in Rust. By implementing it for Typeway's router, I get the entire tower-http crate for free: CORS, compression, tracing, timeouts, rate limiting, request IDs, content-type validation, secure headers. These aren't toy implementations — they're used by thousands of production services, maintained by the Tokio team, and continuously fuzzed and benchmarked.
+
+Haskell's Servant has no standard middleware story. WAI (Web Application Interface) exists, but it operates below Servant's type level. You can't express "this endpoint requires authentication" in the Servant type and have middleware enforce it. WAI middleware is applied to the entire application as an opaque transformation — there's no connection between the middleware and the API type. In Typeway, a custom extractor like `AuthUser` participates in the type system: a handler that takes `AuthUser` won't compile if the auth middleware hasn't been configured, and the OpenAPI spec automatically documents the endpoint as requiring authentication.
+
+Writing middleware from scratch — correctly handling CORS preflight requests, content negotiation for compression, timeout cancellation, rate limit headers — is months of work and a permanent maintenance burden. Tower's ecosystem represents years of production hardening that I inherit for free.
+
+### Hyper: Speed Without Compromise
+
+Hyper is one of the fastest HTTP implementations in any language. Connection management, HTTP/1.1 and HTTP/2 protocol details, keep-alive, chunked transfer encoding, upgrade handshakes — all handled, exhaustively tested, and continuously fuzzed. Typeway adds only routing and extraction on top; the hot path of connection handling is pure Hyper.
+
+Haskell's warp is a solid HTTP server, but it has known performance cliffs under high concurrency. When request rates spike, warp's thread scheduling interacts poorly with GHC's garbage collector, causing latency spikes that don't show up in microbenchmarks but hurt production p99s. Hyper, running on Tokio's work-stealing scheduler, doesn't have this problem — Rust has no GC, and Tokio's task scheduling is designed for sustained high throughput.
+
+### Tokio: No Runtime Split
+
+Every non-trivial async Rust application already depends on Tokio. Your database driver (sqlx, diesel-async, sea-orm), your Redis client (fred, redis-rs), your message queue consumer (lapin, rdkafka), your gRPC service (tonic) — all share one Tokio runtime with one set of configuration knobs. Typeway sits in that same runtime. No adapter layers, no dual-runtime problem, no `block_on` bridges between executors.
+
+Haskell has genuinely better concurrency primitives — STM (Software Transactional Memory) and green threads are elegant and powerful. But the *web library* ecosystem is fragmented. Servant, warp, scotty, snap, yesod, IHP — each has its own approach to middleware, error handling, and deployment. They don't share middleware. They don't share extractors. A library written for warp doesn't work with servant-server. This fragmentation means every framework reinvents basic infrastructure, and none of them achieves the depth of tower-http.
+
+### Axum Interop: The Unique Advantage
+
+No other type-safe web framework offers bidirectional embedding with a mainstream framework. Servant can't embed a WAI application inside a Servant server and have the WAI routes participate in the type-level API description. Dropshot has no interop with Axum or Actix. Warp's filter system is self-contained.
+
+Typeway's Tower-native architecture makes incremental adoption real, not theoretical:
+
+```rust
+// Nest a type-safe API group inside an existing Axum application
+let typeway_api = Server::<PaymentsAPI>::new(handlers);
+let app = axum::Router::new()
+    .nest("/api/v1/payments", typeway_api.into_axum_router())
+    .route("/health", get(|| async { "ok" }));
+```
+
+This means a team can adopt Typeway for one service boundary — a payment API, a permissions system, an inter-service contract — without touching the rest of the application. The Axum routes keep working. The Tower middleware is shared. It's the same binary, the same runtime, the same deployment. The cost of trying Typeway is near zero, because backing out is just removing a `.nest()` call.
+
+### Where Haskell's Web Ecosystem Falls Short
+
+I want to be specific here, because vague "Haskell is hard in production" claims aren't useful. These are concrete pain points I've encountered or seen reported consistently:
+
+- **Streaming responses.** servant-conduit exists but integrates awkwardly with the Servant type. Streaming a large JSON array or an SSE event stream requires dropping out of the type-safe API into raw WAI. In Typeway, `body_from_stream` and `sse_body` are first-class, type-checked response types.
+- **WebSockets.** servant-websockets is limited and maintained sporadically. WebSocket upgrade handling in Haskell's web ecosystem requires manual plumbing through the WAI layer. Typeway delegates to Hyper's upgrade mechanism — the same code path that Axum's WebSocket support uses.
+- **File uploads.** servant-multipart has rough edges around large file handling and streaming. The ecosystem hasn't converged on a standard multipart parser the way Rust has with `multer` (used by Axum and available to Typeway).
+- **TLS configuration.** Setting up HTTPS in a Servant application requires manually wiring TLS through warp or WAI's TLS adapters. Typeway has a `tls` feature flag that wraps tokio-rustls — one line of configuration.
+- **Structured logging.** Haskell has `katip` and `monad-logger`, but integrating them with WAI middleware requires boilerplate. Tower-http's `TraceLayer` combined with the `tracing` crate gives structured, span-aware logging across the entire request lifecycle with one `.layer()` call.
+
+None of this diminishes Haskell's strengths. Purity, parametricity, and STM are genuine advantages for reasoning about concurrent systems. But when it comes to shipping a web service with streaming, WebSockets, file uploads, TLS, structured logging, CORS, compression, and monitoring — the Rust/Tokio ecosystem is more complete and more cohesive than anything available in Haskell today.
+
+---
+
+## See It in Action
+
+If you want to see Typeway used in anger rather than in blog post snippets, the repository includes a full [RealWorld example app](https://github.com/joshburgess/typeway/tree/main/examples/realworld) — a Medium clone implementing the [Conduit spec](https://github.com/gothinkster/realworld). It has 19+ endpoints, PostgreSQL via sqlx, JWT authentication, an Elm frontend, and a Docker Compose setup for local development. It's the best way to judge whether the framework scales to a real application.
+
+For teams already on Axum, the `typeway-migrate` CLI tool provides zero-friction migration analysis. Run `typeway-migrate check` against your existing Axum project to get a report of which routes can be converted to type-safe endpoints. Run `typeway-migrate axum-to-typeway --dry-run` to see the generated Typeway types without modifying any files. The tool is new, but it's the fastest way to evaluate whether Typeway fits your codebase.
+
+To try it yourself: `cargo add typeway --features full`.
+
+---
+
 ## What You Get
 
 If you're building APIs in Rust and you've ever been bitten by a missing route, a drifted client, or an out-of-date OpenAPI spec, Typeway eliminates those problems at the type level.
