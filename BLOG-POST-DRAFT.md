@@ -323,6 +323,60 @@ This means you can adopt Typeway incrementally. Use it for the endpoints where c
 
 ---
 
+## The Ecosystem Advantage: Why Tower/Hyper/Tokio Beats a Custom Stack
+
+The decision to build on Tower, Hyper, and Tokio isn't just about reusing code. It's about inheriting a production-ready ecosystem that no custom stack — and no Haskell web framework — can match in breadth and battle-testing.
+
+### Tower Middleware: Already Solved
+
+Tower's `Service` trait is the universal interface for async request/response processing in Rust. By implementing it for Typeway's router, I get the entire tower-http crate for free: CORS, compression, tracing, timeouts, rate limiting, request IDs, content-type validation. These aren't toy implementations — they're used by thousands of production services, maintained by the Tokio team, and continuously fuzzed and benchmarked.
+
+Haskell's Servant has no standard middleware story. WAI (Web Application Interface) exists, but it operates below Servant's type level. You can't express "this endpoint requires authentication" in the Servant type and have middleware enforce it. WAI middleware is applied to the entire application as an opaque transformation — there's no connection between the middleware and the API type. In Typeway, a custom extractor like `AuthUser` participates in the type system: a handler that takes `AuthUser` won't compile if the auth middleware hasn't been configured, and the OpenAPI spec automatically documents the endpoint as requiring authentication.
+
+Writing middleware from scratch — correctly handling CORS preflight requests, content negotiation for compression, timeout cancellation, rate limit headers — is months of work and a permanent maintenance burden. Tower's ecosystem represents years of production hardening that I inherit for free.
+
+### Hyper: Speed Without Compromise
+
+Hyper is one of the fastest HTTP implementations in any language. Connection management, HTTP/1.1 and HTTP/2 protocol details, keep-alive, chunked transfer encoding, upgrade handshakes — all handled, exhaustively tested, and continuously fuzzed. Typeway adds only routing and extraction on top; the hot path of connection handling is pure Hyper.
+
+Haskell's warp is a solid HTTP server, but it has known performance cliffs under high concurrency. When request rates spike, warp's thread scheduling interacts poorly with GHC's garbage collector, causing latency spikes that don't show up in microbenchmarks but hurt production p99s. Hyper, running on Tokio's work-stealing scheduler, doesn't have this problem — Rust has no GC, and Tokio's task scheduling is designed for sustained high throughput.
+
+### Tokio: No Runtime Split
+
+Every non-trivial async Rust application already depends on Tokio. Your database driver (sqlx, diesel-async, sea-orm), your Redis client (fred, redis-rs), your message queue consumer (lapin, rdkafka), your gRPC service (tonic) — all share one Tokio runtime with one set of configuration knobs. Typeway sits in that same runtime. No adapter layers, no dual-runtime problem, no `block_on` bridges between executors.
+
+Haskell has genuinely better concurrency primitives — STM (Software Transactional Memory) and green threads are elegant and powerful. But the *web library* ecosystem is fragmented. Servant, warp, scotty, snap, yesod, IHP — each has its own approach to middleware, error handling, and deployment. They don't share middleware. They don't share extractors. A library written for warp doesn't work with servant-server. This fragmentation means every framework reinvents basic infrastructure, and none of them achieves the depth of tower-http.
+
+### Axum Interop: The Unique Advantage
+
+No other type-safe web framework offers bidirectional embedding with a mainstream framework. Servant can't embed a WAI application inside a Servant server and have the WAI routes participate in the type-level API description. Dropshot has no interop with Axum or Actix. Warp's filter system is self-contained.
+
+Typeway's Tower-native architecture makes incremental adoption real, not theoretical:
+
+```rust
+// Nest a type-safe API group inside an existing Axum application
+let typeway_api = Server::<PaymentsAPI>::new(handlers);
+let app = axum::Router::new()
+    .nest("/api/v1/payments", typeway_api.into_axum_router())
+    .route("/health", get(|| async { "ok" }));
+```
+
+This means a team can adopt Typeway for one service boundary — a payment API, a permissions system, an inter-service contract — without touching the rest of the application. The Axum routes keep working. The Tower middleware is shared. It's the same binary, the same runtime, the same deployment. The cost of trying Typeway is near zero, because backing out is just removing a `.nest()` call.
+
+### Where Haskell's Web Ecosystem Falls Short
+
+I want to be specific here, because vague "Haskell is hard in production" claims aren't useful. These are concrete pain points I've encountered or seen reported consistently:
+
+- **Streaming responses.** servant-conduit exists but integrates awkwardly with the Servant type. Streaming a large JSON array or an SSE event stream requires dropping out of the type-safe API into raw WAI. In Typeway, `body_from_stream` and `sse_body` are first-class, type-checked response types.
+- **WebSockets.** servant-websockets is limited and maintained sporadically. WebSocket upgrade handling in Haskell's web ecosystem requires manual plumbing through the WAI layer. Typeway delegates to Hyper's upgrade mechanism — the same code path that Axum's WebSocket support uses.
+- **File uploads.** servant-multipart has rough edges around large file handling and streaming. The ecosystem hasn't converged on a standard multipart parser the way Rust has with `multer` (used by Axum and available to Typeway).
+- **TLS configuration.** Setting up HTTPS in a Servant application requires manually wiring TLS through warp or WAI's TLS adapters. Typeway has a `tls` feature flag that wraps tokio-rustls — one line of configuration.
+- **Structured logging.** Haskell has `katip` and `monad-logger`, but integrating them with WAI middleware requires boilerplate. Tower-http's `TraceLayer` combined with the `tracing` crate gives structured, span-aware logging across the entire request lifecycle with one `.layer()` call.
+
+None of this diminishes Haskell's strengths. Purity, parametricity, and STM are genuine advantages for reasoning about concurrent systems. But when it comes to shipping a web service with streaming, WebSockets, file uploads, TLS, structured logging, CORS, compression, and monitoring — the Rust/Tokio ecosystem is more complete and more cohesive than anything available in Haskell today.
+
+---
+
 ## What Rust's Type System Can and Can't Do
 
 Building Typeway taught me where Rust's type system is remarkably expressive and where it forces uncomfortable workarounds.
@@ -344,22 +398,6 @@ Building Typeway taught me where Rust's type system is remarkably expressive and
 - *Specialization.* I maintain separate handler traits for different patterns (plain handlers, auth-required handlers, strict-return-type handlers) because overlapping trait impls aren't allowed on stable. Specialization would unify these into one trait.
 
 - *Negative trait bounds.* I experimented with a type-level builder pattern where you construct endpoint types incrementally, and the compiler ensures all required fields are set before use. This requires expressing "T does NOT implement trait Unset" — which Rust can't do. The `endpoint!` macro is the pragmatic alternative.
-
----
-
-## The Type-Theoretic Perspective
-
-For the PL-curious: what Typeway is doing has a precise type-theoretic interpretation.
-
-The HList path encoding is an inductive type at the kind level. `PathSpec` is a catamorphism (fold) over this inductive type, computing a product type (the capture tuple) from the structure. This is the same pattern as a fold over a list in Haskell: `foldr (\seg acc -> if isCapture seg then (typeOf seg, acc) else acc) () path`.
-
-The `Handler<Args>` trait is an approximation of a Pi type — "for this specific route shape, the handler must have *this* function type." Rust can't express dependent function types directly, but trait-level computation achieves the same effect: the function's argument types are determined by the route type via trait resolution.
-
-The `Serves<API>` trait is a type-level map: given a tuple of endpoint types, produce a tuple of handler types, and check that the user's handler tuple matches. This is essentially `HMap Handler endpoints = handlers`, verified by unification.
-
-The whole system is a shallow embedding of an API description language into Rust's type system. "Shallow" because the API type has no operational semantics of its own — it's interpreted by different trait impls (server dispatch, client calls, OpenAPI generation) that each project the type-level description into runtime behavior.
-
----
 
 ## Type System Design Choices: What I Used and What I Didn't
 
@@ -437,67 +475,17 @@ Every decision above follows the same logic: prefer simpler constructs that prod
 
 ---
 
-## The Ecosystem Advantage: Why Tower/Hyper/Tokio Beats a Custom Stack
+## The Type-Theoretic Perspective
 
-The decision to build on Tower, Hyper, and Tokio isn't just about reusing code. It's about inheriting a production-ready ecosystem that no custom stack — and no Haskell web framework — can match in breadth and battle-testing.
+For the PL-curious: what Typeway is doing has a precise type-theoretic interpretation.
 
-### Tower Middleware: Already Solved
+The HList path encoding is an inductive type at the kind level. `PathSpec` is a catamorphism (fold) over this inductive type, computing a product type (the capture tuple) from the structure. This is the same pattern as a fold over a list in Haskell: `foldr (\seg acc -> if isCapture seg then (typeOf seg, acc) else acc) () path`.
 
-Tower's `Service` trait is the universal interface for async request/response processing in Rust. By implementing it for Typeway's router, I get the entire tower-http crate for free: CORS, compression, tracing, timeouts, rate limiting, request IDs, content-type validation, secure headers. These aren't toy implementations — they're used by thousands of production services, maintained by the Tokio team, and continuously fuzzed and benchmarked.
+The `Handler<Args>` trait is an approximation of a Pi type — "for this specific route shape, the handler must have *this* function type." Rust can't express dependent function types directly, but trait-level computation achieves the same effect: the function's argument types are determined by the route type via trait resolution.
 
-Haskell's Servant has no standard middleware story. WAI (Web Application Interface) exists, but it operates below Servant's type level. You can't express "this endpoint requires authentication" in the Servant type and have middleware enforce it. WAI middleware is applied to the entire application as an opaque transformation — there's no connection between the middleware and the API type. In Typeway, a custom extractor like `AuthUser` participates in the type system: a handler that takes `AuthUser` won't compile if the auth middleware hasn't been configured, and the OpenAPI spec automatically documents the endpoint as requiring authentication.
+The `Serves<API>` trait is a type-level map: given a tuple of endpoint types, produce a tuple of handler types, and check that the user's handler tuple matches. This is essentially `HMap Handler endpoints = handlers`, verified by unification.
 
-Writing middleware from scratch — correctly handling CORS preflight requests, content negotiation for compression, timeout cancellation, rate limit headers — is months of work and a permanent maintenance burden. Tower's ecosystem represents years of production hardening that I inherit for free.
-
-### Hyper: Speed Without Compromise
-
-Hyper is one of the fastest HTTP implementations in any language. Connection management, HTTP/1.1 and HTTP/2 protocol details, keep-alive, chunked transfer encoding, upgrade handshakes — all handled, exhaustively tested, and continuously fuzzed. Typeway adds only routing and extraction on top; the hot path of connection handling is pure Hyper.
-
-Haskell's warp is a solid HTTP server, but it has known performance cliffs under high concurrency. When request rates spike, warp's thread scheduling interacts poorly with GHC's garbage collector, causing latency spikes that don't show up in microbenchmarks but hurt production p99s. Hyper, running on Tokio's work-stealing scheduler, doesn't have this problem — Rust has no GC, and Tokio's task scheduling is designed for sustained high throughput.
-
-### Tokio: No Runtime Split
-
-Every non-trivial async Rust application already depends on Tokio. Your database driver (sqlx, diesel-async, sea-orm), your Redis client (fred, redis-rs), your message queue consumer (lapin, rdkafka), your gRPC service (tonic) — all share one Tokio runtime with one set of configuration knobs. Typeway sits in that same runtime. No adapter layers, no dual-runtime problem, no `block_on` bridges between executors.
-
-Haskell has genuinely better concurrency primitives — STM (Software Transactional Memory) and green threads are elegant and powerful. But the *web library* ecosystem is fragmented. Servant, warp, scotty, snap, yesod, IHP — each has its own approach to middleware, error handling, and deployment. They don't share middleware. They don't share extractors. A library written for warp doesn't work with servant-server. This fragmentation means every framework reinvents basic infrastructure, and none of them achieves the depth of tower-http.
-
-### Axum Interop: The Unique Advantage
-
-No other type-safe web framework offers bidirectional embedding with a mainstream framework. Servant can't embed a WAI application inside a Servant server and have the WAI routes participate in the type-level API description. Dropshot has no interop with Axum or Actix. Warp's filter system is self-contained.
-
-Typeway's Tower-native architecture makes incremental adoption real, not theoretical:
-
-```rust
-// Nest a type-safe API group inside an existing Axum application
-let typeway_api = Server::<PaymentsAPI>::new(handlers);
-let app = axum::Router::new()
-    .nest("/api/v1/payments", typeway_api.into_axum_router())
-    .route("/health", get(|| async { "ok" }));
-```
-
-This means a team can adopt Typeway for one service boundary — a payment API, a permissions system, an inter-service contract — without touching the rest of the application. The Axum routes keep working. The Tower middleware is shared. It's the same binary, the same runtime, the same deployment. The cost of trying Typeway is near zero, because backing out is just removing a `.nest()` call.
-
-### Where Haskell's Web Ecosystem Falls Short
-
-I want to be specific here, because vague "Haskell is hard in production" claims aren't useful. These are concrete pain points I've encountered or seen reported consistently:
-
-- **Streaming responses.** servant-conduit exists but integrates awkwardly with the Servant type. Streaming a large JSON array or an SSE event stream requires dropping out of the type-safe API into raw WAI. In Typeway, `body_from_stream` and `sse_body` are first-class, type-checked response types.
-- **WebSockets.** servant-websockets is limited and maintained sporadically. WebSocket upgrade handling in Haskell's web ecosystem requires manual plumbing through the WAI layer. Typeway delegates to Hyper's upgrade mechanism — the same code path that Axum's WebSocket support uses.
-- **File uploads.** servant-multipart has rough edges around large file handling and streaming. The ecosystem hasn't converged on a standard multipart parser the way Rust has with `multer` (used by Axum and available to Typeway).
-- **TLS configuration.** Setting up HTTPS in a Servant application requires manually wiring TLS through warp or WAI's TLS adapters. Typeway has a `tls` feature flag that wraps tokio-rustls — one line of configuration.
-- **Structured logging.** Haskell has `katip` and `monad-logger`, but integrating them with WAI middleware requires boilerplate. Tower-http's `TraceLayer` combined with the `tracing` crate gives structured, span-aware logging across the entire request lifecycle with one `.layer()` call.
-
-None of this diminishes Haskell's strengths. Purity, parametricity, and STM are genuine advantages for reasoning about concurrent systems. But when it comes to shipping a web service with streaming, WebSockets, file uploads, TLS, structured logging, CORS, compression, and monitoring — the Rust/Tokio ecosystem is more complete and more cohesive than anything available in Haskell today.
-
----
-
-## See It in Action
-
-If you want to see Typeway used in anger rather than in blog post snippets, the repository includes a full [RealWorld example app](https://github.com/joshburgess/typeway/tree/main/examples/realworld) — a Medium clone implementing the [Conduit spec](https://github.com/gothinkster/realworld). It has 19+ endpoints, PostgreSQL via sqlx, JWT authentication, an Elm frontend, and a Docker Compose setup for local development. It's the best way to judge whether the framework scales to a real application.
-
-For teams already on Axum, the `typeway-migrate` CLI tool provides zero-friction migration analysis. Run `typeway-migrate check` against your existing Axum project to get a report of which routes can be converted to type-safe endpoints. Run `typeway-migrate axum-to-typeway --dry-run` to see the generated Typeway types without modifying any files. The tool is new, but it's the fastest way to evaluate whether Typeway fits your codebase.
-
-To try it yourself: `cargo add typeway --features full`.
+The whole system is a shallow embedding of an API description language into Rust's type system. "Shallow" because the API type has no operational semantics of its own — it's interpreted by different trait impls (server dispatch, client calls, OpenAPI generation) that each project the type-level description into runtime behavior.
 
 ---
 
@@ -598,6 +586,16 @@ assert_api_compatible!(
 This fails to compile if either endpoint is missing from `V2Resolved`. The error points at the specific endpoint that's absent. Endpoints that were intentionally replaced or removed are simply omitted from the compatibility check — the change markers document the intent, and the check covers what must be preserved.
 
 Nothing like this exists in Servant. Haskell's type system is powerful enough to express it, but nobody has built it — Servant APIs are versioned by maintaining separate type aliases with no typed relationship between them. Typeway makes API evolution a first-class concept in the type system, with machine-checkable backward compatibility guarantees.
+
+---
+
+## See It in Action
+
+If you want to see Typeway used in anger rather than in blog post snippets, the repository includes a full [RealWorld example app](https://github.com/joshburgess/typeway/tree/main/examples/realworld) — a Medium clone implementing the [Conduit spec](https://github.com/gothinkster/realworld). It has 19+ endpoints, PostgreSQL via sqlx, JWT authentication, an Elm frontend, and a Docker Compose setup for local development. It's the best way to judge whether the framework scales to a real application.
+
+For teams already on Axum, the `typeway-migrate` CLI tool provides zero-friction migration analysis. Run `typeway-migrate check` against your existing Axum project to get a report of which routes can be converted to type-safe endpoints. Run `typeway-migrate axum-to-typeway --dry-run` to see the generated Typeway types without modifying any files. The tool is new, but it's the fastest way to evaluate whether Typeway fits your codebase.
+
+To try it yourself: `cargo add typeway --features full`.
 
 ---
 

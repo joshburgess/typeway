@@ -87,182 +87,6 @@ typeway = "0.1"
 | `multipart` | no | Multipart form upload (file uploads) |
 | `full` | no | server + client + openapi |
 
-## Tower Middleware
-
-Typeway supports the full Tower middleware ecosystem:
-
-```rust
-use typeway::tower_http::cors::CorsLayer;
-use typeway::tower_http::timeout::TimeoutLayer;
-
-Server::<API>::new(handlers)
-    .layer(CorsLayer::permissive())
-    .layer(TimeoutLayer::with_status_code(
-        StatusCode::REQUEST_TIMEOUT,
-        Duration::from_secs(30),
-    ))
-    .serve(addr)
-    .await?;
-```
-
-## OpenAPI
-
-Enable the `openapi` feature to serve an auto-generated OpenAPI spec and Swagger UI:
-
-```rust
-Server::<API>::new(handlers)
-    .with_openapi("My API", "1.0.0")
-    .serve(addr)
-    .await?;
-// GET /openapi.json — the spec
-// GET /docs         — Swagger UI
-```
-
-## Axum Interoperability
-
-Embed typeway APIs in Axum apps:
-
-```rust
-let typeway_api = Server::<API>::new(handlers);
-let app = axum::Router::new()
-    .nest("/api/v1", typeway_api.into_axum_router())
-    .route("/health", get(|| async { "ok" }));
-```
-
-Or embed Axum routes in typeway:
-
-```rust
-let axum_routes = axum::Router::new()
-    .route("/health", get(|| async { "ok" }));
-
-Server::<API>::new(handlers)
-    .with_axum_fallback(axum_routes)
-    .serve(addr)
-    .await?;
-```
-
-## Type-Safe Client
-
-With the `client` feature, call endpoints using the same types as the server:
-
-```rust
-let client = Client::new("http://localhost:3000")?;
-
-// Fully type-checked — path captures, request body, and response type
-// are all verified against the endpoint definition.
-let user = client.call::<GetEndpoint<UserByIdPath, User>>((42u32,)).await?;
-```
-
-## Session-Typed WebSocket Routes
-
-With the `ws` feature, WebSocket connections can be governed by a session type that encodes the exact sequence of messages the server and client must exchange. Each `.send()` or `.recv()` consumes the channel and returns it at the next protocol state. Sending a message out of order is a compile error — the old channel state has been moved.
-
-Define a protocol as a type:
-
-```rust
-use typeway::session::*;
-
-// Server-side protocol: send greeting, receive name, send welcome, done.
-type GreetProtocol = Send<String, Recv<String, Send<String, End>>>;
-```
-
-Write a handler that the compiler forces to follow the protocol:
-
-```rust
-use typeway::typed_ws::TypedWebSocket;
-
-async fn greet_handler(ws: TypedWebSocket<GreetProtocol>) {
-    let ws = ws.send("Hello! What is your name?".into()).await.unwrap();
-    let (name, ws) = ws.recv().await.unwrap();
-    let ws = ws.send(format!("Welcome, {name}!")).await.unwrap();
-    ws.close().await.unwrap();
-}
-```
-
-If you try to call `ws.recv()` when the protocol says `Send`, or call `ws.send()` after the protocol has reached `End`, the code does not compile. Rust's ownership system enforces linearity: the old channel state is consumed by each operation, so there is no way to reuse it in the wrong state.
-
-The `Dual` trait computes the mirror protocol automatically. If the server's protocol is `Send<String, Recv<String, End>>`, then `<GreetProtocol as Dual>::Output` is `Recv<String, Send<String, End>>` — the client's view. This means a single protocol definition drives both sides, and the type system guarantees they are compatible.
-
-Branching is supported via `Offer<L, R>` (the remote peer chooses) and `Select<L, R>` (the local side chooses). Recursive protocols use `Rec<Body>` and `Var` to express loops without infinite types.
-
-**Why it matters:** Standard WebSocket APIs are untyped message pipes. You can send any message at any time, and protocol violations are runtime bugs. Session types make the protocol a compile-time contract. Rust's move semantics give you this for free — no linear type extension needed.
-
-## Content Negotiation
-
-The `NegotiatedResponse<T, Formats>` type lets a single handler return a domain value that is automatically serialized into the best format based on the client's `Accept` header:
-
-```rust
-use typeway::negotiate::*;
-
-#[derive(serde::Serialize)]
-struct User { id: u32, name: String }
-
-impl std::fmt::Display for User {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "User({}, {})", self.id, self.name)
-    }
-}
-
-async fn get_user(accept: AcceptHeader) -> NegotiatedResponse<User, (JsonFormat, TextFormat)> {
-    let user = User { id: 1, name: "Alice".into() };
-    negotiated(user, accept)
-}
-```
-
-When a client sends `Accept: application/json`, the response is JSON with `Content-Type: application/json`. When it sends `Accept: text/plain`, the response uses the `Display` impl. Wildcard (`*/*`) and quality-weighted Accept headers are handled correctly, falling back to the first format in the tuple when no preference is expressed.
-
-The format list is a type-level tuple of marker types (`JsonFormat`, `TextFormat`, `HtmlFormat`, `CsvFormat`, or custom formats implementing `ContentFormat`). The `RenderAs<Format>` trait connects a domain type to a specific serialization. Blanket impls cover `RenderAs<JsonFormat>` for any `T: Serialize` and `RenderAs<TextFormat>` for any `T: Display`, so most types work out of the box.
-
-**Why it matters:** Without content negotiation, you either hardcode JSON everywhere or write manual `Accept` header parsing in every handler. `NegotiatedResponse` makes multi-format APIs a type-level declaration — add a format to the tuple and implement `RenderAs` for it, and every handler using that tuple gains the new format automatically.
-
-## Type-Level API Versioning
-
-API evolution is expressed as typed deltas: V2 is defined as a set of changes applied to V1 — added endpoints, removed endpoints, replaced endpoints, and deprecated endpoints. The type system tracks what changed and can verify backward compatibility at compile time.
-
-```rust
-use typeway::versioning::*;
-
-// V1 API
-type V1 = (
-    GetEndpoint<UsersPath, Json<Vec<UserV1>>>,
-    GetEndpoint<UserByIdPath, Json<UserV1>>,
-    PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>,
-);
-
-// V2 changes: add a profile endpoint, replace the user response type, deprecate create
-type V2Changes = (
-    Added<GetEndpoint<UserProfilePath, Json<Profile>>>,
-    Replaced<
-        GetEndpoint<UserByIdPath, Json<UserV1>>,
-        GetEndpoint<UserByIdPath, Json<UserV2>>,
-    >,
-    Deprecated<PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>>,
-);
-
-// The resolved V2 API after applying changes
-type V2Resolved = (
-    GetEndpoint<UsersPath, Json<Vec<UserV1>>>,
-    GetEndpoint<UserByIdPath, Json<UserV2>>,          // replaced
-    PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>,  // deprecated but present
-    GetEndpoint<UserProfilePath, Json<Profile>>,      // added
-);
-
-type V2 = VersionedApi<V1, V2Changes, V2Resolved>;
-
-// Compile-time check: every V1 endpoint that wasn't replaced still exists in V2
-assert_api_compatible!(
-    (GetEndpoint<UsersPath, Json<Vec<UserV1>>>,
-     PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>),
-    V2Resolved
-);
-```
-
-The `assert_api_compatible!` macro uses a type-level set membership check (`HasEndpoint<E, Idx>`) with an index witness technique: each tuple position gets a distinct type-level index (`Here`, `There<Here>`, `There<There<Here>>`, ...), so the compiler can prove an endpoint exists in the tuple without ambiguity. If you remove an endpoint from V2 that the compatibility check expects, the code does not compile.
-
-The `ApiChangelog` trait provides runtime introspection of the change set — how many endpoints were added, removed, replaced, or deprecated — for documentation tooling and migration reports.
-
-**Why it matters:** API versioning is typically a runtime or documentation concern — you maintain separate route registrations for V1 and V2 and hope they stay consistent. With typed deltas, the relationship between versions is encoded in the type system. Breaking changes are visible in the types, and backward compatibility is a compile-time assertion, not a test you might forget to write.
-
 ## Workspace Structure
 
 | Crate | Description |
@@ -342,16 +166,6 @@ This is a type-level catamorphism (fold) — the `PathSpec` trait recurses over 
 
 Why HLists instead of flat tuples? Paths are inherently recursive: match one segment, then recurse on the remainder. HLists give O(n) trait impls via structural recursion, where flat tuples would require combinatorial explosion of impls for every segment combination.
 
-### Zero Ceremony Ecosystem Integration
-
-Typeway doesn't ask you to choose between it and the existing Tower/Axum ecosystem. It composes with both:
-
-- **Tower middleware** works directly via `.layer()` — CorsLayer, TraceLayer, TimeoutLayer, your own custom layers
-- **Axum interop** is bidirectional: nest typeway inside Axum (`into_axum_router()`), or nest Axum inside typeway (`with_axum_fallback()`)
-- **Hyper 1.x** is the transport layer — no custom HTTP implementation
-
-You can adopt typeway for part of your API and keep the rest in Axum. Or start with Axum and gradually migrate endpoints to typeway for stronger type guarantees. No all-or-nothing commitment.
-
 ### Structured Errors as Types, Not Strings
 
 Handler errors are part of the type system. Return `Result<Json<User>, JsonError>` and the framework handles serialization:
@@ -366,6 +180,196 @@ async fn get_user(path: Path<UserByIdPath>) -> Result<Json<User>, JsonError> {
 ```
 
 Custom extractors can use the same error type, so a missing auth token produces a structured 401 response, not a raw string.
+
+## Server Features
+
+### Tower Middleware
+
+Typeway supports the full Tower middleware ecosystem:
+
+```rust
+use typeway::tower_http::cors::CorsLayer;
+use typeway::tower_http::timeout::TimeoutLayer;
+
+Server::<API>::new(handlers)
+    .layer(CorsLayer::permissive())
+    .layer(TimeoutLayer::with_status_code(
+        StatusCode::REQUEST_TIMEOUT,
+        Duration::from_secs(30),
+    ))
+    .serve(addr)
+    .await?;
+```
+
+### OpenAPI
+
+Enable the `openapi` feature to serve an auto-generated OpenAPI spec and Swagger UI:
+
+```rust
+Server::<API>::new(handlers)
+    .with_openapi("My API", "1.0.0")
+    .serve(addr)
+    .await?;
+// GET /openapi.json — the spec
+// GET /docs         — Swagger UI
+```
+
+### Axum Interoperability
+
+Embed typeway APIs in Axum apps:
+
+```rust
+let typeway_api = Server::<API>::new(handlers);
+let app = axum::Router::new()
+    .nest("/api/v1", typeway_api.into_axum_router())
+    .route("/health", get(|| async { "ok" }));
+```
+
+Or embed Axum routes in typeway:
+
+```rust
+let axum_routes = axum::Router::new()
+    .route("/health", get(|| async { "ok" }));
+
+Server::<API>::new(handlers)
+    .with_axum_fallback(axum_routes)
+    .serve(addr)
+    .await?;
+```
+
+### Zero Ceremony Ecosystem Integration
+
+Typeway doesn't ask you to choose between it and the existing Tower/Axum ecosystem. It composes with both:
+
+- **Tower middleware** works directly via `.layer()` — CorsLayer, TraceLayer, TimeoutLayer, your own custom layers
+- **Axum interop** is bidirectional: nest typeway inside Axum (`into_axum_router()`), or nest Axum inside typeway (`with_axum_fallback()`)
+- **Hyper 1.x** is the transport layer — no custom HTTP implementation
+
+You can adopt typeway for part of your API and keep the rest in Axum. Or start with Axum and gradually migrate endpoints to typeway for stronger type guarantees. No all-or-nothing commitment.
+
+## Type-Safe Client
+
+With the `client` feature, call endpoints using the same types as the server:
+
+```rust
+let client = Client::new("http://localhost:3000")?;
+
+// Fully type-checked — path captures, request body, and response type
+// are all verified against the endpoint definition.
+let user = client.call::<GetEndpoint<UserByIdPath, User>>((42u32,)).await?;
+```
+
+## Advanced Type-Level Features
+
+### Session-Typed WebSocket Routes
+
+With the `ws` feature, WebSocket connections can be governed by a session type that encodes the exact sequence of messages the server and client must exchange. Each `.send()` or `.recv()` consumes the channel and returns it at the next protocol state. Sending a message out of order is a compile error — the old channel state has been moved.
+
+Define a protocol as a type:
+
+```rust
+use typeway::session::*;
+
+// Server-side protocol: send greeting, receive name, send welcome, done.
+type GreetProtocol = Send<String, Recv<String, Send<String, End>>>;
+```
+
+Write a handler that the compiler forces to follow the protocol:
+
+```rust
+use typeway::typed_ws::TypedWebSocket;
+
+async fn greet_handler(ws: TypedWebSocket<GreetProtocol>) {
+    let ws = ws.send("Hello! What is your name?".into()).await.unwrap();
+    let (name, ws) = ws.recv().await.unwrap();
+    let ws = ws.send(format!("Welcome, {name}!")).await.unwrap();
+    ws.close().await.unwrap();
+}
+```
+
+If you try to call `ws.recv()` when the protocol says `Send`, or call `ws.send()` after the protocol has reached `End`, the code does not compile. Rust's ownership system enforces linearity: the old channel state is consumed by each operation, so there is no way to reuse it in the wrong state.
+
+The `Dual` trait computes the mirror protocol automatically. If the server's protocol is `Send<String, Recv<String, End>>`, then `<GreetProtocol as Dual>::Output` is `Recv<String, Send<String, End>>` — the client's view. This means a single protocol definition drives both sides, and the type system guarantees they are compatible.
+
+Branching is supported via `Offer<L, R>` (the remote peer chooses) and `Select<L, R>` (the local side chooses). Recursive protocols use `Rec<Body>` and `Var` to express loops without infinite types.
+
+**Why it matters:** Standard WebSocket APIs are untyped message pipes. You can send any message at any time, and protocol violations are runtime bugs. Session types make the protocol a compile-time contract. Rust's move semantics give you this for free — no linear type extension needed.
+
+### Content Negotiation
+
+The `NegotiatedResponse<T, Formats>` type lets a single handler return a domain value that is automatically serialized into the best format based on the client's `Accept` header:
+
+```rust
+use typeway::negotiate::*;
+
+#[derive(serde::Serialize)]
+struct User { id: u32, name: String }
+
+impl std::fmt::Display for User {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "User({}, {})", self.id, self.name)
+    }
+}
+
+async fn get_user(accept: AcceptHeader) -> NegotiatedResponse<User, (JsonFormat, TextFormat)> {
+    let user = User { id: 1, name: "Alice".into() };
+    negotiated(user, accept)
+}
+```
+
+When a client sends `Accept: application/json`, the response is JSON with `Content-Type: application/json`. When it sends `Accept: text/plain`, the response uses the `Display` impl. Wildcard (`*/*`) and quality-weighted Accept headers are handled correctly, falling back to the first format in the tuple when no preference is expressed.
+
+The format list is a type-level tuple of marker types (`JsonFormat`, `TextFormat`, `HtmlFormat`, `CsvFormat`, or custom formats implementing `ContentFormat`). The `RenderAs<Format>` trait connects a domain type to a specific serialization. Blanket impls cover `RenderAs<JsonFormat>` for any `T: Serialize` and `RenderAs<TextFormat>` for any `T: Display`, so most types work out of the box.
+
+**Why it matters:** Without content negotiation, you either hardcode JSON everywhere or write manual `Accept` header parsing in every handler. `NegotiatedResponse` makes multi-format APIs a type-level declaration — add a format to the tuple and implement `RenderAs` for it, and every handler using that tuple gains the new format automatically.
+
+### Type-Level API Versioning
+
+API evolution is expressed as typed deltas: V2 is defined as a set of changes applied to V1 — added endpoints, removed endpoints, replaced endpoints, and deprecated endpoints. The type system tracks what changed and can verify backward compatibility at compile time.
+
+```rust
+use typeway::versioning::*;
+
+// V1 API
+type V1 = (
+    GetEndpoint<UsersPath, Json<Vec<UserV1>>>,
+    GetEndpoint<UserByIdPath, Json<UserV1>>,
+    PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>,
+);
+
+// V2 changes: add a profile endpoint, replace the user response type, deprecate create
+type V2Changes = (
+    Added<GetEndpoint<UserProfilePath, Json<Profile>>>,
+    Replaced<
+        GetEndpoint<UserByIdPath, Json<UserV1>>,
+        GetEndpoint<UserByIdPath, Json<UserV2>>,
+    >,
+    Deprecated<PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>>,
+);
+
+// The resolved V2 API after applying changes
+type V2Resolved = (
+    GetEndpoint<UsersPath, Json<Vec<UserV1>>>,
+    GetEndpoint<UserByIdPath, Json<UserV2>>,          // replaced
+    PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>,  // deprecated but present
+    GetEndpoint<UserProfilePath, Json<Profile>>,      // added
+);
+
+type V2 = VersionedApi<V1, V2Changes, V2Resolved>;
+
+// Compile-time check: every V1 endpoint that wasn't replaced still exists in V2
+assert_api_compatible!(
+    (GetEndpoint<UsersPath, Json<Vec<UserV1>>>,
+     PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>),
+    V2Resolved
+);
+```
+
+The `assert_api_compatible!` macro uses a type-level set membership check (`HasEndpoint<E, Idx>`) with an index witness technique: each tuple position gets a distinct type-level index (`Here`, `There<Here>`, `There<There<Here>>`, ...), so the compiler can prove an endpoint exists in the tuple without ambiguity. If you remove an endpoint from V2 that the compatibility check expects, the code does not compile.
+
+The `ApiChangelog` trait provides runtime introspection of the change set — how many endpoints were added, removed, replaced, or deprecated — for documentation tooling and migration reports.
+
+**Why it matters:** API versioning is typically a runtime or documentation concern — you maintain separate route registrations for V1 and V2 and hope they stay consistent. With typed deltas, the relationship between versions is encoded in the type system. Breaking changes are visible in the types, and backward compatibility is a compile-time assertion, not a test you might forget to write.
 
 ## Performance: The Cost of Type Safety
 
@@ -428,7 +432,7 @@ Typeway trades ~1 µs of dispatch overhead for compile-time guarantees that elim
 | Type-level API versioning | Yes | No | No | No | No |
 | Stable Rust | Yes | Yes | Yes | Yes | N/A |
 
-### How Typeway Improves on Servant
+## How Typeway Improves on Servant
 
 Typeway owes a direct intellectual debt to Haskell's [Servant](https://docs.servant.dev/en/stable/), which pioneered the idea of APIs as types. Servant proved the concept; typeway refines and extends it by leveraging Rust's ecosystem in ways that Haskell's cannot match.
 
