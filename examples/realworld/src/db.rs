@@ -51,7 +51,8 @@ pub async fn create_pool() -> Pool {
         .expect("failed to create database pool");
 
     // Fail fast at startup if the database is unreachable.
-    pool.get()
+    let _ = pool
+        .get()
         .await
         .expect("failed to connect to database — check DATABASE_* env vars");
 

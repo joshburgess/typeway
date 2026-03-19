@@ -29,7 +29,7 @@ use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
 
-use wayward_core::{ApiSpec, ExtractPath};
+use wayward_core::ApiSpec;
 
 use crate::body::BoxBody;
 use crate::extract::{FromRequest, FromRequestParts};

@@ -47,7 +47,7 @@ fn user_response(user: &UserRow, token: String) -> UserResponse {
 async fn build_profile(
     pool: &Db,
     user: &UserRow,
-    viewer_id: Option<Uuid>,
+    _viewer_id: Option<Uuid>,
 ) -> Result<ProfileBody, JsonError> {
     let following = match viewer_id {
         Some(vid) => db::is_following(pool, vid, user.id).await?,
@@ -64,7 +64,7 @@ async fn build_profile(
 async fn build_article(
     pool: &Db,
     row: &db::ArticleRow,
-    viewer_id: Option<Uuid>,
+    _viewer_id: Option<Uuid>,
 ) -> Result<ArticleBody, JsonError> {
     let author = db::find_user_by_id(pool, row.author_id).await?;
     let profile = build_profile(pool, &author, viewer_id).await?;
@@ -94,7 +94,7 @@ async fn build_articles_from_query(
     pool: &Db,
     query: &str,
     params: &[&(dyn tokio_postgres::types::ToSql + Sync)],
-    viewer_id: Option<Uuid>,
+    _viewer_id: Option<Uuid>,
 ) -> Result<Vec<ArticleBody>, JsonError> {
     let client = pool
         .get()
