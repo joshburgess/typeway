@@ -1,4 +1,24 @@
 //! API type definition — the single source of truth for the RealWorld spec.
+//!
+//! This file demonstrates five typeway advanced features:
+//!
+//! 1. **Effects system**: `Requires<CorsRequired, E>` on public endpoints
+//!    declares that the server must provide CORS middleware. Forgetting
+//!    `.provide::<CorsRequired>()` in main.rs is a compile error.
+//!
+//! 2. **Content negotiation**: The `get_tags` handler returns
+//!    `NegotiatedResponse<TagsResponse, (JsonFormat, TextFormat)>`, picking the
+//!    format based on the `Accept` header.
+//!
+//! 3. **API versioning**: V1 is the original 19-endpoint spec. V2 adds a health
+//!    check endpoint. `assert_api_compatible!` verifies backward compatibility
+//!    at compile time.
+//!
+//! 4. **Session-typed WebSocket**: A live article feed uses `Send<ArticleUpdate, Rec<...>>`
+//!    to encode the push protocol. Defined in handlers.rs.
+//!
+//! 5. **Validation**: `Validated<V, E>` validates request bodies (registration,
+//!    article creation) before the handler runs, returning 422 on failure.
 
 use crate::models::*;
 use typeway_macros::typeway_path;
@@ -20,44 +40,220 @@ typeway_path!(pub type ArticleCommentsPath = "api" / "articles" / String / "comm
 typeway_path!(pub type ArticleCommentPath = "api" / "articles" / String / "comments" / i32);
 typeway_path!(pub type TagsPath = "api" / "tags");
 
+// V2 addition
+typeway_path!(pub type HealthPath = "api" / "health");
+
 // ---------------------------------------------------------------------------
-// API type
+// Imports
 // ---------------------------------------------------------------------------
 
+use typeway_core::effects::{CorsRequired, Requires};
 use typeway_core::{DeleteEndpoint, GetEndpoint, PostEndpoint, PutEndpoint};
 use typeway_server::auth::Protected;
+use typeway_server::typed::{Validate, Validated};
 
 use crate::auth::AuthUser;
 
-// Protected<Auth, E> declares at the type level that an endpoint requires
-// authentication. The compiler enforces that the handler's first argument
-// is the Auth type — omitting it is a compile error.
+// ---------------------------------------------------------------------------
+// Validators — compile-time request body validation (Feature 5)
+// ---------------------------------------------------------------------------
 
-pub type RealWorldAPI = (
+/// Validates new user registration requests.
+///
+/// Wrapped in `Validated<NewUserValidator, PostEndpoint<...>>` in the API type,
+/// so the framework rejects invalid requests with 422 before the handler runs.
+/// This replaces hand-written validation in the handler with a type-level
+/// declaration that is visible in the API type itself.
+pub struct NewUserValidator;
+
+impl Validate<NewUserRequest> for NewUserValidator {
+    fn validate(body: &NewUserRequest) -> Result<(), String> {
+        if body.user.username.is_empty() {
+            return Err("username is required".into());
+        }
+        if body.user.email.is_empty() {
+            return Err("email is required".into());
+        }
+        if !body.user.email.contains('@') {
+            return Err("email must contain @".into());
+        }
+        if body.user.password.len() < 6 {
+            return Err("password must be at least 6 characters".into());
+        }
+        Ok(())
+    }
+}
+
+/// Validates new article creation requests.
+pub struct NewArticleValidator;
+
+impl Validate<NewArticleRequest> for NewArticleValidator {
+    fn validate(body: &NewArticleRequest) -> Result<(), String> {
+        if body.article.title.is_empty() {
+            return Err("title is required".into());
+        }
+        if body.article.title.len() > 256 {
+            return Err("title must be 256 characters or less".into());
+        }
+        if body.article.description.is_empty() {
+            return Err("description is required".into());
+        }
+        if body.article.body.is_empty() {
+            return Err("body is required".into());
+        }
+        Ok(())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// V1 API — the original 19-endpoint RealWorld spec
+// ---------------------------------------------------------------------------
+//
+// Three type-level features at work:
+//
+// 1. Effects (Feature 1):
+//    Public-facing read endpoints are wrapped in `Requires<CorsRequired, _>`.
+//    The EffectfulServer in main.rs tracks that CorsRequired has been provided.
+//    Comment out `.provide::<CorsRequired>()` and the server won't compile.
+//
+// 2. Validation (Feature 5):
+//    Registration and article creation use `Validated<V, E>` wrappers.
+//    Invalid JSON bodies get a 422 response before the handler is called.
+//    These use `bind_validated!()` in the handler tuple.
+//
+// 3. Authentication:
+//    `Protected<AuthUser, E>` enforces that handlers accept `AuthUser`
+//    as their first argument, verified at compile time via `bind_auth!()`.
+
+pub type RealWorldV1 = (
     // Auth (public)
-    PostEndpoint<UsersPath, NewUserRequest, UserResponse>,
+    Validated<NewUserValidator, PostEndpoint<UsersPath, NewUserRequest, UserResponse>>,
     PostEndpoint<UsersLoginPath, LoginRequest, UserResponse>,
-    // Auth (protected)
+    // Auth (protected — compiler enforces AuthUser as first arg)
     Protected<AuthUser, GetEndpoint<UserPath, UserResponse>>,
     Protected<AuthUser, PutEndpoint<UserPath, UpdateUserRequest, UserResponse>>,
-    // Profiles (public read, protected write)
-    GetEndpoint<ProfilePath, ProfileResponse>,
+    // Profiles (public read requires CORS, protected write)
+    Requires<CorsRequired, GetEndpoint<ProfilePath, ProfileResponse>>,
     Protected<AuthUser, PostEndpoint<ProfileFollowPath, (), ProfileResponse>>,
     Protected<AuthUser, DeleteEndpoint<ProfileFollowPath, ProfileResponse>>,
-    // Articles (public read, protected write)
-    GetEndpoint<ArticlesPath, ArticlesResponse>,
+    // Articles (public read endpoints require CORS for browser access)
+    Requires<CorsRequired, GetEndpoint<ArticlesPath, ArticlesResponse>>,
     Protected<AuthUser, GetEndpoint<ArticlesFeedPath, ArticlesResponse>>,
-    GetEndpoint<ArticlePath, ArticleResponse>,
-    Protected<AuthUser, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>,
+    Requires<CorsRequired, GetEndpoint<ArticlePath, ArticleResponse>>,
+    // Article creation is protected AND validated
+    Protected<AuthUser, Validated<NewArticleValidator, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>>,
     Protected<AuthUser, PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>>,
     Protected<AuthUser, DeleteEndpoint<ArticlePath, ()>>,
     // Favorites (protected)
     Protected<AuthUser, PostEndpoint<ArticleFavoritePath, (), ArticleResponse>>,
     Protected<AuthUser, DeleteEndpoint<ArticleFavoritePath, ArticleResponse>>,
-    // Comments (public read, protected write)
-    GetEndpoint<ArticleCommentsPath, CommentsResponse>,
+    // Comments (public read requires CORS, protected write)
+    Requires<CorsRequired, GetEndpoint<ArticleCommentsPath, CommentsResponse>>,
     Protected<AuthUser, PostEndpoint<ArticleCommentsPath, NewCommentRequest, CommentResponse>>,
     Protected<AuthUser, DeleteEndpoint<ArticleCommentPath, ()>>,
-    // Tags (public)
-    GetEndpoint<TagsPath, TagsResponse>,
+    // Tags (public, handler uses content negotiation — see handlers.rs)
+    Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponse>>,
 );
+
+// ---------------------------------------------------------------------------
+// V2 API — versioned evolution with typed deltas (Feature 3)
+// ---------------------------------------------------------------------------
+//
+// V2 adds a single endpoint: GET /api/health.
+// This demonstrates the VersionedApi machinery:
+//   - V2Changes records what changed (one Added endpoint)
+//   - V2Resolved is the full 20-endpoint API after applying changes
+//   - assert_api_compatible! verifies every V1 endpoint is preserved
+
+use typeway_core::versioning::{Added, VersionedApi};
+
+/// Changes from V1 to V2: one new health check endpoint.
+type V2Changes = (
+    Added<GetEndpoint<HealthPath, HealthResponse>>,
+);
+
+/// The resolved V2 API: all 19 V1 endpoints plus the health check (20 total).
+type RealWorldV2Resolved = (
+    // Auth
+    Validated<NewUserValidator, PostEndpoint<UsersPath, NewUserRequest, UserResponse>>,
+    PostEndpoint<UsersLoginPath, LoginRequest, UserResponse>,
+    Protected<AuthUser, GetEndpoint<UserPath, UserResponse>>,
+    Protected<AuthUser, PutEndpoint<UserPath, UpdateUserRequest, UserResponse>>,
+    // Profiles
+    Requires<CorsRequired, GetEndpoint<ProfilePath, ProfileResponse>>,
+    Protected<AuthUser, PostEndpoint<ProfileFollowPath, (), ProfileResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ProfileFollowPath, ProfileResponse>>,
+    // Articles
+    Requires<CorsRequired, GetEndpoint<ArticlesPath, ArticlesResponse>>,
+    Protected<AuthUser, GetEndpoint<ArticlesFeedPath, ArticlesResponse>>,
+    Requires<CorsRequired, GetEndpoint<ArticlePath, ArticleResponse>>,
+    Protected<AuthUser, Validated<NewArticleValidator, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>>,
+    Protected<AuthUser, PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ArticlePath, ()>>,
+    // Favorites
+    Protected<AuthUser, PostEndpoint<ArticleFavoritePath, (), ArticleResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ArticleFavoritePath, ArticleResponse>>,
+    // Comments
+    Requires<CorsRequired, GetEndpoint<ArticleCommentsPath, CommentsResponse>>,
+    Protected<AuthUser, PostEndpoint<ArticleCommentsPath, NewCommentRequest, CommentResponse>>,
+    Protected<AuthUser, DeleteEndpoint<ArticleCommentPath, ()>>,
+    // Tags
+    Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponse>>,
+    // V2 addition: health check
+    GetEndpoint<HealthPath, HealthResponse>,
+);
+
+/// The V2 API type. Carries the full version history as type parameters:
+/// - Base: RealWorldV1 (the original API)
+/// - Changes: V2Changes (what was added)
+/// - Resolved: RealWorldV2Resolved (the actual endpoint tuple to serve)
+pub type RealWorldV2 = VersionedApi<RealWorldV1, V2Changes, RealWorldV2Resolved>;
+
+// Compile-time backward compatibility check (Feature 3):
+// Every V1 endpoint must exist in V2Resolved. If any endpoint were
+// accidentally removed during the V1→V2 evolution, this assertion
+// produces a compile error.
+typeway_core::assert_api_compatible!(
+    (
+        Validated<NewUserValidator, PostEndpoint<UsersPath, NewUserRequest, UserResponse>>,
+        PostEndpoint<UsersLoginPath, LoginRequest, UserResponse>,
+        Protected<AuthUser, GetEndpoint<UserPath, UserResponse>>,
+        Protected<AuthUser, PutEndpoint<UserPath, UpdateUserRequest, UserResponse>>,
+        Requires<CorsRequired, GetEndpoint<ProfilePath, ProfileResponse>>,
+        Protected<AuthUser, PostEndpoint<ProfileFollowPath, (), ProfileResponse>>,
+        Protected<AuthUser, DeleteEndpoint<ProfileFollowPath, ProfileResponse>>,
+        Requires<CorsRequired, GetEndpoint<ArticlesPath, ArticlesResponse>>,
+        Protected<AuthUser, GetEndpoint<ArticlesFeedPath, ArticlesResponse>>,
+        Requires<CorsRequired, GetEndpoint<ArticlePath, ArticleResponse>>,
+        Protected<AuthUser, Validated<NewArticleValidator, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>>,
+        Protected<AuthUser, PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>>,
+        Protected<AuthUser, DeleteEndpoint<ArticlePath, ()>>,
+        Protected<AuthUser, PostEndpoint<ArticleFavoritePath, (), ArticleResponse>>,
+        Protected<AuthUser, DeleteEndpoint<ArticleFavoritePath, ArticleResponse>>,
+        Requires<CorsRequired, GetEndpoint<ArticleCommentsPath, CommentsResponse>>,
+        Protected<AuthUser, PostEndpoint<ArticleCommentsPath, NewCommentRequest, CommentResponse>>,
+        Protected<AuthUser, DeleteEndpoint<ArticleCommentPath, ()>>,
+        Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponse>>,
+    ),
+    RealWorldV2Resolved
+);
+
+/// The API type used by the server. V2 is a superset of V1.
+pub type RealWorldAPI = RealWorldV2;
+
+// ---------------------------------------------------------------------------
+// Session-typed WebSocket protocol for live article feed (Feature 4)
+// ---------------------------------------------------------------------------
+
+use typeway_core::session::{Rec, Send, Var};
+
+/// Protocol for the live article feed WebSocket:
+///
+/// 1. Server sends a welcome `ArticleUpdate` (event: "connected")
+/// 2. Enter a loop: server sends `ArticleUpdate` messages (event: "new_article")
+///
+/// The session type enforces this ordering: the handler cannot receive before
+/// sending, and the recursive structure ensures the loop is well-formed.
+/// See `handlers::ws_feed` for the implementation.
+#[allow(dead_code)]
+pub type FeedProtocol = Send<ArticleUpdate, Rec<Send<ArticleUpdate, Var>>>;

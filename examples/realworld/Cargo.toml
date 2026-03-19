@@ -8,7 +8,7 @@ publish = false
 typeway = { path = "../../typeway", features = ["server", "openapi"] }
 typeway-core = { path = "../../typeway-core" }
 typeway-macros = { path = "../../typeway-macros" }
-typeway-server = { path = "../../typeway-server" }
+typeway-server = { path = "../../typeway-server", features = ["ws"] }
 
 tokio = { version = "1", features = ["full"] }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1", "with-uuid-1"] }
@@ -25,6 +25,7 @@ jsonwebtoken = "9"
 argon2 = "0.5"
 rand_core = { version = "0.6", features = ["getrandom"] }
 slug = "0.1"
+futures = "0.3"
 
 [lints]
 workspace = true

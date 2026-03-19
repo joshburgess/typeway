@@ -1,10 +1,17 @@
 //! Request handlers for the RealWorld API.
+//!
+//! This module demonstrates two typeway features in handlers:
+//! - **Content negotiation** on `get_tags`: returns JSON or plain text
+//!   depending on the `Accept` header.
+//! - **Session-typed WebSocket** on `ws_feed`: pushes live article updates
+//!   with protocol safety enforced by the type system.
 
 use argon2::{password_hash::SaltString, Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use uuid::Uuid;
 
 use typeway_server::error::JsonError;
 use typeway_server::extract::{Path, State};
+use typeway_server::negotiate::{AcceptHeader, JsonFormat, NegotiatedResponse, TextFormat};
 use typeway_server::response::Json;
 
 use crate::api::*;
@@ -700,10 +707,108 @@ pub async fn delete_comment(
 }
 
 // ---------------------------------------------------------------------------
-// Tags handler
+// Tags handler — demonstrates content negotiation
+// ---------------------------------------------------------------------------
+//
+// The return type `NegotiatedResponse<TagsResponse, (JsonFormat, TextFormat)>`
+// tells typeway this handler supports two content types:
+//   - application/json → serializes TagsResponse as JSON (default)
+//   - text/plain       → uses the Display impl for a comma-separated list
+//
+// The format is selected automatically based on the client's Accept header.
+// Try it: curl -H "Accept: text/plain" http://localhost:4000/api/tags
+
+pub async fn get_tags(
+    accept: AcceptHeader,
+    state: State<Db>,
+) -> Result<NegotiatedResponse<TagsResponse, (JsonFormat, TextFormat)>, JsonError> {
+    let tags = db::get_tags(&state.0).await?;
+    Ok(NegotiatedResponse::new(
+        TagsResponse { tags },
+        accept.0,
+    ))
+}
+
+// ---------------------------------------------------------------------------
+// Health check handler — V2 addition
 // ---------------------------------------------------------------------------
 
-pub async fn get_tags(state: State<Db>) -> Result<Json<TagsResponse>, JsonError> {
-    let tags = db::get_tags(&state.0).await?;
-    Ok(Json(TagsResponse { tags }))
+pub async fn health() -> Json<HealthResponse> {
+    Json(HealthResponse {
+        status: "ok".to_string(),
+        version: "2.0.0".to_string(),
+    })
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket live feed — demonstrates session-typed WebSocket
+// ---------------------------------------------------------------------------
+//
+// Protocol (from api.rs):
+//   type FeedProtocol = Send<ArticleUpdate, Rec<Send<ArticleUpdate, Var>>>;
+//
+// The TypedWebSocket<S> channel tracks the protocol state at the type level.
+// Each .send() consumes the channel and returns it in the next state.
+// Attempting to .recv() on a Send-state channel is a compile error.
+//
+// This handler:
+// 1. Sends a welcome message (Send<ArticleUpdate, ...>)
+// 2. Enters the recursive loop (Rec<...>)
+// 3. Periodically sends article update events (Send<ArticleUpdate, Var>)
+// 4. Loops back (Var → Rec)
+
+#[allow(dead_code)]
+pub async fn ws_feed(
+    upgrade: typeway_server::ws::WebSocketUpgrade,
+) -> http::Response<typeway_server::BoxBody> {
+    upgrade.on_upgrade_typed::<FeedProtocol, _, _>(|ws| async move {
+        // Step 1: Send the welcome message (transitions from Send<...> to Rec<...>).
+        let ws = match ws
+            .send(ArticleUpdate {
+                event: "connected".to_string(),
+                slug: String::new(),
+                title: "Welcome to the live article feed".to_string(),
+            })
+            .await
+        {
+            Ok(ws) => ws,
+            Err(_) => return,
+        };
+
+        // Step 2: Enter the recursive body (Rec<Send<ArticleUpdate, Var>> → Send<ArticleUpdate, Var>).
+        let mut ws_loop = ws.enter();
+
+        // Step 3: Loop, sending periodic updates.
+        let sample_titles = [
+            "New article about type-level programming",
+            "Understanding session types in Rust",
+            "Zero-cost abstractions revisited",
+            "Tower middleware deep dive",
+            "Content negotiation patterns",
+        ];
+
+        for (i, title) in sample_titles.iter().enumerate() {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+
+            let update = ArticleUpdate {
+                event: "new_article".to_string(),
+                slug: format!("article-{i}"),
+                title: title.to_string(),
+            };
+
+            // Send advances the state from Send<ArticleUpdate, Var> to Var.
+            let ws_var = match ws_loop.send(update).await {
+                Ok(ws) => ws,
+                Err(_) => return, // Client disconnected
+            };
+
+            // Recurse: Var → Rec<Send<ArticleUpdate, Var>>, then enter → Send<...>.
+            ws_loop = ws_var
+                .recurse::<typeway_core::session::Send<ArticleUpdate, typeway_core::session::Var>>()
+                .enter();
+        }
+
+        // After the demo loop, just close the raw connection.
+        // In a real app, this loop would be infinite, reading from a broadcast channel.
+    })
 }

@@ -3,25 +3,34 @@
 //! A full implementation of the [RealWorld](https://github.com/gothinkster/realworld)
 //! ("Conduit") API spec using typeway, with an Elm + Tailwind frontend.
 //!
+//! ## Advanced features demonstrated
+//!
+//! 1. **Effects system** (`EffectfulServer` + `Requires<CorsRequired, _>`):
+//!    Public endpoints declare a CORS middleware requirement. Comment out
+//!    `.provide::<CorsRequired>()` below and it fails to compile.
+//!
+//! 2. **Content negotiation** (`NegotiatedResponse`):
+//!    `GET /api/tags` returns JSON or plain text based on the `Accept` header.
+//!    Try: `curl -H "Accept: text/plain" http://localhost:4000/api/tags`
+//!
+//! 3. **API versioning** (`VersionedApi` + `assert_api_compatible!`):
+//!    V2 adds a health check. Compile-time check ensures V1 endpoints are
+//!    preserved. See `api.rs`.
+//!
+//! 4. **Session-typed WebSocket** (`TypedWebSocket<FeedProtocol>`):
+//!    Protocol for live article updates is encoded as a session type.
+//!    See `handlers::ws_feed`.
+//!
+//! 5. **Validation** (`Validated<V, E>` + `bind_validated!`):
+//!    Registration and article creation validated before the handler runs.
+//!
 //! ## Running
 //!
-//! 1. Start PostgreSQL and create the database:
-//!    ```sh
-//!    createdb realworld
-//!    ```
-//!
-//! 2. Build the Elm frontend (requires `elm` installed):
-//!    ```sh
-//!    cd examples/realworld/frontend
-//!    elm make src/Main.elm --output=public/elm.js
-//!    ```
-//!
-//! 3. Run the server (from the workspace root):
-//!    ```sh
-//!    cargo run -p typeway-realworld
-//!    ```
-//!
-//! Open `http://localhost:3000` for the full app.
+//! ```sh
+//! createdb realworld
+//! cd examples/realworld/frontend && elm make src/Main.elm --output=public/elm.js && cd ../../..
+//! cargo run -p typeway-realworld
+//! ```
 
 mod api;
 mod auth;
@@ -29,9 +38,10 @@ mod db;
 mod handlers;
 mod models;
 
+use typeway_server::bind_validated;
 use typeway_server::request_id::RequestIdLayer;
 use typeway_server::tower_http::cors::CorsLayer;
-use typeway_server::{bind, bind_auth, Server};
+use typeway_server::{bind, bind_auth, EffectfulServer};
 
 use api::RealWorldAPI;
 
@@ -41,44 +51,55 @@ async fn main() {
     db::run_migrations(&pool).await;
     db::seed_data(&pool).await;
 
-    // Frontend static files directory.
     let frontend_dir = std::env::var("FRONTEND_DIR")
         .unwrap_or_else(|_| "examples/realworld/frontend/public".to_string());
 
-    // Build the typeway API server with all 19 endpoints.
-    // Static file serving and SPA fallback are built into typeway — no Axum needed.
-    let server = Server::<RealWorldAPI>::new((
-        // Auth (public)
-        bind!(handlers::register),
+    // ---------------------------------------------------------------------------
+    // EffectfulServer: the API type contains `Requires<CorsRequired, _>` on
+    // several endpoints. The server won't compile until all effects are provided.
+    //
+    // TRY: Comment out `.provide::<CorsRequired>()` and run `cargo check`.
+    // ---------------------------------------------------------------------------
+    let server = EffectfulServer::<RealWorldAPI>::new((
+        // Registration: Validated<NewUserValidator, _> runs validation before handler.
+        // bind_validated! creates a BoundHandler that enforces this at runtime.
+        bind_validated!(handlers::register),
         bind!(handlers::login),
-        // Auth (protected — compiler enforces AuthUser as first arg)
+        // Protected endpoints: compiler enforces AuthUser as first handler arg.
         bind_auth!(handlers::get_current_user),
         bind_auth!(handlers::update_user),
-        // Profiles
+        // Public read endpoints wrapped in Requires<CorsRequired, _>.
         bind!(handlers::get_profile),
         bind_auth!(handlers::follow_profile),
         bind_auth!(handlers::unfollow_profile),
-        // Articles
         bind!(handlers::list_articles),
         bind_auth!(handlers::get_feed),
         bind!(handlers::get_article),
+        // Article creation: Protected + Validated (auth + body validation).
         bind_auth!(handlers::create_article),
         bind_auth!(handlers::update_article),
         bind_auth!(handlers::delete_article),
-        // Favorites
         bind_auth!(handlers::favorite_article),
         bind_auth!(handlers::unfavorite_article),
-        // Comments
         bind!(handlers::get_comments),
         bind_auth!(handlers::add_comment),
         bind_auth!(handlers::delete_comment),
-        // Tags
+        // Tags: handler uses content negotiation (NegotiatedResponse).
         bind!(handlers::get_tags),
+        // V2 addition: health check endpoint.
+        bind!(handlers::health),
     ))
+    // Provide the CorsRequired effect, then apply the actual middleware.
+    // This is the compile-time enforcement: the type says "I need CORS",
+    // and .provide() + .layer() satisfies that requirement.
+    .provide::<typeway_core::effects::CorsRequired>()
+    .layer(CorsLayer::permissive())
+    // .ready() converts to a regular Server. Only compiles if all effects
+    // in the API type have been provided.
+    .ready()
     .with_state(pool)
     .with_static_files("/static", &frontend_dir)
     .with_spa_fallback(format!("{frontend_dir}/index.html"))
-    .layer(CorsLayer::permissive())
     .layer(RequestIdLayer::new());
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "4000".to_string());
@@ -87,9 +108,15 @@ async fn main() {
     println!("Typeway Word running on http://localhost:{port}");
     println!("  Frontend: http://localhost:{port}/");
     println!("  API:      http://localhost:{port}/api/");
+    println!("  Health:   http://localhost:{port}/api/health");
     println!("  Static:   {frontend_dir}");
     println!();
-    println!("19 API endpoints + Elm frontend — pure typeway, no Axum");
+    println!("20 endpoints + Elm frontend — 5 advanced features:");
+    println!("  1. Effects:     CorsRequired enforced at compile time");
+    println!("  2. Negotiation: curl -H 'Accept: text/plain' localhost:{port}/api/tags");
+    println!("  3. Versioning:  V1->V2 with assert_api_compatible! (api.rs)");
+    println!("  4. WebSocket:   Session-typed protocol (handlers.rs::ws_feed)");
+    println!("  5. Validation:  Registration + article creation (api.rs)");
 
     server.serve(addr.parse().unwrap()).await.unwrap();
 }

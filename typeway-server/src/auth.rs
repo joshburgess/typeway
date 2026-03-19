@@ -52,6 +52,15 @@ pub struct Protected<Auth, E> {
 
 impl<Auth, E: ApiSpec> ApiSpec for Protected<Auth, E> {}
 
+// Protected<Auth, E> delegates AllProvided to the inner endpoint E.
+// This allows EffectfulServer to work with APIs containing Protected endpoints.
+impl<Auth, E, Provided, Idx> typeway_core::effects::AllProvided<Provided, Idx>
+    for Protected<Auth, E>
+where
+    E: typeway_core::effects::AllProvided<Provided, Idx>,
+{
+}
+
 // NOTE: BindableEndpoint is intentionally NOT implemented for Protected.
 // This means bind!() cannot be used with Protected endpoints — only
 // bind_auth!() works. This is the compile-time enforcement mechanism.

@@ -3018,6 +3018,7 @@ dependencies = [
  "bytes",
  "chrono",
  "deadpool-postgres",
+ "futures",
  "http",
  "jsonwebtoken",
  "postgres-types",

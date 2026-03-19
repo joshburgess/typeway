@@ -57,6 +57,15 @@ pub struct Validated<V, E> {
 }
 
 impl<V: Send + Sync + 'static, E: ApiSpec> ApiSpec for Validated<V, E> {}
+
+// Validated<V, E> delegates AllProvided to the inner endpoint E.
+impl<V: Send + Sync + 'static, E, Provided, Idx> typeway_core::effects::AllProvided<Provided, Idx>
+    for Validated<V, E>
+where
+    E: typeway_core::effects::AllProvided<Provided, Idx>,
+{
+}
+
 impl<V: Send + Sync + 'static, E: BindableEndpoint> BindableEndpoint for Validated<V, E> {
     fn method() -> http::Method {
         E::method()

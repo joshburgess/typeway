@@ -259,3 +259,14 @@ impl_serves_for_tuple!(
     (E18, 18),
     (E19, 19)
 );
+
+// VersionedApi<Base, Changes, Resolved> delegates Serves to the resolved API type.
+// This allows EffectfulServer::<VersionedApi<V1, Changes, V2Resolved>>::new(handlers)
+// where handlers: Serves<V2Resolved>.
+impl<B, C, R: ApiSpec, H: Serves<R>> Serves<typeway_core::versioning::VersionedApi<B, C, R>>
+    for H
+{
+    fn register(self, router: &mut Router) {
+        <H as Serves<R>>::register(self, router)
+    }
+}

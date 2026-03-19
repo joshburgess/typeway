@@ -176,6 +176,70 @@ pub struct TagsResponse {
     pub tags: Vec<String>,
 }
 
+// Display impl enables content negotiation: when a client sends
+// Accept: text/plain, TagsResponse renders as a comma-separated list
+// instead of JSON.
+impl std::fmt::Display for TagsResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.tags.join(", "))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tags V2 (for API versioning demo)
+// ---------------------------------------------------------------------------
+
+/// V2 tags response includes usage counts per tag — a common API evolution.
+/// Included here to show how versioned response types look alongside V1 types.
+#[derive(Debug, Serialize)]
+#[allow(dead_code)]
+pub struct TagsResponseV2 {
+    pub tags: Vec<TagWithCount>,
+}
+
+#[derive(Debug, Serialize)]
+#[allow(dead_code)]
+pub struct TagWithCount {
+    pub tag: String,
+    pub count: i64,
+}
+
+#[allow(dead_code)]
+impl std::fmt::Display for TagsResponseV2 {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let parts: Vec<String> = self
+            .tags
+            .iter()
+            .map(|t| format!("{} ({})", t.tag, t.count))
+            .collect();
+        write!(f, "{}", parts.join(", "))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Health check (V2 addition)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Serialize)]
+pub struct HealthResponse {
+    pub status: String,
+    pub version: String,
+}
+
+// ---------------------------------------------------------------------------
+// WebSocket live feed
+// ---------------------------------------------------------------------------
+
+/// A real-time article update pushed via WebSocket.
+/// Used by the session-typed WebSocket handler (`handlers::ws_feed`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
+pub struct ArticleUpdate {
+    pub event: String,
+    pub slug: String,
+    pub title: String,
+}
+
 // ---------------------------------------------------------------------------
 // DB row types
 // ---------------------------------------------------------------------------
