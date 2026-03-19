@@ -21,7 +21,7 @@ cd examples/realworld
 docker compose up
 ```
 
-Open http://localhost:3000. That's it — Docker handles Postgres, builds the Rust backend, compiles the Elm frontend, seeds the database, and serves everything.
+Open http://localhost:4000. That's it — Docker handles Postgres, builds the Rust backend, compiles the Elm frontend, seeds the database, and serves everything.
 
 To reset the database:
 ```sh
@@ -82,4 +82,4 @@ Any [RealWorld frontend](https://codebase.show/projects/realworld) works with th
 - [Angular](https://github.com/gothinkster/angular-realworld-example-app)
 - [Elm](https://github.com/rtfeldman/elm-spa-example)
 
-Point the frontend's API URL at `http://localhost:3000/api`.
+Point the frontend's API URL at `http://localhost:4000/api`.

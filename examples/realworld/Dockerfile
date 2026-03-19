@@ -36,5 +36,5 @@ ENV DATABASE_NAME=realworld
 ENV DATABASE_USER=postgres
 ENV DATABASE_PASSWORD=postgres
 
-EXPOSE 3000
+EXPOSE 4000
 CMD ["./wayward-realworld"]

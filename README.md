@@ -34,8 +34,8 @@ async fn greet(path: Path<GreetPath>) -> String {
 #[tokio::main]
 async fn main() {
     Server::<API>::new((
-        bind::<_, _, _>(hello),
-        bind::<_, _, _>(greet),
+        bind!(hello),
+        bind!(greet),
     ))
     .serve("0.0.0.0:3000".parse().unwrap())
     .await
@@ -78,10 +78,13 @@ wayward = "0.1"
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `server` | yes | HTTP server (Tower/Hyper) |
+| `server` | yes | HTTP/1.1 + HTTP/2 server (Tower/Hyper) |
 | `client` | no | Type-safe HTTP client (reqwest) |
-| `openapi` | no | OpenAPI 3.1 spec generation + Swagger UI |
+| `openapi` | no | OpenAPI 3.1 spec generation + embedded docs UI |
 | `axum-interop` | no | Embed wayward in Axum apps and vice versa |
+| `tls` | no | HTTPS via tokio-rustls |
+| `ws` | no | WebSocket upgrade support |
+| `multipart` | no | Multipart form upload (file uploads) |
 | `full` | no | server + client + openapi |
 
 ## Tower Middleware
