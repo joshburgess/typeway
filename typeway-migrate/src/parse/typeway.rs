@@ -294,6 +294,31 @@ fn parse_endpoint_type(
         return Some(raw_ep);
     }
 
+    // Check for Requires<Effect, InnerEndpoint> wrapper.
+    // This is used for effect-annotated endpoints (e.g., Requires<CorsRequired, GetEndpoint<...>>).
+    if outer_name == "Requires" {
+        let args = match &last_seg.arguments {
+            syn::PathArguments::AngleBracketed(ab) => &ab.args,
+            _ => return None,
+        };
+
+        let type_args: Vec<&Type> = args
+            .iter()
+            .filter_map(|arg| match arg {
+                syn::GenericArgument::Type(t) => Some(t),
+                _ => None,
+            })
+            .collect();
+
+        if type_args.len() < 2 {
+            return None;
+        }
+
+        // First arg is the effect type, second is the inner endpoint.
+        // Recurse into the inner endpoint (which might itself be Protected, etc.).
+        return parse_endpoint_type(type_args[1], path_types);
+    }
+
     // Check for Validated<V, InnerEndpoint> wrapper.
     if outer_name == "Validated" {
         let args = match &last_seg.arguments {
@@ -498,16 +523,18 @@ fn extract_server_chain(expr: &Expr, info: &mut ServerInfo) -> bool {
     }
 }
 
-/// Check if an expression is `Server::<API>::new(...)`.
+/// Check if an expression is `Server::<API>::new(...)` or `EffectfulServer::<API>::new(...)`.
 fn is_server_new_call(call: &ExprCall) -> bool {
     match call.func.as_ref() {
         Expr::Path(ExprPath { path, .. }) => {
             let segments: Vec<_> = path.segments.iter().collect();
-            // Match Server::<API>::new or Server::new
+            // Match Server::<API>::new, Server::new, EffectfulServer::<API>::new, etc.
             if segments.len() >= 2 {
                 let last = segments.last().unwrap();
                 let second_last = segments[segments.len() - 2];
-                return last.ident == "new" && second_last.ident == "Server";
+                let server_name = second_last.ident.to_string();
+                return last.ident == "new"
+                    && (server_name == "Server" || server_name == "EffectfulServer");
             }
             false
         }

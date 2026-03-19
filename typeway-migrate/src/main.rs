@@ -201,12 +201,30 @@ fn main() -> Result<()> {
                 let source = std::fs::read_to_string(&path)
                     .with_context(|| format!("failed to read {}", path.display()))?;
 
-                match typeway_migrate::parse::axum::parse_axum_file(&source) {
+                // Heuristic: if the source contains typeway-specific constructs,
+                // use the Typeway parser; otherwise use the Axum parser.
+                let is_typeway = source.contains("typeway_path!")
+                    || source.contains("type API")
+                        && (source.contains("GetEndpoint")
+                            || source.contains("PostEndpoint")
+                            || source.contains("DeleteEndpoint")
+                            || source.contains("PutEndpoint")
+                            || source.contains("PatchEndpoint"));
+
+                let parse_result = if is_typeway {
+                    typeway_migrate::parse::typeway::parse_typeway_file(&source)
+                } else {
+                    typeway_migrate::parse::axum::parse_axum_file(&source)
+                };
+
+                match parse_result {
                     Ok(model) => {
                         if model.endpoints.is_empty() {
                             continue;
                         }
-                        println!("{}:", path.display());
+
+                        let framework = if is_typeway { "Typeway" } else { "Axum" };
+                        println!("{} ({} source):", path.display(), framework);
                         println!(
                             "  {} endpoints found:",
                             model.endpoints.len()
@@ -227,6 +245,101 @@ fn main() -> Result<()> {
                         }
                         if let Some(ref prefix) = model.prefix {
                             println!("  Nest prefix: {}", prefix);
+                        }
+
+                        // Auth detection report.
+                        let auth_endpoints: Vec<_> = model
+                            .endpoints
+                            .iter()
+                            .filter(|ep| ep.requires_auth)
+                            .collect();
+                        if !auth_endpoints.is_empty() {
+                            println!("  Auth detection:");
+                            for ep in &auth_endpoints {
+                                let auth_ty = ep
+                                    .auth_type
+                                    .as_deref()
+                                    .unwrap_or("unknown");
+                                println!(
+                                    "    {}: Protected ({})",
+                                    ep.handler.name, auth_ty
+                                );
+                            }
+                        }
+
+                        // Effects detection report.
+                        if !model.detected_effects.is_empty() {
+                            println!("  Effects detected:");
+                            for effect in &model.detected_effects {
+                                let source_hint = match effect.effect_name.as_str() {
+                                    "CorsRequired" => " (from CorsLayer)",
+                                    "TracingRequired" => " (from TraceLayer)",
+                                    "RateLimitRequired" => " (from RateLimitLayer)",
+                                    _ => "",
+                                };
+                                println!(
+                                    "    {}{}",
+                                    effect.effect_name, source_hint
+                                );
+                            }
+                        }
+
+                        // Validation candidates report.
+                        let validation_endpoints: Vec<_> = model
+                            .endpoints
+                            .iter()
+                            .filter(|ep| ep.has_validation)
+                            .collect();
+                        if !validation_endpoints.is_empty() {
+                            println!("  Validation candidates:");
+                            for ep in &validation_endpoints {
+                                println!(
+                                    "    {}: body validation patterns detected",
+                                    ep.handler.name
+                                );
+                            }
+                        }
+
+                        // Query extractor report.
+                        let query_endpoints: Vec<_> = model
+                            .endpoints
+                            .iter()
+                            .filter(|ep| {
+                                ep.handler
+                                    .extractors
+                                    .iter()
+                                    .any(|e| {
+                                        e.kind
+                                            == typeway_migrate::model::ExtractorKind::Query
+                                    })
+                            })
+                            .collect();
+                        if !query_endpoints.is_empty() {
+                            println!("  Query extractors:");
+                            for ep in &query_endpoints {
+                                let query_ext = ep
+                                    .handler
+                                    .extractors
+                                    .iter()
+                                    .find(|e| {
+                                        e.kind
+                                            == typeway_migrate::model::ExtractorKind::Query
+                                    });
+                                let type_str = if let Some(ext) = query_ext {
+                                    if let Some(ref inner) = ext.inner_type {
+                                        let ts = quote::quote! { #inner };
+                                        format!("Query<{}>", ts)
+                                    } else {
+                                        "Query<...>".to_string()
+                                    }
+                                } else {
+                                    "Query<...>".to_string()
+                                };
+                                println!(
+                                    "    {}: {}",
+                                    ep.handler.name, type_str
+                                );
+                            }
                         }
 
                         // Check for impl IntoResponse handlers.
@@ -266,7 +379,42 @@ fn main() -> Result<()> {
                             }
                         }
 
-                        // Summary line.
+                        // Summary line with counts.
+                        let total = model.endpoints.len();
+                        let protected_count = auth_endpoints.len();
+                        let public_count = total - protected_count;
+                        let effects_count = model.detected_effects.len();
+                        let validation_count = validation_endpoints.len();
+
+                        let mut summary_parts = Vec::new();
+                        summary_parts.push(format!(
+                            "{} endpoint{}",
+                            total,
+                            if total == 1 { "" } else { "s" }
+                        ));
+                        if protected_count > 0 || public_count > 0 {
+                            summary_parts.push(format!(
+                                "{} protected, {} public",
+                                protected_count, public_count
+                            ));
+                        }
+                        if effects_count > 0 {
+                            summary_parts.push(format!(
+                                "{} effect{}",
+                                effects_count,
+                                if effects_count == 1 { "" } else { "s" }
+                            ));
+                        }
+                        if validation_count > 0 {
+                            summary_parts.push(format!(
+                                "{} validation candidate{}",
+                                validation_count,
+                                if validation_count == 1 { "" } else { "s" }
+                            ));
+                        }
+
+                        println!("  Summary: {}", summary_parts.join(", "));
+
                         let warning_count = model.warnings.len();
                         if warning_count == 0 {
                             println!("  Ready to convert.");
