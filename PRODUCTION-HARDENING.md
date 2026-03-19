@@ -8,7 +8,7 @@ Gaps identified between the current state (Phases 0–7 complete) and production
 
 - [x] **MSRV testing in CI** — Rust 1.80, CI job verifies `cargo check --workspace --all-features`
 - [x] **Compile-time regression tracking** — CI job captures `cargo build --timings` artifacts (release + dev)
-- [ ] **Benchmark regression gating** — criterion benchmarks exist but no baseline comparison in CI that fails on >10% throughput drops
+- [ ] **Benchmark regression gating** — criterion benchmarks exist but no baseline comparison in CI that fails on >10% throughput drops. Options: `bencher.dev`, `github-action-benchmark`, or custom artifact diff. Planned for future setup.
 
 ## Production Hardening Gaps
 
