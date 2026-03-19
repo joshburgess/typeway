@@ -11,6 +11,7 @@ help: the trait `FromRequestParts` is not implemented for `BadType`
   | ^^^^^^^^^^^^^^
   = note: valid extractors: `Path<P>`, `State<T>`, `Query<T>`, `HeaderMap`
   = help: the following other types implement trait `FromRequestParts`:
+            AcceptHeader
             Cookie<T>
             CookieJar
             Extension<T>
@@ -18,7 +19,6 @@ help: the trait `FromRequestParts` is not implemented for `BadType`
             HeaderMap
             Method
             Query<T>
-            Uri
           and $N others
 note: required by a bound in `__assert_parts_0`
  --> tests/compile_fail/bad_extractor.rs:6:1

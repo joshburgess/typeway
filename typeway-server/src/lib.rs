@@ -13,6 +13,7 @@ pub mod handler;
 pub mod handler_for;
 #[cfg(feature = "multipart")]
 pub mod multipart;
+pub mod negotiate;
 #[cfg(feature = "openapi")]
 pub mod openapi;
 pub mod production;
@@ -28,6 +29,8 @@ pub mod typed;
 pub mod typed_bind;
 pub mod typed_response;
 #[cfg(feature = "ws")]
+pub mod typed_ws;
+#[cfg(feature = "ws")]
 pub mod ws;
 
 pub use body::{body_from_stream, empty_body, sse_body, BoxBody};
@@ -38,6 +41,10 @@ pub use extract::{
 };
 pub use handler::{into_boxed_handler, BoxedHandler, Handler, ResponseFuture};
 pub use handler_for::{bind, BindableEndpoint, BoundHandler};
+pub use negotiate::{
+    AcceptHeader, CsvFormat, HtmlFormat, JsonFormat, NegotiateFormats, NegotiatedResponse, RenderAs,
+    TextFormat,
+};
 pub use response::{IntoResponse, Json};
 pub use router::{Router, RouterService};
 pub use secure_headers::SecureHeadersLayer;

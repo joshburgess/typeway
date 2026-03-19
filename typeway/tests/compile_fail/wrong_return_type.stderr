@@ -13,13 +13,13 @@ help: the trait `IntoResponse` is not implemented for `NotAResponse`
   = help: the following other types implement trait `IntoResponse`:
             &'static str
             (typeway::http::StatusCode, T)
+            Infallible
             Json<T>
             JsonError
-            Response<http_body_util::combinators::box_body::UnsyncBoxBody<bytes::bytes::Bytes, Box<(dyn StdError + Send + Sync + 'static)>>>
+            NegotiatedResponse<T, Formats>
+            Response<http_body_util::combinators::box_body::UnsyncBoxBody<bytes::bytes::Bytes, Box<(dyn StdError + std::marker::Send + Sync + 'static)>>>
             Result<T, E>
-            bytes::bytes::Bytes
-            std::string::String
-            typeway::http::StatusCode
+          and $N others
 note: required by a bound in `__check_response`
  --> tests/compile_fail/wrong_return_type.rs:8:1
   |

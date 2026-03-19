@@ -95,6 +95,41 @@ impl FromRequestParts for WebSocketUpgrade {
 }
 
 impl WebSocketUpgrade {
+    /// Complete the upgrade with a session-typed handler.
+    ///
+    /// Wraps the raw `WebSocketStream` in a [`TypedWebSocket<S>`] before
+    /// passing it to the callback, enforcing protocol ordering at the type
+    /// level.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use typeway_core::session::*;
+    /// use typeway_server::typed_ws::TypedWebSocket;
+    /// use typeway_server::ws::WebSocketUpgrade;
+    ///
+    /// type Greet = Send<String, Recv<String, End>>;
+    ///
+    /// async fn handler(upgrade: WebSocketUpgrade) -> http::Response<BoxBody> {
+    ///     upgrade.on_upgrade_typed::<Greet, _, _>(|ws| async move {
+    ///         let ws = ws.send("hello".to_string()).await.unwrap();
+    ///         let (_reply, ws) = ws.recv().await.unwrap();
+    ///         ws.close().await.unwrap();
+    ///     })
+    /// }
+    /// ```
+    pub fn on_upgrade_typed<S, F, Fut>(self, callback: F) -> http::Response<BoxBody>
+    where
+        S: typeway_core::session::SessionType + std::marker::Send + 'static,
+        F: FnOnce(crate::typed_ws::TypedWebSocket<S>) -> Fut + std::marker::Send + 'static,
+        Fut: Future<Output = ()> + std::marker::Send + 'static,
+    {
+        self.on_upgrade(move |raw_ws| async move {
+            let typed = crate::typed_ws::TypedWebSocket::new(raw_ws);
+            callback(typed).await;
+        })
+    }
+
     /// Complete the upgrade and spawn the WebSocket handler.
     ///
     /// Returns the `101 Switching Protocols` response. The `callback` receives
