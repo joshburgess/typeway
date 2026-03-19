@@ -211,15 +211,15 @@ pub async fn seed_data(pool: &Pool) {
             &["rust", "type-erasure", "performance"],
         ),
         (
-            "Servant vs Wayward: Type-Level Web Frameworks Across Languages",
+            "Servant vs Typeway: Type-Level Web Frameworks Across Languages",
             "Comparing Haskell's pioneer with Rust's new contender",
             "Haskell's Servant pioneered the idea that an HTTP API can be a type. Typeway brings \
              that idea to Rust. Both derive server, client, and OpenAPI from one type. But the \
              implementations differ due to language constraints.\n\n\
-             Servant uses GHC's type-level strings and type operators (:<|>, :>). Wayward uses \
+             Servant uses GHC's type-level strings and type operators (:<|>, :>). Typeway uses \
              HLists with marker types and trait-level computation — achieving similar results \
              without nightly Rust features.\n\n\
-             Servant's ecosystem is fragmented across 10+ packages. Wayward ships everything in \
+             Servant's ecosystem is fragmented across 10+ packages. Typeway ships everything in \
              one workspace. Servant has no middleware story; typeway inherits Tower's entire \
              ecosystem. Servant's compile times scale poorly; typeway uses flat tuple impls to \
              stay linear.\n\n\

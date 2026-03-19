@@ -543,7 +543,7 @@ viewFooter : Html Msg
 viewFooter =
     footer [ class "mt-16 py-6 text-center text-xs text-gray-400 border-t" ]
         [ text "Powered by "
-        , a [ href "https://github.com/joshburgess/wayward", class "text-brand" ] [ text "Wayward" ]
+        , a [ href "https://github.com/joshburgess/typeway", class "text-brand" ] [ text "Typeway" ]
         , text " — type-level web framework for Rust"
         ]
 
