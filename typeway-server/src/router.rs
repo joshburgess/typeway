@@ -432,6 +432,34 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for RouterServ
 
     fn call(&mut self, req: http::Request<hyper::body::Incoming>) -> Self::Future {
         let router = self.router.clone();
-        Box::pin(async move { Ok(router.route(req).await) })
+        Box::pin(async move {
+            use futures::FutureExt;
+
+            let result =
+                std::panic::AssertUnwindSafe(router.route(req))
+                    .catch_unwind()
+                    .await;
+
+            match result {
+                Ok(response) => Ok(response),
+                Err(panic_info) => {
+                    let message = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                        (*s).to_string()
+                    } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                        s.clone()
+                    } else {
+                        "unknown panic".to_string()
+                    };
+
+                    tracing::error!("handler panicked: {message}");
+
+                    let mut res = http::Response::new(body_from_string(
+                        "Internal Server Error".to_string(),
+                    ));
+                    *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                    Ok(res)
+                }
+            }
+        })
     }
 }

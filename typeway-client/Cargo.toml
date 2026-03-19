@@ -19,3 +19,6 @@ typeway-macros = { path = "../typeway-macros" }
 typeway-server = { path = "../typeway-server" }
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
+
+[lints]
+workspace = true

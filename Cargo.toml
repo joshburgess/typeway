@@ -10,3 +10,6 @@ members = [
     "examples/realworld",
 ]
 resolver = "2"
+
+[workspace.lints.clippy]
+upper_case_acronyms = "allow"

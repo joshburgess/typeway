@@ -40,7 +40,8 @@ async fn noop_p9(_p: Path<P9>) -> &'static str {
     "ok"
 }
 
-// 1-route API
+// 1-route API (reserved for future single-route benchmarks)
+#[allow(dead_code)]
 type Api1 = (GetEndpoint<HelloPath, String>,);
 
 // 10-route API

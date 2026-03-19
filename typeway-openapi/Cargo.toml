@@ -17,3 +17,6 @@ schemars = { version = "0.8", optional = true }
 
 [dev-dependencies]
 typeway-macros = { path = "../typeway-macros" }
+
+[lints]
+workspace = true

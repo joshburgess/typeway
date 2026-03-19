@@ -6,3 +6,6 @@ publish = false
 
 [dependencies]
 typeway-core = { path = "../typeway-core" }
+
+[lints]
+workspace = true

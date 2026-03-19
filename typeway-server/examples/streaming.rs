@@ -38,6 +38,7 @@ async fn stream() -> http::Response<BoxBody> {
 
 /// Handler that returns a Server-Sent Events stream.
 async fn sse() -> http::Response<BoxBody> {
+    #[allow(unused_imports)]
     use futures::StreamExt;
 
     // Create a stream that emits events every second.

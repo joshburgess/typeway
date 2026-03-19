@@ -14,6 +14,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
+#[allow(unused_imports)]
 use typeway_core::*;
 use typeway_macros::*;
 use typeway_server::extract::PathSegments;
@@ -214,7 +215,7 @@ fn bench_handler_dispatch(c: &mut Criterion) {
 }
 
 fn bench_body_collection(c: &mut Criterion) {
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let _rt = tokio::runtime::Runtime::new().unwrap();
 
     let mut group = c.benchmark_group("body_collection");
 
@@ -223,7 +224,7 @@ fn bench_body_collection(c: &mut Criterion) {
 
     for size in [0, 64, 1024, 16384, 65536] {
         let data = Bytes::from(vec![b'x'; size]);
-        group.bench_function(&format!("bytes_clone/{size}B"), |b| {
+        group.bench_function(format!("bytes_clone/{size}B"), |b| {
             b.iter(|| {
                 let cloned = data.clone();
                 black_box(cloned);

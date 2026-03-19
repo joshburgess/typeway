@@ -83,12 +83,12 @@ mod tests {
     #[test]
     fn tuple_of_endpoints_is_api_spec() {
         type P = HCons<Lit<users>, HNil>;
-        type API = (
+        type Api = (
             GetEndpoint<P, Vec<User>>,
             PostEndpoint<P, CreateUser, User>,
             DeleteEndpoint<HCons<Lit<users>, HCons<Capture<u32>, HNil>>, ()>,
         );
-        assert_api_spec::<API>();
+        assert_api_spec::<Api>();
     }
 
     #[test]
@@ -96,7 +96,7 @@ mod tests {
         type P = HCons<Lit<users>, HNil>;
         type Sub1 = (GetEndpoint<P, Vec<User>>,);
         type Sub2 = (PostEndpoint<P, CreateUser, User>,);
-        type API = (Sub1, Sub2);
-        assert_api_spec::<API>();
+        type Api = (Sub1, Sub2);
+        assert_api_spec::<Api>();
     }
 }

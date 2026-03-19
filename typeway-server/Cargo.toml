@@ -48,3 +48,7 @@ typeway-openapi = { path = "../typeway-openapi" }
 reqwest = { version = "0.12", features = ["json"] }
 serde_json = "1"
 axum = "0.8"
+proptest = "1"
+
+[lints]
+workspace = true
