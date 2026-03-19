@@ -27,9 +27,9 @@ use crate::retry::RetryPolicy;
 /// ).await?;
 /// ```
 pub struct Client {
-    base_url: Url,
-    inner: reqwest::Client,
-    config: ClientConfig,
+    pub(crate) base_url: Url,
+    pub(crate) inner: reqwest::Client,
+    pub(crate) config: ClientConfig,
 }
 
 impl Client {
@@ -47,6 +47,12 @@ impl Client {
         }
         if let Some(connect_timeout) = config.connect_timeout {
             builder = builder.connect_timeout(connect_timeout);
+        }
+        if !config.default_headers.is_empty() {
+            builder = builder.default_headers(config.default_headers.clone());
+        }
+        if config.cookie_store {
+            builder = builder.cookie_store(true);
         }
         let inner = builder.build().map_err(ClientError::Request)?;
         Ok(Client {
@@ -123,11 +129,21 @@ impl Client {
                 .body(body);
         }
 
+        // Apply request interceptors.
+        for interceptor in &self.config.request_interceptors {
+            request = interceptor(request);
+        }
+
         let response = match request.send().await {
             Ok(resp) => resp,
             Err(e) if e.is_timeout() => return Err(ClientError::Timeout),
             Err(e) => return Err(ClientError::Request(e)),
         };
+
+        // Apply response interceptors.
+        for interceptor in &self.config.response_interceptors {
+            interceptor(&response);
+        }
 
         let status = response.status();
 
