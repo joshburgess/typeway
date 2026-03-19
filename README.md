@@ -363,9 +363,16 @@ Every non-trivial async Rust application already depends on Tokio. By building o
 
 The Axum compatibility layer is the strongest practical argument for this foundation choice. Axum is the most widely adopted Rust web framework, and it sits on the exact same Tower/Hyper/Tokio stack. This creates a unique opportunity:
 
+- **Targeted type safety.** You don't have to use typeway for everything. Use it for the endpoints where type-level correctness matters most — a payment API, a permissions system, an integration contract between services — and keep the rest of your application in Axum. A single project can have hundreds of Axum routes and a handful of typeway routes, all sharing the same middleware, runtime, and deployment.
+
+- **Team autonomy.** In organizations with multiple teams contributing to a shared service, typeway and Axum coexist naturally. A team that values functional programming patterns and compile-time guarantees can use typeway for their domain. A team that prefers Axum's imperative routing style keeps working the way they always have. Both teams share the same Tower middleware stack, the same Tokio runtime, and the same binary. No separate services, no microservice overhead — just different routing strategies in the same application.
+
 - **Gradual migration.** Nest a typeway API inside an existing Axum application at `/api/v2` while the rest of the app stays unchanged. Migrate endpoints one at a time. No big-bang rewrite.
+
 - **Ecosystem access.** Every Axum extractor, every Axum middleware, every Axum tutorial and blog post is potentially relevant. If someone has solved a problem in Axum, the solution likely works with typeway's router too, since both speak Tower.
+
 - **Risk reduction.** Adopting a new framework is risky. Axum interop means you're never locked in — if typeway doesn't work for a particular endpoint, fall back to Axum for that route and keep typeway for the rest. The cost of trying typeway is near zero.
+
 - **Bidirectional embedding.** This isn't just "typeway can call Axum." It's fully bidirectional: Axum routes can be the fallback inside a typeway server. This means you can use Axum's mature WebSocket handling, static file serving, or any other Axum feature alongside typeway's type-safe endpoints.
 
 No other type-safe web framework offers this kind of ecosystem integration. Servant can't embed a WAI app inside a Servant server. Dropshot has no interop with Axum or Actix. Typeway's tower-native architecture makes it a participant in the ecosystem rather than an island.
