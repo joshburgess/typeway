@@ -1,6 +1,6 @@
 //! OpenAPI integration — serves `/openapi.json` and `/docs` (Swagger UI).
 //!
-//! Enabled with `feature = "openapi"`. Adds [`Server::with_openapi`] which
+//! Enabled with `feature = "openapi"`. Adds [`Server::with_openapi`](crate::server::Server::with_openapi) which
 //! registers two additional routes on the server.
 
 use std::sync::Arc;

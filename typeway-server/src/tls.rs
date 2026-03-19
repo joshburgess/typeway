@@ -1,7 +1,7 @@
 //! TLS support for typeway servers.
 //!
 //! Enabled with `feature = "tls"`. Provides [`TlsConfig`] for loading
-//! certificates and [`Server::serve_tls`] for HTTPS.
+//! certificates and [`Server::serve_tls`](crate::server::Server::serve_tls) for HTTPS.
 //!
 //! # Example
 //!

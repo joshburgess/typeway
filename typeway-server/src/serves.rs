@@ -1,6 +1,6 @@
 //! The [`Serves`] trait — compile-time check that a handler tuple covers an API.
 //!
-//! `Serves<A>` is implemented for tuples of [`BoundHandler`](crate::handler_for::BoundHandler)
+//! `Serves<A>` is implemented for tuples of [`BoundHandler`]
 //! that cover every endpoint in the API type `A`.
 
 use typeway_core::ApiSpec;

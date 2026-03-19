@@ -30,7 +30,7 @@
 //!
 //! // 4. Serve — the compiler verifies every endpoint has a handler
 //! #[tokio::main]
-//! async fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 //!     Server::<API>::new((
 //!         bind!(hello),
 //!         bind!(greet),

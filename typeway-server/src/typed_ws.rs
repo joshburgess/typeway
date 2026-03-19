@@ -47,7 +47,7 @@ impl<S: SessionType> TypedWebSocket<S> {
     /// Wrap a raw `WebSocketStream` in a typed channel at state `S`.
     ///
     /// The caller is responsible for choosing the correct initial protocol
-    /// state. Typically this is called by [`WebSocketUpgrade::on_upgrade_typed`].
+    /// state. Typically this is called by [`WebSocketUpgrade::on_upgrade_typed`](crate::ws::WebSocketUpgrade::on_upgrade_typed).
     pub fn new(
         inner: WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>,
     ) -> Self {

@@ -1,7 +1,7 @@
 //! Structured error responses and error-handling utilities.
 //!
 //! [`JsonError`] provides a standard JSON error format for API responses.
-//! The [`CatchPanic`] layer catches panics in handlers and converts them
+//! The `CatchPanic` layer catches panics in handlers and converts them
 //! to 500 responses.
 
 use http::StatusCode;

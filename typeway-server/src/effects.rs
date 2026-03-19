@@ -1,6 +1,6 @@
 //! Server-side middleware effects tracking.
 //!
-//! [`EffectfulServer`] wraps a [`Server`] and tracks which middleware effects
+//! [`EffectfulServer`] wraps a [`Server`](crate::server::Server) and tracks which middleware effects
 //! have been provided via `.provide::<E>()`. The `.serve()` method only
 //! compiles when all effects declared in the API type (via
 //! [`Requires<E, _>`](typeway_core::effects::Requires)) have been discharged.
@@ -148,7 +148,7 @@ impl<A: ApiSpec, P> EffectfulServer<A, P> {
         }
     }
 
-    /// Finalize the server and convert to a regular [`Server`].
+    /// Finalize the server and convert to a regular [`Server`](crate::server::Server).
     ///
     /// Only compiles if all required effects have been provided.
     pub fn ready<Idx>(self) -> crate::server::Server<A>

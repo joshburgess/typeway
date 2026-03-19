@@ -97,7 +97,7 @@ impl FromRequestParts for WebSocketUpgrade {
 impl WebSocketUpgrade {
     /// Complete the upgrade with a session-typed handler.
     ///
-    /// Wraps the raw `WebSocketStream` in a [`TypedWebSocket<S>`] before
+    /// Wraps the raw `WebSocketStream` in a [`TypedWebSocket<S>`](crate::typed_ws::TypedWebSocket) before
     /// passing it to the callback, enforcing protocol ordering at the type
     /// level.
     ///

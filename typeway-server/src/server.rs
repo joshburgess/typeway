@@ -508,7 +508,7 @@ pub struct LayeredServer<S> {
 }
 
 impl<S> LayeredServer<S> {
-    /// Add shared state accessible via [`State<T>`] extractors.
+    /// Add shared state accessible via [`State<T>`](crate::extract::State) extractors.
     pub fn with_state<T: Clone + Send + Sync + 'static>(self, state: T) -> Self {
         self.router.set_state_injector(Arc::new(move |ext| {
             ext.insert(state.clone());
