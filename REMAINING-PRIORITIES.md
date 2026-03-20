@@ -67,13 +67,19 @@ Updated status of all planned work. Checked items are complete.
 - **`impl IntoResponse` type inference** — Warns but can't resolve opaque types without type checking
 - **Cross-file `Router::merge()`** — Only resolves functions defined in the same file
 
-### Potential future work:
+### Done:
 
-- [ ] **VSCode extension** — Convert selected code in-editor
+- [x] **VSCode extension** — `typeway-vscode/` with 5 commands (convert, preview, check), context menu, output channel
 
 ---
 
 ## Infrastructure
 
-- [ ] **Benchmark regression gating** — Criterion benchmarks exist but no CI baseline comparison. Options: `bencher.dev`, `github-action-benchmark`, custom artifact diff.
-- [x] **Pre-existing cleanup** — Doctest failure fixed, all rustdoc warnings resolved.
+- [x] **Benchmark regression gating** — Criterion baselines cached on main, PRs compared with >15% regression threshold
+- [x] **Pre-existing cleanup** — Doctest failure fixed, all rustdoc warnings resolved
+
+---
+
+## Remaining
+
+- [ ] **Publish to crates.io** — On hold per user request
