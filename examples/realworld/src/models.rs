@@ -1,63 +1,87 @@
 //! Domain types matching the RealWorld API spec.
+//!
+//! All model types use `#[derive(ToProtoType)]` with `#[proto(tag = N)]` for
+//! stable protobuf field numbering. This replaces ~230 lines of manual
+//! `impl ToProtoType` blocks with derive attributes on the struct definitions.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use typeway_macros::ToProtoType;
 use uuid::Uuid;
 
 // ---------------------------------------------------------------------------
 // User
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct UserResponse {
+    #[proto(tag = 1)]
     pub user: UserBody,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct UserBody {
+    #[proto(tag = 1)]
     pub email: String,
+    #[proto(tag = 2)]
     pub token: String,
+    #[proto(tag = 3)]
     pub username: String,
+    #[proto(tag = 4)]
     pub bio: Option<String>,
+    #[proto(tag = 5)]
     pub image: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 pub struct NewUserRequest {
+    #[proto(tag = 1)]
     pub user: NewUser,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 pub struct NewUser {
+    #[proto(tag = 1)]
     pub username: String,
+    #[proto(tag = 2)]
     pub email: String,
+    #[proto(tag = 3)]
     pub password: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 #[allow(dead_code)]
 pub struct LoginRequest {
+    #[proto(tag = 1)]
     pub user: LoginUser,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 #[allow(dead_code)]
 pub struct LoginUser {
+    #[proto(tag = 1)]
     pub email: String,
+    #[proto(tag = 2)]
     pub password: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 pub struct UpdateUserRequest {
+    #[proto(tag = 1)]
     pub user: UpdateUser,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 pub struct UpdateUser {
+    #[proto(tag = 1)]
     pub email: Option<String>,
+    #[proto(tag = 2)]
     pub username: Option<String>,
+    #[proto(tag = 3)]
     pub password: Option<String>,
+    #[proto(tag = 4)]
     pub bio: Option<String>,
+    #[proto(tag = 5)]
     pub image: Option<String>,
 }
 
@@ -65,16 +89,21 @@ pub struct UpdateUser {
 // Profile
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct ProfileResponse {
+    #[proto(tag = 1)]
     pub profile: ProfileBody,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct ProfileBody {
+    #[proto(tag = 1)]
     pub username: String,
+    #[proto(tag = 2)]
     pub bio: Option<String>,
+    #[proto(tag = 3)]
     pub image: Option<String>,
+    #[proto(tag = 4)]
     pub following: bool,
 }
 
@@ -82,8 +111,9 @@ pub struct ProfileBody {
 // Article
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct ArticleResponse {
+    #[proto(tag = 1)]
     pub article: ArticleBody,
 }
 
@@ -106,51 +136,72 @@ impl typeway_server::negotiate::RenderAsXml for ArticleResponse {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 #[serde(rename_all = "camelCase")]
 pub struct ArticlesResponse {
+    #[proto(tag = 1)]
     pub articles: Vec<ArticleBody>,
+    #[proto(tag = 2)]
     pub articles_count: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 #[serde(rename_all = "camelCase")]
 pub struct ArticleBody {
+    #[proto(tag = 1)]
     pub slug: String,
+    #[proto(tag = 2)]
     pub title: String,
+    #[proto(tag = 3)]
     pub description: String,
+    #[proto(tag = 4)]
     pub body: String,
+    #[proto(tag = 5)]
     pub tag_list: Vec<String>,
+    #[proto(tag = 6)]
     pub created_at: DateTime<Utc>,
+    #[proto(tag = 7)]
     pub updated_at: DateTime<Utc>,
+    #[proto(tag = 8)]
     pub favorited: bool,
+    #[proto(tag = 9)]
     pub favorites_count: i64,
+    #[proto(tag = 10)]
     pub author: ProfileBody,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 pub struct NewArticleRequest {
+    #[proto(tag = 1)]
     pub article: NewArticle,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 #[serde(rename_all = "camelCase")]
 pub struct NewArticle {
+    #[proto(tag = 1)]
     pub title: String,
+    #[proto(tag = 2)]
     pub description: String,
+    #[proto(tag = 3)]
     pub body: String,
+    #[proto(tag = 4)]
     pub tag_list: Option<Vec<String>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 pub struct UpdateArticleRequest {
+    #[proto(tag = 1)]
     pub article: UpdateArticle,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 pub struct UpdateArticle {
+    #[proto(tag = 1)]
     pub title: Option<String>,
+    #[proto(tag = 2)]
     pub description: Option<String>,
+    #[proto(tag = 3)]
     pub body: Option<String>,
 }
 
@@ -158,33 +209,42 @@ pub struct UpdateArticle {
 // Comment
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct CommentResponse {
+    #[proto(tag = 1)]
     pub comment: CommentBody,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct CommentsResponse {
+    #[proto(tag = 1)]
     pub comments: Vec<CommentBody>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 #[serde(rename_all = "camelCase")]
 pub struct CommentBody {
+    #[proto(tag = 1)]
     pub id: i32,
+    #[proto(tag = 2)]
     pub created_at: DateTime<Utc>,
+    #[proto(tag = 3)]
     pub updated_at: DateTime<Utc>,
+    #[proto(tag = 4)]
     pub body: String,
+    #[proto(tag = 5)]
     pub author: ProfileBody,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 pub struct NewCommentRequest {
+    #[proto(tag = 1)]
     pub comment: NewComment,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, ToProtoType)]
 pub struct NewComment {
+    #[proto(tag = 1)]
     pub body: String,
 }
 
@@ -192,8 +252,9 @@ pub struct NewComment {
 // Tags
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct TagsResponse {
+    #[proto(tag = 1)]
     pub tags: Vec<String>,
 }
 
@@ -223,14 +284,17 @@ impl typeway_server::negotiate::RenderAsXml for TagsResponse {
 // ---------------------------------------------------------------------------
 
 /// V2 tags response includes usage counts per tag — a common API evolution.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct TagsResponseV2 {
+    #[proto(tag = 1)]
     pub tags: Vec<TagWithCount>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct TagWithCount {
+    #[proto(tag = 1)]
     pub tag: String,
+    #[proto(tag = 2)]
     pub count: i64,
 }
 
@@ -249,9 +313,11 @@ impl std::fmt::Display for TagsResponseV2 {
 // Health check (V2 addition)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct HealthResponse {
+    #[proto(tag = 1)]
     pub status: String,
+    #[proto(tag = 2)]
     pub version: String,
 }
 
@@ -275,10 +341,13 @@ impl typeway_server::negotiate::RenderAsXml for TagsResponseV2 {
 // ---------------------------------------------------------------------------
 
 /// Site-wide statistics — total counts of users, articles, and comments.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct StatsResponse {
+    #[proto(tag = 1)]
     pub users: i64,
+    #[proto(tag = 2)]
     pub articles: i64,
+    #[proto(tag = 3)]
     pub comments: i64,
 }
 
@@ -286,20 +355,28 @@ pub struct StatsResponse {
 // User V3 — extended user response with created_at and article count
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 pub struct UserResponseV3 {
+    #[proto(tag = 1)]
     pub user: UserBodyV3,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ToProtoType)]
 #[serde(rename_all = "camelCase")]
 pub struct UserBodyV3 {
+    #[proto(tag = 1)]
     pub email: String,
+    #[proto(tag = 2)]
     pub token: String,
+    #[proto(tag = 3)]
     pub username: String,
+    #[proto(tag = 4)]
     pub bio: Option<String>,
+    #[proto(tag = 5)]
     pub image: Option<String>,
+    #[proto(tag = 6)]
     pub created_at: DateTime<Utc>,
+    #[proto(tag = 7)]
     pub articles_count: i64,
 }
 
@@ -340,242 +417,4 @@ pub struct ArticleRow {
     pub author_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-}
-
-// ---------------------------------------------------------------------------
-// gRPC: ToProtoType impls for proto generation
-// ---------------------------------------------------------------------------
-
-use typeway_grpc::ToProtoType;
-
-impl ToProtoType for UserResponse {
-    fn proto_type_name() -> &'static str { "UserResponse" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message UserResponse {\n  UserBody user = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for UserBody {
-    fn proto_type_name() -> &'static str { "UserBody" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message UserBody {\n  string email = 1;\n  string token = 2;\n  string username = 3;\n  optional string bio = 4;\n  optional string image = 5;\n}".to_string())
-    }
-}
-
-impl ToProtoType for UserResponseV3 {
-    fn proto_type_name() -> &'static str { "UserResponseV3" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message UserResponseV3 {\n  UserBodyV3 user = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for UserBodyV3 {
-    fn proto_type_name() -> &'static str { "UserBodyV3" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message UserBodyV3 {\n  string email = 1;\n  string token = 2;\n  string username = 3;\n  optional string bio = 4;\n  optional string image = 5;\n  string created_at = 6;\n  int64 articles_count = 7;\n}".to_string())
-    }
-}
-
-impl ToProtoType for NewUserRequest {
-    fn proto_type_name() -> &'static str { "NewUserRequest" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message NewUserRequest {\n  NewUser user = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for NewUser {
-    fn proto_type_name() -> &'static str { "NewUser" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message NewUser {\n  string username = 1;\n  string email = 2;\n  string password = 3;\n}".to_string())
-    }
-}
-
-impl ToProtoType for LoginRequest {
-    fn proto_type_name() -> &'static str { "LoginRequest" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message LoginRequest {\n  LoginUser user = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for LoginUser {
-    fn proto_type_name() -> &'static str { "LoginUser" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message LoginUser {\n  string email = 1;\n  string password = 2;\n}".to_string())
-    }
-}
-
-impl ToProtoType for UpdateUserRequest {
-    fn proto_type_name() -> &'static str { "UpdateUserRequest" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message UpdateUserRequest {\n  UpdateUser user = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for UpdateUser {
-    fn proto_type_name() -> &'static str { "UpdateUser" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message UpdateUser {\n  optional string email = 1;\n  optional string username = 2;\n  optional string password = 3;\n  optional string bio = 4;\n  optional string image = 5;\n}".to_string())
-    }
-}
-
-impl ToProtoType for ProfileResponse {
-    fn proto_type_name() -> &'static str { "ProfileResponse" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message ProfileResponse {\n  ProfileBody profile = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for ProfileBody {
-    fn proto_type_name() -> &'static str { "ProfileBody" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message ProfileBody {\n  string username = 1;\n  optional string bio = 2;\n  optional string image = 3;\n  bool following = 4;\n}".to_string())
-    }
-}
-
-impl ToProtoType for ArticleResponse {
-    fn proto_type_name() -> &'static str { "ArticleResponse" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message ArticleResponse {\n  ArticleBody article = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for ArticlesResponse {
-    fn proto_type_name() -> &'static str { "ArticlesResponse" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message ArticlesResponse {\n  repeated ArticleBody articles = 1;\n  int64 articles_count = 2;\n}".to_string())
-    }
-}
-
-impl ToProtoType for ArticleBody {
-    fn proto_type_name() -> &'static str { "ArticleBody" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message ArticleBody {\n  string slug = 1;\n  string title = 2;\n  string description = 3;\n  string body = 4;\n  repeated string tag_list = 5;\n  string created_at = 6;\n  string updated_at = 7;\n  bool favorited = 8;\n  int64 favorites_count = 9;\n  ProfileBody author = 10;\n}".to_string())
-    }
-}
-
-impl ToProtoType for NewArticleRequest {
-    fn proto_type_name() -> &'static str { "NewArticleRequest" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message NewArticleRequest {\n  NewArticle article = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for NewArticle {
-    fn proto_type_name() -> &'static str { "NewArticle" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message NewArticle {\n  string title = 1;\n  string description = 2;\n  string body = 3;\n  repeated string tag_list = 4;\n}".to_string())
-    }
-}
-
-impl ToProtoType for UpdateArticleRequest {
-    fn proto_type_name() -> &'static str { "UpdateArticleRequest" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message UpdateArticleRequest {\n  UpdateArticle article = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for UpdateArticle {
-    fn proto_type_name() -> &'static str { "UpdateArticle" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message UpdateArticle {\n  optional string title = 1;\n  optional string description = 2;\n  optional string body = 3;\n}".to_string())
-    }
-}
-
-impl ToProtoType for CommentResponse {
-    fn proto_type_name() -> &'static str { "CommentResponse" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message CommentResponse {\n  CommentBody comment = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for CommentsResponse {
-    fn proto_type_name() -> &'static str { "CommentsResponse" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message CommentsResponse {\n  repeated CommentBody comments = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for CommentBody {
-    fn proto_type_name() -> &'static str { "CommentBody" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message CommentBody {\n  int32 id = 1;\n  string created_at = 2;\n  string updated_at = 3;\n  string body = 4;\n  ProfileBody author = 5;\n}".to_string())
-    }
-}
-
-impl ToProtoType for NewCommentRequest {
-    fn proto_type_name() -> &'static str { "NewCommentRequest" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message NewCommentRequest {\n  NewComment comment = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for NewComment {
-    fn proto_type_name() -> &'static str { "NewComment" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message NewComment {\n  string body = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for TagsResponse {
-    fn proto_type_name() -> &'static str { "TagsResponse" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message TagsResponse {\n  repeated string tags = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for TagsResponseV2 {
-    fn proto_type_name() -> &'static str { "TagsResponseV2" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message TagsResponseV2 {\n  repeated TagWithCount tags = 1;\n}".to_string())
-    }
-}
-
-impl ToProtoType for TagWithCount {
-    fn proto_type_name() -> &'static str { "TagWithCount" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message TagWithCount {\n  string tag = 1;\n  int64 count = 2;\n}".to_string())
-    }
-}
-
-impl ToProtoType for HealthResponse {
-    fn proto_type_name() -> &'static str { "HealthResponse" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message HealthResponse {\n  string status = 1;\n  string version = 2;\n}".to_string())
-    }
-}
-
-impl ToProtoType for StatsResponse {
-    fn proto_type_name() -> &'static str { "StatsResponse" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message StatsResponse {\n  int64 users = 1;\n  int64 articles = 2;\n  int64 comments = 3;\n}".to_string())
-    }
 }

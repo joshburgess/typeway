@@ -9,7 +9,7 @@ typeway = { path = "../../typeway", features = ["server", "openapi"] }
 typeway-core = { path = "../../typeway-core" }
 typeway-macros = { path = "../../typeway-macros" }
 typeway-server = { path = "../../typeway-server", features = ["ws", "grpc"] }
-typeway-grpc = { path = "../../typeway-grpc" }
+typeway-grpc = { path = "../../typeway-grpc", features = ["chrono", "uuid"] }
 
 tokio = { version = "1", features = ["full"] }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1", "with-uuid-1"] }

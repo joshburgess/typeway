@@ -26,9 +26,10 @@
 //! 5. **Validation** (`Validated<V, E>` + `bind_validated!`):
 //!    Registration and article creation validated before the handler runs.
 //!
-//! 6. **gRPC** (`.with_grpc()` + `ToProtoType`):
+//! 6. **gRPC** (`.with_grpc()` + `.with_grpc_docs()` + `#[derive(ToProtoType)]`):
 //!    All 22 REST endpoints are also available as gRPC methods on the same port.
-//!    Set `GENERATE_PROTO=1` to emit `realworld.proto`.
+//!    Set `GENERATE_PROTO=1` to emit `realworld.proto` and `realworld-grpc-spec.json`.
+//!    Visit `/grpc-docs` for HTML documentation, `/grpc-spec` for the JSON spec.
 //!
 //! ## Running
 //!
@@ -44,6 +45,7 @@ mod db;
 mod handlers;
 mod models;
 
+use typeway_grpc::spec::ApiToGrpcSpec;
 use typeway_grpc::ApiToProto;
 use typeway_server::bind_validated;
 use typeway_server::tower_http::cors::CorsLayer;
@@ -113,24 +115,31 @@ async fn main() {
     .with_static_files("/static", &frontend_dir)
     .with_spa_fallback(format!("{frontend_dir}/index.html"));
 
-    // Generate .proto file on request (for demonstration).
+    // Generate .proto file and gRPC spec on request (for demonstration).
     if std::env::var("GENERATE_PROTO").is_ok() {
         let proto = RealWorldAPI::to_proto("RealWorldService", "realworld.v1");
         std::fs::write("realworld.proto", &proto).unwrap();
         println!("Generated realworld.proto");
+
+        let spec = RealWorldAPI::grpc_spec("RealWorldService", "realworld.v1");
+        let spec_json = serde_json::to_string_pretty(&spec).unwrap();
+        std::fs::write("realworld-grpc-spec.json", &spec_json).unwrap();
+        println!("Generated realworld-grpc-spec.json");
     }
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "4000".to_string());
     let addr = format!("0.0.0.0:{port}");
 
     println!("Typeway Word running on http://localhost:{port}");
-    println!("  Frontend: http://localhost:{port}/");
-    println!("  API:      http://localhost:{port}/api/");
-    println!("  Health:   http://localhost:{port}/api/health");
-    println!("  Search:   http://localhost:{port}/api/articles/search?q=type");
-    println!("  Stats:    http://localhost:{port}/api/stats");
-    println!("  gRPC:     grpc+json on the same port");
-    println!("  Static:   {frontend_dir}");
+    println!("  Frontend:   http://localhost:{port}/");
+    println!("  API:        http://localhost:{port}/api/");
+    println!("  Health:     http://localhost:{port}/api/health");
+    println!("  Search:     http://localhost:{port}/api/articles/search?q=type");
+    println!("  Stats:      http://localhost:{port}/api/stats");
+    println!("  gRPC:       grpc+json on the same port");
+    println!("  gRPC docs:  http://localhost:{port}/grpc-docs");
+    println!("  gRPC spec:  http://localhost:{port}/grpc-spec");
+    println!("  Static:     {frontend_dir}");
     println!();
     println!("22 endpoints (V3) + Elm frontend — 7 advanced features:");
     println!("  1. Effects:     CorsRequired enforced at compile time");
@@ -143,6 +152,7 @@ async fn main() {
 
     server
         .with_grpc("RealWorldService", "realworld.v1")
+        .with_grpc_docs()
         .layer(CorsLayer::permissive())
         .serve(addr.parse().unwrap())
         .await

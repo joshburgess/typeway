@@ -13,6 +13,8 @@ default = []
 client = ["dep:typeway-client", "dep:reqwest", "dep:url", "dep:thiserror"]
 test-client = ["dep:reqwest"]
 cli = ["dep:clap", "dep:anyhow"]
+chrono = ["dep:chrono"]
+uuid = ["dep:uuid"]
 
 [dependencies]
 typeway-core = { path = "../typeway-core" }
@@ -32,6 +34,8 @@ anyhow = { version = "1", optional = true }
 reqwest = { version = "0.12", features = ["json"], optional = true }
 url = { version = "2", optional = true }
 thiserror = { version = "2", optional = true }
+chrono = { version = "0.4", optional = true }
+uuid = { version = "1", optional = true }
 
 [dev-dependencies]
 typeway-macros = { path = "../typeway-macros" }

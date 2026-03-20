@@ -148,9 +148,33 @@ impl ToProtoType for () {
     }
 }
 
+impl ToProtoType for usize {
+    fn proto_type_name() -> &'static str {
+        "uint64"
+    }
+}
+
 impl ToProtoType for http::StatusCode {
     fn proto_type_name() -> &'static str {
         "int32"
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Optional third-party type mappings
+// ---------------------------------------------------------------------------
+
+#[cfg(feature = "chrono")]
+impl<Tz: chrono::TimeZone> ToProtoType for chrono::DateTime<Tz> {
+    fn proto_type_name() -> &'static str {
+        "string"
+    }
+}
+
+#[cfg(feature = "uuid")]
+impl ToProtoType for uuid::Uuid {
+    fn proto_type_name() -> &'static str {
+        "string"
     }
 }
 

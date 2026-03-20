@@ -349,11 +349,12 @@ Protected endpoints use `bind_auth!()` in the handler tuple, which verifies at c
 
 ### 9. Dual-Protocol gRPC
 
-A single method call enables gRPC (using grpc+json encoding) on the same port as REST:
+The same 22-endpoint API serves both REST and gRPC on the same port. Zero additional handler code -- the gRPC bridge translates between protocols automatically.
 
 ```rust
 server
     .with_grpc("RealWorldService", "realworld.v1")
+    .with_grpc_docs()  // enables GET /grpc-docs (HTML) and GET /grpc-spec (JSON)
     .layer(CorsLayer::permissive())
     .serve(addr)
     .await?;
@@ -361,11 +362,65 @@ server
 
 All 22 REST endpoints are automatically available as gRPC methods. The same handler functions serve both protocols -- incoming `application/grpc*` requests are translated to REST calls by the gRPC bridge, routed through the same handlers, and the response is translated back to gRPC framing.
 
-**Generate a `.proto` file:**
+**Try it:**
 
 ```sh
+# REST
+curl http://localhost:4000/api/tags
+
+# gRPC (using grpc+json encoding on the same port)
+curl -X POST http://localhost:4000/realworld.v1.RealWorldService/ListTag \
+  -H "content-type: application/grpc+json" \
+  -d '{}'
+```
+
+**gRPC Documentation:**
+
+```sh
+# Service documentation (HTML, like Swagger UI for gRPC)
+open http://localhost:4000/grpc-docs
+
+# Machine-readable service spec (JSON)
+curl http://localhost:4000/grpc-spec | jq .
+```
+
+**Proto Generation:**
+
+```sh
+# Generate the .proto file and gRPC spec from the API type
 GENERATE_PROTO=1 cargo run -p typeway-realworld
-# Writes realworld.proto with all service and message definitions
+# Creates: realworld.proto, realworld-grpc-spec.json
+```
+
+**Derive Macros:**
+
+All domain types use `#[derive(ToProtoType)]` with `#[proto(tag = N)]` for stable field numbering:
+
+```rust
+#[derive(Debug, Serialize, Deserialize, ToProtoType)]
+pub struct User {
+    #[proto(tag = 1)]
+    pub id: u32,
+    #[proto(tag = 2)]
+    pub name: String,
+    #[proto(tag = 3)]
+    pub email: String,
+}
+```
+
+The derive macro generates the same `ToProtoType` trait impls that were previously written by hand (~230 lines of manual impls replaced by derive attributes). Third-party types like `DateTime<Utc>` and `Uuid` still need manual impls in `models.rs` due to the orphan rule.
+
+**Health Check and Reflection:**
+
+```sh
+# gRPC health check
+curl -X POST http://localhost:4000/grpc.health.v1.Health/Check \
+  -H "content-type: application/grpc+json"
+
+# gRPC reflection (list services)
+curl -X POST http://localhost:4000/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo \
+  -H "content-type: application/grpc+json" \
+  -d '{"list_services":""}'
 ```
 
 The proto file is derived from the API type and the `ToProtoType` impls on the domain models. No separate `.proto` source is needed -- the Rust types are the source of truth.
@@ -471,7 +526,10 @@ curl -s -H "Accept: text/plain" http://localhost:4000/api/articles/phantom-types
 curl -s -H "Accept: application/xml" http://localhost:4000/api/articles/phantom-types-are-more-useful-than-you-think
 ```
 
-**6. Verify backward compatibility:**
+**6. Remove `#[derive(ToProtoType)]` from a model type:**
+Remove `ToProtoType` from the derive list on any model type (e.g., `UserResponse`). Run `cargo check`. The `.with_grpc()` call won't compile because the `GrpcReady` check fails -- every request and response type must implement `ToProtoType` for gRPC to work.
+
+**7. Verify backward compatibility:**
 In `api.rs`, uncomment the failing `assert_api_compatible!` block for V1->V3. Run `cargo check`. The compiler reports that the login endpoint is missing from V3 -- proving that V3 is not backward compatible with V1.
 
 ## Frontend
