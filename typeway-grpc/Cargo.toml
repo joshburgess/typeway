@@ -7,6 +7,10 @@ edition = "2021"
 typeway-core = { path = "../typeway-core" }
 http = "1"
 indexmap = "2"
+tower-service = "0.3"
+hyper = { version = "1", features = ["full"] }
+http-body-util = "0.1"
+bytes = "1"
 
 [dev-dependencies]
 typeway-macros = { path = "../typeway-macros" }

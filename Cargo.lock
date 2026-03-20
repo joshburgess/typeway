@@ -3010,8 +3010,12 @@ dependencies = [
 name = "typeway-grpc"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "http",
+ "http-body-util",
+ "hyper",
  "indexmap",
+ "tower-service",
  "typeway-core",
  "typeway-macros",
 ]
