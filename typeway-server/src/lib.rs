@@ -56,7 +56,7 @@ pub use server::{serve, LayeredServer, Server};
 pub use serves::Serves;
 
 #[cfg(feature = "grpc")]
-pub use grpc::GrpcServer;
+pub use grpc::{GrpcServer, LayeredGrpcServer};
 
 /// Re-export tower-http for middleware layers.
 pub use tower_http;

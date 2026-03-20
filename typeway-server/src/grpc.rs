@@ -156,6 +156,132 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
     pub fn service_descriptor(&self) -> GrpcServiceDescriptor {
         A::service_descriptor(&self.service_name, &self.package)
     }
+
+    /// Apply a Tower middleware layer.
+    ///
+    /// The layer wraps the entire multiplexer service (both REST and gRPC).
+    /// This is the equivalent of [`Server::layer`](crate::server::Server::layer)
+    /// for the gRPC server.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// server
+    ///     .with_grpc("Svc", "pkg.v1")
+    ///     .layer(CorsLayer::permissive())
+    ///     .serve(addr)
+    ///     .await?;
+    /// ```
+    pub fn layer<L>(self, layer: L) -> LayeredGrpcServer<A, L::Service>
+    where
+        L: tower_layer::Layer<Multiplexer>,
+        L::Service: tower_service::Service<
+                http::Request<hyper::body::Incoming>,
+                Response = http::Response<BoxBody>,
+                Error = Infallible,
+            > + Clone
+            + Send
+            + 'static,
+        <L::Service as tower_service::Service<http::Request<hyper::body::Incoming>>>::Future:
+            Send + 'static,
+    {
+        let descriptor = Arc::new(A::service_descriptor(&self.service_name, &self.package));
+        let multiplexer = Multiplexer {
+            rest: RouterService::new(self.router.clone()),
+            grpc_descriptor: descriptor,
+            router: self.router,
+        };
+        LayeredGrpcServer {
+            service: layer.layer(multiplexer),
+            _api: PhantomData,
+        }
+    }
+}
+
+/// A gRPC+REST server with Tower middleware layers applied.
+///
+/// Created by [`GrpcServer::layer`]. Supports `.serve()` for starting the server.
+pub struct LayeredGrpcServer<A: ApiSpec, S> {
+    service: S,
+    _api: PhantomData<A>,
+}
+
+impl<A, S> LayeredGrpcServer<A, S>
+where
+    A: ApiSpec + CollectRpcs,
+    S: tower_service::Service<
+            http::Request<hyper::body::Incoming>,
+            Response = http::Response<BoxBody>,
+            Error = Infallible,
+        > + Clone
+        + Send
+        + 'static,
+    S::Future: Send + 'static,
+{
+    /// Start serving both REST and gRPC.
+    pub async fn serve(
+        self,
+        addr: SocketAddr,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let listener = TcpListener::bind(addr).await?;
+        tracing::info!("Listening on http://{addr} (REST + gRPC, layered)");
+        self.serve_with_shutdown(listener, std::future::pending())
+            .await
+    }
+
+    /// Start serving with graceful shutdown.
+    pub async fn serve_with_shutdown(
+        self,
+        listener: TcpListener,
+        shutdown: impl Future<Output = ()> + Send,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let svc = self.service;
+        tokio::pin!(shutdown);
+
+        loop {
+            tokio::select! {
+                result = listener.accept() => {
+                    let (stream, _) = result?;
+                    let io = TokioIo::new(stream);
+                    let svc = svc.clone();
+                    let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
+
+                    tokio::task::spawn(async move {
+                        if let Err(e) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+                            .serve_connection(io, hyper_svc)
+                            .await
+                        {
+                            tracing::debug!("Connection closed: {e}");
+                        }
+                    });
+                }
+                () = &mut shutdown => {
+                    tracing::info!("Shutting down gracefully...");
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    /// Apply another Tower middleware layer.
+    pub fn layer<L>(self, layer: L) -> LayeredGrpcServer<A, L::Service>
+    where
+        L: tower_layer::Layer<S>,
+        L::Service: tower_service::Service<
+                http::Request<hyper::body::Incoming>,
+                Response = http::Response<BoxBody>,
+                Error = Infallible,
+            > + Clone
+            + Send
+            + 'static,
+        <L::Service as tower_service::Service<http::Request<hyper::body::Incoming>>>::Future:
+            Send + 'static,
+    {
+        LayeredGrpcServer {
+            service: layer.layer(self.service),
+            _api: PhantomData,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -164,11 +290,14 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
 
 /// Routes requests to either the REST router or the gRPC bridge based on
 /// the `content-type` header.
+///
+/// This type is exposed so that Tower layers can be applied over the
+/// combined REST + gRPC service via [`GrpcServer::layer`].
 #[derive(Clone)]
-struct Multiplexer {
-    rest: RouterService,
-    grpc_descriptor: Arc<GrpcServiceDescriptor>,
-    router: Arc<Router>,
+pub struct Multiplexer {
+    pub(crate) rest: RouterService,
+    pub(crate) grpc_descriptor: Arc<GrpcServiceDescriptor>,
+    pub(crate) router: Arc<Router>,
 }
 
 impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexer {
@@ -268,4 +397,24 @@ pub(crate) fn make_grpc_server<A: ApiSpec + CollectRpcs>(
     package: &str,
 ) -> GrpcServer<A> {
     GrpcServer::new(router, service_name.to_string(), package.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// EndpointToRpc / CollectRpcs delegation for wrapper types
+// ---------------------------------------------------------------------------
+
+use typeway_grpc::{EndpointToRpc, RpcMethod};
+
+/// `Protected<Auth, E>` delegates gRPC mapping to the inner endpoint.
+impl<Auth, E: EndpointToRpc> EndpointToRpc for crate::auth::Protected<Auth, E> {
+    fn to_rpc() -> RpcMethod {
+        E::to_rpc()
+    }
+}
+
+/// `Validated<V, E>` delegates gRPC mapping to the inner endpoint.
+impl<V: Send + Sync + 'static, E: EndpointToRpc> EndpointToRpc for crate::typed::Validated<V, E> {
+    fn to_rpc() -> RpcMethod {
+        E::to_rpc()
+    }
 }

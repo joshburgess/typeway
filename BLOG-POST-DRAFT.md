@@ -489,9 +489,9 @@ The whole system is a shallow embedding of an API description language into Rust
 
 ---
 
-## Beyond Servant: Three Features Haskell Doesn't Have
+## Beyond Servant: Four Features Haskell Doesn't Have
 
-Typeway started as a Servant port, but three recent features push it past what Servant offers — or what Haskell can express naturally without experimental extensions.
+Typeway started as a Servant port, but four recent features push it past what Servant offers — or what Haskell can express naturally without experimental extensions.
 
 ### Session-Typed WebSockets
 
@@ -586,6 +586,40 @@ assert_api_compatible!(
 This fails to compile if either endpoint is missing from `V2Resolved`. The error points at the specific endpoint that's absent. Endpoints that were intentionally replaced or removed are simply omitted from the compatibility check — the change markers document the intent, and the check covers what must be preserved.
 
 Nothing like this exists in Servant. Haskell's type system is powerful enough to express it, but nobody has built it — Servant APIs are versioned by maintaining separate type aliases with no typed relationship between them. Typeway makes API evolution a first-class concept in the type system, with machine-checkable backward compatibility guarantees.
+
+### gRPC from the Same API Type
+
+The same type that drives the REST server, the type-safe client, and the OpenAPI spec now also generates Protocol Buffers service definitions and serves gRPC alongside REST on the same port. One API type, five projections: server, client, OpenAPI, `.proto` schema, and gRPC service.
+
+Generating a `.proto` file is a single method call:
+
+```rust
+let proto = API::to_proto("UserService", "users.v1");
+// Outputs:
+//   syntax = "proto3";
+//   package users.v1;
+//
+//   service UserService {
+//     rpc ListUsers(Empty) returns (UserList);
+//     rpc GetUser(GetUserRequest) returns (User);
+//     rpc CreateUser(CreateUser) returns (User);
+//     rpc DeleteUser(DeleteUserRequest) returns (Empty);
+//   }
+//   ...
+```
+
+Serving gRPC alongside REST is a one-liner on the server builder:
+
+```rust
+Server::<API>::new(handlers)
+    .with_grpc("UserService", "users.v1")
+    .serve(addr)
+    .await?;
+```
+
+The gRPC layer uses Tonic under the hood, sharing the same Tower middleware and Tokio runtime. Handlers are reused — a single handler implementation serves both REST and gRPC requests. The `typeway-grpc` CLI can also go the other direction, generating Typeway API types from an existing `.proto` file.
+
+Servant has no gRPC story at all. The Haskell gRPC ecosystem (`grpc-haskell`, `proto-lens`) is completely separate from Servant — different type hierarchies, different code generation pipelines, different middleware stacks. If you want both REST and gRPC in a Haskell service, you maintain two independent API definitions with no shared types or handlers. Typeway unifies REST and gRPC under one type, one set of handlers, and one middleware stack. I'm not aware of any other web framework in any language that derives both REST and gRPC from a single type-level API definition.
 
 ---
 

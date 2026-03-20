@@ -26,6 +26,10 @@
 //! 5. **Validation** (`Validated<V, E>` + `bind_validated!`):
 //!    Registration and article creation validated before the handler runs.
 //!
+//! 6. **gRPC** (`.with_grpc()` + `ToProtoType`):
+//!    All 22 REST endpoints are also available as gRPC methods on the same port.
+//!    Set `GENERATE_PROTO=1` to emit `realworld.proto`.
+//!
 //! ## Running
 //!
 //! ```sh
@@ -40,8 +44,8 @@ mod db;
 mod handlers;
 mod models;
 
+use typeway_grpc::ApiToProto;
 use typeway_server::bind_validated;
-use typeway_server::request_id::RequestIdLayer;
 use typeway_server::tower_http::cors::CorsLayer;
 use typeway_server::{bind, bind_auth, EffectfulServer};
 
@@ -96,18 +100,25 @@ async fn main() {
         bind!(handlers::get_stats),
         bind_auth!(handlers::delete_account),
     ))
-    // Provide the CorsRequired effect, then apply the actual middleware.
-    // This is the compile-time enforcement: the type says "I need CORS",
-    // and .provide() + .layer() satisfies that requirement.
+    // Provide the CorsRequired effect. The type says "I need CORS", and
+    // .provide() satisfies the compile-time check. The actual CorsLayer is
+    // applied below via .layer() on the GrpcServer, wrapping the multiplexer.
+    //
+    // TRY: Comment out `.provide::<CorsRequired>()` and run `cargo check`.
     .provide::<typeway_core::effects::CorsRequired>()
-    .layer(CorsLayer::permissive())
     // .ready() converts to a regular Server. Only compiles if all effects
     // in the API type have been provided.
     .ready()
     .with_state(pool)
     .with_static_files("/static", &frontend_dir)
-    .with_spa_fallback(format!("{frontend_dir}/index.html"))
-    .layer(RequestIdLayer::new());
+    .with_spa_fallback(format!("{frontend_dir}/index.html"));
+
+    // Generate .proto file on request (for demonstration).
+    if std::env::var("GENERATE_PROTO").is_ok() {
+        let proto = RealWorldAPI::to_proto("RealWorldService", "realworld.v1");
+        std::fs::write("realworld.proto", &proto).unwrap();
+        println!("Generated realworld.proto");
+    }
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "4000".to_string());
     let addr = format!("0.0.0.0:{port}");
@@ -118,15 +129,22 @@ async fn main() {
     println!("  Health:   http://localhost:{port}/api/health");
     println!("  Search:   http://localhost:{port}/api/articles/search?q=type");
     println!("  Stats:    http://localhost:{port}/api/stats");
+    println!("  gRPC:     grpc+json on the same port");
     println!("  Static:   {frontend_dir}");
     println!();
-    println!("22 endpoints (V3) + Elm frontend — 6 advanced features:");
+    println!("22 endpoints (V3) + Elm frontend — 7 advanced features:");
     println!("  1. Effects:     CorsRequired enforced at compile time");
     println!("  2. Negotiation: curl -H 'Accept: application/xml' localhost:{port}/api/tags");
     println!("  3. Versioning:  V1->V2->V3 with assert_api_compatible! (api.rs)");
     println!("  4. WebSocket:   Session-typed protocol (handlers.rs::ws_feed)");
     println!("  5. Validation:  Registration + article creation (api.rs)");
     println!("  6. XML support: Tags + articles support JSON/text/XML negotiation");
+    println!("  7. gRPC:        Same handlers serve REST and gRPC (grpc+json bridge)");
 
-    server.serve(addr.parse().unwrap()).await.unwrap();
+    server
+        .with_grpc("RealWorldService", "realworld.v1")
+        .layer(CorsLayer::permissive())
+        .serve(addr.parse().unwrap())
+        .await
+        .unwrap();
 }

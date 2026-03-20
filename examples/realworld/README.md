@@ -2,7 +2,7 @@
 
 A full [RealWorld](https://github.com/gothinkster/realworld) (Medium clone) implementation showcasing every advanced feature of the typeway web framework.
 
-This is not a toy example. It implements the complete RealWorld API spec -- user registration, authentication, articles, comments, favorites, tags, profiles, and following -- plus six additional features that demonstrate what type-level web programming makes possible.
+This is not a toy example. It implements the complete RealWorld API spec -- user registration, authentication, articles, comments, favorites, tags, profiles, and following -- plus seven additional features that demonstrate what type-level web programming makes possible.
 
 ## What This Example Demonstrates
 
@@ -14,6 +14,7 @@ This is not a toy example. It implements the complete RealWorld API spec -- user
 6. **Session-Typed WebSocket Protocol** -- The live article feed protocol is encoded as a session type. Each `.send()` transitions the channel state. Calling `.recv()` in a send state is a compile error.
 7. **Request Body Validation** -- Registration and article creation use `Validated<V, E>` wrappers that reject invalid JSON with 422 before the handler runs.
 8. **JWT Authentication** -- `Protected<AuthUser, E>` endpoints enforce that the handler accepts `AuthUser` as its first argument.
+9. **Dual-Protocol gRPC** -- A single `.with_grpc("RealWorldService", "realworld.v1")` call enables gRPC (grpc+json) on the same port, reusing all existing handlers.
 
 ## Architecture
 
@@ -345,6 +346,29 @@ pub async fn get_current_user_v3(
 `OptionalAuth` is also available for endpoints that work with or without authentication (e.g., article listing shows different data for authenticated users).
 
 Protected endpoints use `bind_auth!()` in the handler tuple, which verifies at compile time that the handler's first argument is the auth type.
+
+### 9. Dual-Protocol gRPC
+
+A single method call enables gRPC (using grpc+json encoding) on the same port as REST:
+
+```rust
+server
+    .with_grpc("RealWorldService", "realworld.v1")
+    .layer(CorsLayer::permissive())
+    .serve(addr)
+    .await?;
+```
+
+All 22 REST endpoints are automatically available as gRPC methods. The same handler functions serve both protocols -- incoming `application/grpc*` requests are translated to REST calls by the gRPC bridge, routed through the same handlers, and the response is translated back to gRPC framing.
+
+**Generate a `.proto` file:**
+
+```sh
+GENERATE_PROTO=1 cargo run -p typeway-realworld
+# Writes realworld.proto with all service and message definitions
+```
+
+The proto file is derived from the API type and the `ToProtoType` impls on the domain models. No separate `.proto` source is needed -- the Rust types are the source of truth.
 
 ## Running with Docker (recommended)
 

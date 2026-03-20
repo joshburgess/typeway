@@ -172,6 +172,10 @@ impl<Inner: EndpointToRpc> EndpointToRpc for typeway_core::versioning::Deprecate
 // CollectRpcs trait
 // ---------------------------------------------------------------------------
 
+// Forward declaration; the trait and blanket impl are below. Wrapper impls
+// that need `CollectRpcs` (not just `EndpointToRpc`) are placed after the
+// trait definition.
+
 /// Collect RPC method descriptors from an endpoint or tuple of endpoints.
 pub trait CollectRpcs {
     /// Collect all RPC methods into a `Vec`.
@@ -218,6 +222,20 @@ impl_collect_rpcs_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, 
 impl_collect_rpcs_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T);
 impl_collect_rpcs_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U);
 impl_collect_rpcs_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V);
+
+// ---------------------------------------------------------------------------
+// CollectRpcs for wrapper types that contain full API tuples
+// ---------------------------------------------------------------------------
+
+/// `VersionedApi<B, C, R>` delegates RPC collection to the resolved API type.
+impl<B, C, R> CollectRpcs for typeway_core::versioning::VersionedApi<B, C, R>
+where
+    R: typeway_core::ApiSpec + CollectRpcs,
+{
+    fn collect_rpcs() -> Vec<RpcMethod> {
+        R::collect_rpcs()
+    }
+}
 
 // ---------------------------------------------------------------------------
 // ApiToProto trait

@@ -17,8 +17,8 @@ Updated status of all planned work. Checked items are complete.
 
 - [x] **Client ergonomics** — `client_api!` macro, interceptors, cookies, streaming, per-call builder, `TypedResponse`, query params, Accept header, tracing
 - [x] **OpenAPI enhancements** — `ExampleValue`, security schemes from `Protected`, auto-tag grouping, deprecated marking, `EndpointToOperation` for wrappers
-- [ ] **OpenAPI: doc comment extraction** — Extract handler/struct doc comments into OpenAPI description fields. Requires proc-macro or build script to read source.
-- [ ] **gRPC / Tonic interop** — Design analysis complete (see GRPC-INTEROP-DESIGN.md). Items 1-3 work today (shared middleware, side-by-side serving, dual serialization). Item 4 (API type → .proto generation) is a v0.2 feature.
+- [ ] **OpenAPI: struct field doc comment extraction** — Function-level doc comments are extracted, but struct field doc comments are not yet propagated into OpenAPI schema property descriptions. Requires proc-macro or build script to read source.
+- [x] **gRPC / Tonic interop** — Fully implemented in `typeway-grpc`. API type generates `.proto` files via `API::to_proto()`, gRPC served alongside REST via `.with_grpc()`, shared handlers and Tower middleware. CLI tool `typeway-grpc api-from-proto` generates Typeway types from existing `.proto` files.
 - [ ] **Publish to crates.io** — On hold per user request.
 
 ---

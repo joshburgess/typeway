@@ -3089,6 +3089,7 @@ dependencies = [
  "tokio-postgres",
  "typeway",
  "typeway-core",
+ "typeway-grpc",
  "typeway-macros",
  "typeway-server",
  "uuid",

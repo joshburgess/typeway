@@ -85,6 +85,7 @@ typeway = "0.1"
 | `tls` | no | HTTPS via tokio-rustls |
 | `ws` | no | WebSocket upgrade support |
 | `multipart` | no | Multipart form upload (file uploads) |
+| `grpc` | no | gRPC serving + .proto generation (Tonic) |
 | `full` | no | server + client + openapi |
 
 ## Workspace Structure
@@ -97,6 +98,7 @@ typeway = "0.1"
 | `typeway-client` | Type-safe HTTP client |
 | `typeway-openapi` | OpenAPI 3.1 spec derivation |
 | `typeway-macros` | Proc macros (`typeway_path!`, `#[handler]`, `#[api_description]`) |
+| `typeway-grpc` | gRPC/Protocol Buffers generation and serving via Tonic |
 
 ## What Makes Typeway Different
 
@@ -371,6 +373,38 @@ The `ApiChangelog` trait provides runtime introspection of the change set — ho
 
 **Why it matters:** API versioning is typically a runtime or documentation concern — you maintain separate route registrations for V1 and V2 and hope they stay consistent. With typed deltas, the relationship between versions is encoded in the type system. Breaking changes are visible in the types, and backward compatibility is a compile-time assertion, not a test you might forget to write.
 
+## gRPC / Protocol Buffers
+
+With the `grpc` feature, the same API type that drives your REST server, client, and OpenAPI spec also generates Protocol Buffers service definitions and serves gRPC alongside REST.
+
+Generate a `.proto` file from your API type:
+
+```rust
+use typeway_grpc::ApiToProto;
+
+let proto = API::to_proto("UserService", "users.v1");
+std::fs::write("users.proto", proto)?;
+```
+
+Serve gRPC and REST on the same port:
+
+```rust
+Server::<API>::new(handlers)
+    .with_grpc("UserService", "users.v1")
+    .serve(addr)
+    .await?;
+```
+
+The gRPC layer uses Tonic under the hood, sharing the same Tower middleware stack and Tokio runtime as the REST server. Handlers are reused — a single handler implementation serves both REST and gRPC requests.
+
+For the reverse direction — importing an existing `.proto` file and generating Typeway API types — the `typeway-grpc` CLI provides:
+
+```sh
+typeway-grpc api-from-proto --file service.proto
+```
+
+This outputs the `typeway_path!` declarations, endpoint types, and request/response struct definitions corresponding to the proto service, giving you a starting point for a type-safe Typeway server that matches an existing gRPC contract.
+
 ## Performance: The Cost of Type Safety
 
 Type-level frameworks invite skepticism about runtime cost. Typeway's type erasure and extractor machinery add overhead — but we've measured it, and it's negligible compared to real handler work.
@@ -430,6 +464,7 @@ Typeway trades ~1 µs of dispatch overhead for compile-time guarantees that elim
 | Session-typed WebSockets | Yes | No | No | No | No |
 | Content negotiation (type-level) | Yes | No | No | No | Partial (via servant-content-types) |
 | Type-level API versioning | Yes | No | No | No | No |
+| gRPC from API type | Yes | No | No | No | No |
 | Stable Rust | Yes | Yes | Yes | Yes | N/A |
 
 ## How Typeway Improves on Servant
