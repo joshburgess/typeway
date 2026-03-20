@@ -614,6 +614,19 @@ impl<V: Send + Sync + 'static, E: EndpointToRpc> EndpointToRpc for crate::typed:
 }
 
 // ---------------------------------------------------------------------------
+// GrpcReady delegation for server-specific wrapper types
+// ---------------------------------------------------------------------------
+
+/// `Protected<Auth, E>` is gRPC-ready if the inner endpoint is.
+impl<Auth, E: typeway_grpc::GrpcReady> typeway_grpc::GrpcReady for crate::auth::Protected<Auth, E> {}
+
+/// `Validated<V, E>` is gRPC-ready if the inner endpoint is.
+impl<V: Send + Sync + 'static, E: typeway_grpc::GrpcReady> typeway_grpc::GrpcReady
+    for crate::typed::Validated<V, E>
+{
+}
+
+// ---------------------------------------------------------------------------
 // BindableEndpoint delegation for streaming wrapper types
 // ---------------------------------------------------------------------------
 

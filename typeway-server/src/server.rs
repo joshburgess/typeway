@@ -446,7 +446,7 @@ impl<A: ApiSpec> Server<A> {
     #[cfg(feature = "grpc")]
     pub fn with_grpc(self, service_name: &str, package: &str) -> crate::grpc::GrpcServer<A>
     where
-        A: typeway_grpc::CollectRpcs,
+        A: typeway_grpc::CollectRpcs + typeway_grpc::GrpcReady,
     {
         crate::grpc::make_grpc_server(self.router, service_name, package)
     }

@@ -79,7 +79,7 @@ pub use typeway_client::{CallEndpoint, Client, ClientError};
 // --- gRPC (feature = "grpc") ---
 #[cfg(feature = "grpc")]
 pub use typeway_grpc::{
-    ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcCode, GrpcMultiplexer,
+    ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcCode, GrpcMultiplexer, GrpcReady,
     GrpcServiceDescriptor, ToProtoType,
 };
 #[cfg(feature = "grpc")]
@@ -112,7 +112,7 @@ pub mod prelude {
 
     #[cfg(feature = "grpc")]
     pub use typeway_grpc::{
-        ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcCode, GrpcMultiplexer,
+        ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcCode, GrpcMultiplexer, GrpcReady,
         GrpcServiceDescriptor, ToProtoType,
     };
     #[cfg(feature = "grpc")]
