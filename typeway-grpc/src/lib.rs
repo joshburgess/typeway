@@ -83,6 +83,7 @@ pub mod client;
 pub mod interceptors;
 pub mod codegen;
 pub mod diff;
+pub mod error_details;
 pub mod framing;
 pub mod health;
 pub mod mapping;
@@ -99,6 +100,8 @@ pub mod status;
 pub mod streaming;
 #[cfg(feature = "test-client")]
 pub mod test_client;
+#[cfg(feature = "tonic-compat")]
+pub mod tonic_compat;
 #[cfg(feature = "proto-binary")]
 pub mod transcode;
 pub mod validate;
@@ -115,6 +118,11 @@ pub use transcode::{
     TranscodeError,
 };
 pub use diff::{diff_protos, ChangeKind, ProtoChange};
+pub use error_details::{
+    BadRequest, DebugInfo, ErrorDetail, ErrorInfo, FieldViolation, Help, HelpLink,
+    IntoRichGrpcStatus, LocalizedMessage, PreconditionFailure, PreconditionViolation, QuotaFailure,
+    QuotaViolation, ResourceInfo, RetryInfo, RichGrpcStatus,
+};
 #[cfg(feature = "client")]
 pub use client::GrpcClientError;
 #[cfg(feature = "client")]
@@ -139,3 +147,5 @@ pub use web::{
 };
 #[cfg(feature = "test-client")]
 pub use test_client::{GrpcStreamingResponse, GrpcTestClient, GrpcTestResponse};
+#[cfg(feature = "tonic-compat")]
+pub use tonic_compat::{json_to_prost, prost_to_json, Protobuf, ProtobufError};

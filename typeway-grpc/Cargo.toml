@@ -16,6 +16,7 @@ cli = ["dep:clap", "dep:anyhow"]
 chrono = ["dep:chrono"]
 uuid = ["dep:uuid"]
 proto-binary = []
+tonic-compat = ["dep:prost", "dep:tonic"]
 
 [dependencies]
 typeway-core = { path = "../typeway-core" }
@@ -37,6 +38,8 @@ url = { version = "2", optional = true }
 thiserror = { version = "2", optional = true }
 chrono = { version = "0.4", optional = true }
 uuid = { version = "1", optional = true }
+prost = { version = "0.13", optional = true }
+tonic = { version = "0.12", optional = true, default-features = false }
 
 [dev-dependencies]
 typeway-macros = { path = "../typeway-macros" }

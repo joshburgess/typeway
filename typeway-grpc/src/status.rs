@@ -253,6 +253,32 @@ impl GrpcStatus {
         }
     }
 
+    /// Convert to a [`RichGrpcStatus`](crate::error_details::RichGrpcStatus)
+    /// with no details attached.
+    ///
+    /// Use this as a starting point to add structured error details:
+    ///
+    /// ```
+    /// use typeway_grpc::status::GrpcStatus;
+    /// use typeway_grpc::error_details::{BadRequest, FieldViolation};
+    ///
+    /// let rich = GrpcStatus::invalid_argument("bad input")
+    ///     .into_rich()
+    ///     .with_bad_request(BadRequest {
+    ///         field_violations: vec![FieldViolation {
+    ///             field: "email".to_string(),
+    ///             description: "invalid format".to_string(),
+    ///         }],
+    ///     });
+    /// ```
+    pub fn into_rich(self) -> crate::error_details::RichGrpcStatus {
+        crate::error_details::RichGrpcStatus {
+            code: self.code.as_i32(),
+            message: self.message,
+            details: Vec::new(),
+        }
+    }
+
     /// Convert to gRPC response headers.
     ///
     /// Always includes `grpc-status`. Includes `grpc-message` only when
