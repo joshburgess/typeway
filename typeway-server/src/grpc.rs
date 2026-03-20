@@ -8,6 +8,9 @@
 //!   translates them into REST requests and forwards them to the same handlers.
 //! - All other requests are handled by the normal REST router.
 //!
+//! Built-in gRPC services (reflection and health check) are handled directly
+//! by the multiplexer without going through the REST bridge.
+//!
 //! # Example
 //!
 //! ```ignore
@@ -30,11 +33,13 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpListener;
 
 use typeway_core::ApiSpec;
+use typeway_grpc::health::HealthService;
+use typeway_grpc::reflection::ReflectionService;
 use typeway_grpc::service::{ApiToServiceDescriptor, GrpcServiceDescriptor};
 use typeway_grpc::status::http_to_grpc_code;
 use typeway_grpc::CollectRpcs;
 
-use crate::body::{empty_body, BoxBody};
+use crate::body::{body_from_string, empty_body, BoxBody};
 use crate::router::{Router, RouterService};
 
 /// A server that serves both REST and gRPC on the same port.
@@ -42,6 +47,12 @@ use crate::router::{Router, RouterService};
 /// Created by [`Server::with_grpc`](crate::server::Server::with_grpc).
 /// The gRPC bridge translates incoming gRPC calls into REST requests,
 /// routing them through the same handler logic.
+///
+/// Includes built-in support for:
+/// - **Server reflection** (`grpc.reflection.v1alpha`) — enabled by default,
+///   allows tools like `grpcurl` to discover available services.
+/// - **Health checking** (`grpc.health.v1.Health/Check`) — always enabled,
+///   with a runtime-toggleable serving status for graceful shutdown.
 ///
 /// # Type parameter
 ///
@@ -51,16 +62,24 @@ pub struct GrpcServer<A: ApiSpec> {
     router: Arc<Router>,
     service_name: String,
     package: String,
+    reflection: ReflectionService,
+    health: HealthService,
+    reflection_enabled: bool,
     _api: PhantomData<A>,
 }
 
 impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
     /// Create a new `GrpcServer` wrapping the given router.
     pub(crate) fn new(router: Arc<Router>, service_name: String, package: String) -> Self {
+        let reflection = ReflectionService::from_api::<A>(&service_name, &package);
+        let health = HealthService::new();
         GrpcServer {
             router,
             service_name,
             package,
+            reflection,
+            health,
+            reflection_enabled: true,
             _api: PhantomData,
         }
     }
@@ -72,6 +91,31 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
             ext.insert(state.clone());
         }));
         self
+    }
+
+    /// Enable or disable gRPC server reflection.
+    ///
+    /// Reflection is enabled by default. When enabled, gRPC clients can
+    /// discover available services at runtime (e.g., `grpcurl -plaintext
+    /// localhost:3000 list`).
+    pub fn with_reflection(mut self, enabled: bool) -> Self {
+        self.reflection_enabled = enabled;
+        self
+    }
+
+    /// Get a handle to the health service.
+    ///
+    /// Use this to toggle the serving status during graceful shutdown:
+    ///
+    /// ```ignore
+    /// let grpc = server.with_grpc("Svc", "pkg.v1");
+    /// let health = grpc.health_service();
+    ///
+    /// // In a shutdown hook:
+    /// health.set_not_serving();
+    /// ```
+    pub fn health_service(&self) -> HealthService {
+        self.health.clone()
     }
 
     /// Set a path prefix for all routes.
@@ -102,6 +146,10 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
             self.package,
             self.service_name
         );
+        if self.reflection_enabled {
+            tracing::info!("  gRPC reflection: enabled");
+        }
+        tracing::info!("  gRPC health check: enabled");
         self.serve_with_shutdown(listener, std::future::pending())
             .await
     }
@@ -121,6 +169,9 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
             rest: RouterService::new(self.router.clone()),
             grpc_descriptor: descriptor,
             router: self.router,
+            reflection: Arc::new(self.reflection),
+            health: self.health,
+            reflection_enabled: self.reflection_enabled,
         };
 
         tokio::pin!(shutdown);
@@ -190,6 +241,9 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
             rest: RouterService::new(self.router.clone()),
             grpc_descriptor: descriptor,
             router: self.router,
+            reflection: Arc::new(self.reflection),
+            health: self.health,
+            reflection_enabled: self.reflection_enabled,
         };
         LayeredGrpcServer {
             service: layer.layer(multiplexer),
@@ -291,6 +345,10 @@ where
 /// Routes requests to either the REST router or the gRPC bridge based on
 /// the `content-type` header.
 ///
+/// For gRPC requests, built-in services (reflection and health check) are
+/// handled directly before falling through to the REST bridge for
+/// application-defined methods.
+///
 /// This type is exposed so that Tower layers can be applied over the
 /// combined REST + gRPC service via [`GrpcServer::layer`].
 #[derive(Clone)]
@@ -298,6 +356,24 @@ pub struct Multiplexer {
     pub(crate) rest: RouterService,
     pub(crate) grpc_descriptor: Arc<GrpcServiceDescriptor>,
     pub(crate) router: Arc<Router>,
+    pub(crate) reflection: Arc<ReflectionService>,
+    pub(crate) health: HealthService,
+    pub(crate) reflection_enabled: bool,
+}
+
+/// Build a gRPC JSON response with the given body and status code 0 (OK).
+fn grpc_json_response(json_body: &str) -> http::Response<BoxBody> {
+    let mut res = http::Response::new(body_from_string(json_body.to_string()));
+    *res.status_mut() = http::StatusCode::OK;
+    res.headers_mut().insert(
+        "grpc-status",
+        http::HeaderValue::from_static("0"),
+    );
+    res.headers_mut().insert(
+        "content-type",
+        http::HeaderValue::from_static("application/grpc+json"),
+    );
+    res
 }
 
 impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexer {
@@ -313,11 +389,36 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
         if typeway_grpc::is_grpc_request(&req) {
             let descriptor = self.grpc_descriptor.clone();
             let router = self.router.clone();
+            let reflection = self.reflection.clone();
+            let health = self.health.clone();
+            let reflection_enabled = self.reflection_enabled;
 
             Box::pin(async move {
                 let grpc_path = req.uri().path().to_string();
 
-                // Find the matching gRPC method.
+                // Handle built-in gRPC services before method lookup.
+
+                // 1. Health check service.
+                if HealthService::is_health_path(&grpc_path) {
+                    let response_json = health.handle_request();
+                    return Ok(grpc_json_response(&response_json));
+                }
+
+                // 2. Server reflection service.
+                if reflection_enabled && ReflectionService::is_reflection_path(&grpc_path) {
+                    // Read the request body to determine the query type.
+                    let (parts, body) = req.into_parts();
+                    let body_bytes = match http_body_util::BodyExt::collect(body).await {
+                        Ok(collected) => collected.to_bytes(),
+                        Err(_) => bytes::Bytes::new(),
+                    };
+                    let body_str = String::from_utf8_lossy(&body_bytes);
+                    let _ = parts; // consumed
+                    let response_json = reflection.handle_request(&body_str);
+                    return Ok(grpc_json_response(&response_json));
+                }
+
+                // 3. Application-defined gRPC methods (REST bridge).
                 let method = descriptor.find_method(&grpc_path);
 
                 let method = match method {

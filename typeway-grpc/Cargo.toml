@@ -7,8 +7,13 @@ edition = "2021"
 name = "typeway-grpc"
 path = "src/main.rs"
 
+[features]
+default = []
+client = ["dep:typeway-client", "dep:reqwest", "dep:url", "dep:thiserror"]
+
 [dependencies]
 typeway-core = { path = "../typeway-core" }
+typeway-client = { path = "../typeway-client", optional = true }
 http = "1"
 indexmap = "2"
 tower-service = "0.3"
@@ -17,9 +22,17 @@ http-body-util = "0.1"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
+reqwest = { version = "0.12", features = ["json"], optional = true }
+url = { version = "2", optional = true }
+thiserror = { version = "2", optional = true }
 
 [dev-dependencies]
 typeway-macros = { path = "../typeway-macros" }
+typeway-client = { path = "../typeway-client" }
+reqwest = { version = "0.12", features = ["json"] }
+url = "2"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
 
 [lints]
 workspace = true

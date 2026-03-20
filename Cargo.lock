@@ -3018,9 +3018,14 @@ dependencies = [
  "http-body-util",
  "hyper",
  "indexmap",
+ "reqwest",
+ "serde",
+ "thiserror 2.0.18",
  "tower-service",
+ "typeway-client",
  "typeway-core",
  "typeway-macros",
+ "url",
 ]
 
 [[package]]
