@@ -15,6 +15,7 @@ test-client = ["dep:reqwest"]
 cli = ["dep:clap", "dep:anyhow"]
 chrono = ["dep:chrono"]
 uuid = ["dep:uuid"]
+proto-binary = []
 
 [dependencies]
 typeway-core = { path = "../typeway-core" }

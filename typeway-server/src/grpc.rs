@@ -67,6 +67,8 @@ pub struct GrpcServer<A: ApiSpec> {
     reflection_enabled: bool,
     grpc_spec_json: Option<Arc<String>>,
     grpc_docs_html: Option<Arc<String>>,
+    #[cfg(feature = "grpc-proto-binary")]
+    transcoder: Option<Arc<typeway_grpc::ProtoTranscoder>>,
     _api: PhantomData<A>,
 }
 
@@ -84,6 +86,8 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
             reflection_enabled: true,
             grpc_spec_json: None,
             grpc_docs_html: None,
+            #[cfg(feature = "grpc-proto-binary")]
+            transcoder: None,
             _api: PhantomData,
         }
     }
@@ -185,6 +189,33 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
         self
     }
 
+    /// Enable binary protobuf support for standard gRPC client interop.
+    ///
+    /// When enabled, the bridge accepts both `application/grpc` (binary
+    /// protobuf) and `application/grpc+json` (JSON) requests. Incoming
+    /// binary protobuf is transcoded to JSON for the REST handlers, and
+    /// JSON responses are transcoded back to binary protobuf.
+    ///
+    /// Requires the `grpc-proto-binary` feature.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Server::<API>::new(handlers)
+    ///     .with_state(state)
+    ///     .with_grpc("UserService", "users.v1")
+    ///     .with_proto_binary()
+    ///     .serve(addr)
+    ///     .await?;
+    /// ```
+    #[cfg(feature = "grpc-proto-binary")]
+    pub fn with_proto_binary(mut self) -> Self {
+        use typeway_grpc::spec::ApiToGrpcSpec;
+        let spec = A::grpc_spec(&self.service_name, &self.package);
+        self.transcoder = Some(Arc::new(typeway_grpc::ProtoTranscoder::new(spec)));
+        self
+    }
+
     /// Start serving both REST and gRPC.
     ///
     /// Binds to the given address and accepts connections. REST requests are
@@ -229,6 +260,8 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
             reflection_enabled: self.reflection_enabled,
             grpc_spec_json: self.grpc_spec_json,
             grpc_docs_html: self.grpc_docs_html,
+            #[cfg(feature = "grpc-proto-binary")]
+            transcoder: self.transcoder,
         };
 
         tokio::pin!(shutdown);
@@ -303,6 +336,8 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
             reflection_enabled: self.reflection_enabled,
             grpc_spec_json: self.grpc_spec_json,
             grpc_docs_html: self.grpc_docs_html,
+            #[cfg(feature = "grpc-proto-binary")]
+            transcoder: self.transcoder,
         };
         LayeredGrpcServer {
             service: layer.layer(multiplexer),
@@ -408,6 +443,12 @@ where
 /// handled directly before falling through to the REST bridge for
 /// application-defined methods.
 ///
+/// When the `grpc-proto-binary` feature is enabled, the multiplexer also
+/// handles `application/grpc` (binary protobuf) requests by transcoding
+/// them to JSON for the REST handlers and transcoding the JSON responses
+/// back to binary protobuf. This enables standard gRPC clients to interop
+/// without requiring JSON mode.
+///
 /// This type is exposed so that Tower layers can be applied over the
 /// combined REST + gRPC service via [`GrpcServer::layer`].
 #[derive(Clone)]
@@ -420,6 +461,8 @@ pub struct Multiplexer {
     pub(crate) reflection_enabled: bool,
     pub(crate) grpc_spec_json: Option<Arc<String>>,
     pub(crate) grpc_docs_html: Option<Arc<String>>,
+    #[cfg(feature = "grpc-proto-binary")]
+    pub(crate) transcoder: Option<Arc<typeway_grpc::ProtoTranscoder>>,
 }
 
 /// Build a gRPC JSON response with the given body and status code 0 (OK).
@@ -487,6 +530,8 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
             let reflection = self.reflection.clone();
             let health = self.health.clone();
             let reflection_enabled = self.reflection_enabled;
+            #[cfg(feature = "grpc-proto-binary")]
+            let transcoder = self.transcoder.clone();
 
             Box::pin(async move {
                 let grpc_path = req.uri().path().to_string();
@@ -551,6 +596,13 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                     .and_then(|v| v.to_str().ok())
                     .and_then(typeway_grpc::parse_grpc_timeout);
 
+                // Detect whether the client sent binary protobuf or JSON.
+                #[cfg(feature = "grpc-proto-binary")]
+                let incoming_content_type = typeway_grpc::grpc_content_type(req.headers()).to_string();
+                #[cfg(feature = "grpc-proto-binary")]
+                let use_proto_binary = transcoder.is_some()
+                    && typeway_grpc::is_proto_binary_content_type(&incoming_content_type);
+
                 // Collect the body and strip gRPC framing.
                 let (mut parts, body) = req.into_parts();
                 let body_bytes = match http_body_util::BodyExt::collect(body).await {
@@ -562,6 +614,30 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                 let unframed = typeway_grpc::framing::decode_grpc_frame(&body_bytes)
                     .map(bytes::Bytes::copy_from_slice)
                     .unwrap_or(body_bytes);
+
+                // If the request is binary protobuf, transcode to JSON for the
+                // REST handler. Otherwise, pass through as-is (already JSON).
+                #[cfg(feature = "grpc-proto-binary")]
+                let unframed = if use_proto_binary {
+                    let tc = transcoder.as_ref().expect("transcoder checked above");
+                    match tc.decode_request(&grpc_path, &unframed) {
+                        Ok(json_val) => {
+                            let json_bytes = serde_json::to_vec(&json_val).unwrap_or_default();
+                            bytes::Bytes::from(json_bytes)
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                "proto-binary transcode failed for {}: {}",
+                                grpc_path, e
+                            );
+                            // Fall back to passing through raw bytes; the REST
+                            // handler will likely return a 400.
+                            unframed
+                        }
+                    }
+                } else {
+                    unframed
+                };
 
                 // Rewrite the request to target the REST endpoint.
                 parts.method = method.http_method.clone();
@@ -624,28 +700,117 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                     Err(_) => bytes::Bytes::new(),
                 };
 
-                // For server-streaming methods, split JSON arrays into
-                // individual gRPC frames — one per array element.
-                let framed = if method.server_streaming
+                // Determine framing based on whether the client wants binary
+                // protobuf or JSON, and whether the response is streaming.
+                #[cfg(feature = "grpc-proto-binary")]
+                let (framed, response_content_type) = if use_proto_binary
                     && grpc_code == typeway_grpc::GrpcCode::Ok
                 {
-                    match serde_json::from_slice::<serde_json::Value>(&res_bytes) {
-                        Ok(serde_json::Value::Array(items)) => {
-                            let mut buf = Vec::new();
-                            for item in &items {
-                                let item_bytes =
-                                    serde_json::to_vec(item).unwrap_or_default();
-                                buf.extend_from_slice(
-                                    &typeway_grpc::framing::encode_grpc_frame(&item_bytes),
-                                );
+                    let tc = transcoder.as_ref().expect("transcoder checked above");
+
+                    if method.server_streaming {
+                        // Split JSON array into individual binary proto frames.
+                        match serde_json::from_slice::<serde_json::Value>(&res_bytes) {
+                            Ok(serde_json::Value::Array(items)) => {
+                                let mut buf = Vec::new();
+                                for item in &items {
+                                    let proto_bytes = tc
+                                        .encode_response(&grpc_path, item)
+                                        .unwrap_or_default();
+                                    buf.extend_from_slice(
+                                        &typeway_grpc::framing::encode_grpc_frame(&proto_bytes),
+                                    );
+                                }
+                                (buf, "application/grpc+proto")
                             }
-                            buf
+                            _ => {
+                                let json_val: serde_json::Value =
+                                    serde_json::from_slice(&res_bytes).unwrap_or_default();
+                                let proto_bytes = tc
+                                    .encode_response(&grpc_path, &json_val)
+                                    .unwrap_or_else(|_| res_bytes.to_vec());
+                                (
+                                    typeway_grpc::framing::encode_grpc_frame(&proto_bytes),
+                                    "application/grpc+proto",
+                                )
+                            }
                         }
-                        // Not a JSON array — fall back to single frame.
-                        _ => typeway_grpc::framing::encode_grpc_frame(&res_bytes),
+                    } else {
+                        let json_val: serde_json::Value =
+                            serde_json::from_slice(&res_bytes).unwrap_or_default();
+                        match tc.encode_response(&grpc_path, &json_val) {
+                            Ok(proto_bytes) => (
+                                typeway_grpc::framing::encode_grpc_frame(&proto_bytes),
+                                "application/grpc+proto",
+                            ),
+                            Err(e) => {
+                                tracing::warn!(
+                                    "proto-binary response transcode failed for {}: {}",
+                                    grpc_path, e
+                                );
+                                // Fall back to JSON encoding.
+                                (
+                                    typeway_grpc::framing::encode_grpc_frame(&res_bytes),
+                                    "application/grpc+json",
+                                )
+                            }
+                        }
                     }
+                } else if use_proto_binary {
+                    // Error response — keep JSON encoding for error bodies.
+                    (
+                        typeway_grpc::framing::encode_grpc_frame(&res_bytes),
+                        "application/grpc+proto",
+                    )
                 } else {
-                    typeway_grpc::framing::encode_grpc_frame(&res_bytes)
+                    // JSON mode: existing behavior.
+                    let framed = if method.server_streaming
+                        && grpc_code == typeway_grpc::GrpcCode::Ok
+                    {
+                        match serde_json::from_slice::<serde_json::Value>(&res_bytes) {
+                            Ok(serde_json::Value::Array(items)) => {
+                                let mut buf = Vec::new();
+                                for item in &items {
+                                    let item_bytes =
+                                        serde_json::to_vec(item).unwrap_or_default();
+                                    buf.extend_from_slice(
+                                        &typeway_grpc::framing::encode_grpc_frame(&item_bytes),
+                                    );
+                                }
+                                buf
+                            }
+                            _ => typeway_grpc::framing::encode_grpc_frame(&res_bytes),
+                        }
+                    } else {
+                        typeway_grpc::framing::encode_grpc_frame(&res_bytes)
+                    };
+                    (framed, "application/grpc+json")
+                };
+
+                // When proto-binary feature is not enabled, always use JSON.
+                #[cfg(not(feature = "grpc-proto-binary"))]
+                let (framed, response_content_type) = {
+                    let framed = if method.server_streaming
+                        && grpc_code == typeway_grpc::GrpcCode::Ok
+                    {
+                        match serde_json::from_slice::<serde_json::Value>(&res_bytes) {
+                            Ok(serde_json::Value::Array(items)) => {
+                                let mut buf = Vec::new();
+                                for item in &items {
+                                    let item_bytes =
+                                        serde_json::to_vec(item).unwrap_or_default();
+                                    buf.extend_from_slice(
+                                        &typeway_grpc::framing::encode_grpc_frame(&item_bytes),
+                                    );
+                                }
+                                buf
+                            }
+                            _ => typeway_grpc::framing::encode_grpc_frame(&res_bytes),
+                        }
+                    } else {
+                        typeway_grpc::framing::encode_grpc_frame(&res_bytes)
+                    };
+                    (framed, "application/grpc+json")
                 };
 
                 // gRPC always returns HTTP 200; the real status is in grpc-status.
@@ -660,7 +825,9 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                 );
                 res_parts.headers.insert(
                     "content-type",
-                    http::HeaderValue::from_static("application/grpc+json"),
+                    response_content_type
+                        .parse()
+                        .expect("valid content-type header"),
                 );
 
                 let framed_body = body_from_bytes(bytes::Bytes::from(framed));

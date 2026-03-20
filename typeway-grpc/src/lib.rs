@@ -11,20 +11,32 @@
 //!    them to the typeway router, enabling dual-protocol serving from the same
 //!    handler logic.
 //!
-//! ## Important: JSON Encoding
+//! ## Encoding
 //!
-//! The gRPC bridge uses **JSON encoding** (`application/grpc+json`), not binary
-//! Protocol Buffers. This means:
+//! The gRPC bridge supports two encoding modes:
 //!
-//! - **Standard gRPC clients** (grpcurl, tonic, Postman) need to be configured
-//!   for JSON encoding or won't work out of the box
-//! - **The `grpc_client!` macro** generates clients that use JSON encoding,
-//!   so client-to-server communication within typeway works seamlessly
-//! - **Performance** is slightly lower than binary protobuf but the handlers
-//!   are shared with REST (which already uses JSON), avoiding transcoding
+//! - **JSON mode** (default) — `application/grpc+json`. Since the REST handlers
+//!   already use JSON, this avoids transcoding entirely. The `grpc_client!` macro
+//!   generates clients that use JSON encoding, so typeway-to-typeway
+//!   communication works seamlessly.
 //!
-//! For binary protobuf support, use Tonic directly alongside typeway via
-//! the `.with_fallback()` method on `Server`.
+//! - **Binary protobuf mode** (`proto-binary` feature) — `application/grpc` and
+//!   `application/grpc+proto`. When enabled, standard gRPC clients (grpcurl,
+//!   tonic, Postman, etc.) can interop without configuring JSON mode. The bridge
+//!   transcodes binary protobuf to JSON for the REST handlers and JSON back to
+//!   binary protobuf for the response. See [`transcode::ProtoTranscoder`] for
+//!   details.
+//!
+//! Enable binary protobuf support by adding the feature and calling
+//! `.with_proto_binary()` on the gRPC server builder:
+//!
+//! ```ignore
+//! Server::<API>::new(handlers)
+//!     .with_grpc("UserService", "users.v1")
+//!     .with_proto_binary()
+//!     .serve(addr)
+//!     .await?;
+//! ```
 //!
 //! # Example
 //!
@@ -75,6 +87,7 @@ pub mod framing;
 pub mod health;
 pub mod mapping;
 pub mod multiplex;
+pub mod proto_codec;
 pub mod proto_gen;
 pub mod proto_parse;
 pub mod ready;
@@ -86,10 +99,21 @@ pub mod status;
 pub mod streaming;
 #[cfg(feature = "test-client")]
 pub mod test_client;
+#[cfg(feature = "proto-binary")]
+pub mod transcode;
 pub mod validate;
 pub mod web;
 
 pub use codegen::generate_typeway_from_proto;
+pub use proto_codec::{
+    decode_varint, encode_varint, json_to_proto_binary, proto_binary_to_json, wire_type_for,
+    CodecError, ProtoFieldDef,
+};
+#[cfg(feature = "proto-binary")]
+pub use transcode::{
+    grpc_content_type, is_grpc_json_content_type, is_proto_binary_content_type, ProtoTranscoder,
+    TranscodeError,
+};
 pub use diff::{diff_protos, ChangeKind, ProtoChange};
 #[cfg(feature = "client")]
 pub use client::GrpcClientError;

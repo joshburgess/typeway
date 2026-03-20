@@ -5,11 +5,12 @@
 //! requests that the typeway router can handle. This enables serving both
 //! REST and gRPC from the same handler logic.
 //!
-//! The bridge uses JSON encoding (`application/grpc+json`) over gRPC framing.
-//! This is a deliberate design choice: since the REST handlers already use JSON,
-//! the bridge avoids protobuf transcoding entirely. The trade-off is that standard
-//! gRPC clients expecting binary protobuf (`application/grpc+proto`) need to be
-//! configured for JSON mode.
+//! By default the bridge uses JSON encoding (`application/grpc+json`) over gRPC
+//! framing. When the `proto-binary` feature is enabled, the bridge also supports
+//! standard binary protobuf encoding (`application/grpc`), allowing standard
+//! gRPC clients (grpcurl, tonic, etc.) to interop without needing JSON mode.
+//! See [`crate::transcode::ProtoTranscoder`] for details on the transcoding
+//! mechanism.
 //!
 //! # How it works
 //!
