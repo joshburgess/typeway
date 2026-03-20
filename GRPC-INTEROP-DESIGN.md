@@ -329,8 +329,103 @@ prost-types = { version = "0.13", optional = true }
 
 5. **Nested messages**: When a request body contains nested structs (`CreateArticle { author: Author, tags: Vec<Tag> }`), the proto generator needs to recursively emit message definitions. This requires the `ToProtoType` trait to report sub-messages.
 
-### Recommendation
+---
 
-Start with Phase A — .proto generation is useful on its own and validates the type mapping. Phases B-D build on it incrementally. The full cycle (Phase D) is ambitious but each phase delivers standalone value.
+## Part 3: Bidirectional Embedding
+
+Both directions work because both typeway and Tonic speak Tower.
+
+### Embed Tonic inside typeway
+
+Tonic produces a `tower::Service`. Typeway's `Server::with_fallback()` accepts any Tower service. gRPC traffic (identified by `content-type: application/grpc`) falls through to Tonic:
+
+```rust
+let grpc = tonic::transport::Server::builder()
+    .add_service(my_grpc_service)
+    .into_service();
+
+Server::<API>::new(handlers)
+    .with_fallback(grpc)
+    .serve(addr).await?;
+```
+
+### Embed typeway inside Tonic
+
+Provide `Server::into_tonic_service()` (like `into_axum_router()`) that wraps the typeway router as a Tower service Tonic can embed:
+
+```rust
+let rest = typeway_server.into_tonic_service();
+
+tonic::transport::Server::builder()
+    .add_service(my_grpc_service)
+    .add_routes(rest)
+    .serve(addr).await?;
+```
+
+The body type conversion (Tonic uses `http-body::BoxBody`, typeway uses its own `BoxBody`) is the same adapter problem solved for Axum interop.
+
+---
+
+## Part 4: Migration Tool (`typeway-grpc` CLI)
+
+Bidirectional code generation between `.proto` files and typeway API types.
+
+### .proto → typeway API type
+
+```
+typeway-grpc api-from-proto --file service.proto --output src/api.rs
+```
+
+Reads a `.proto` file (using `protobuf-parse` or a hand-written parser — proto syntax is simple) and generates:
+- `typeway_path!` declarations for each RPC method (mapped to REST paths)
+- Endpoint types in an API tuple
+- Rust structs for each proto message with `#[derive(Serialize, Deserialize, ToProtoType)]`
+- `ToProtoType` impls with correct field tags
+
+### typeway API type → .proto
+
+```
+typeway-grpc proto-from-api --file src/api.rs --output service.proto
+```
+
+This is Phase A of the implementation — reads a typeway API type (via `syn` parsing, same approach as `typeway-migrate`) and emits a `.proto` file with:
+- Service definition with one RPC per endpoint
+- Message definitions for request/response types
+- Field numbering from struct field order or `#[proto(tag = N)]` attributes
+
+### Mapping rules
+
+| typeway | gRPC |
+|---|---|
+| `GET /users` | `rpc ListUsers(Empty) returns (ListUsersResponse)` |
+| `GET /users/:id` | `rpc GetUser(GetUserRequest) returns (User)` |
+| `POST /users` with `Json<CreateUser>` | `rpc CreateUser(CreateUser) returns (User)` |
+| `DELETE /users/:id` | `rpc DeleteUser(DeleteUserRequest) returns (Empty)` |
+| Path capture `u32` | Request message field `uint32` |
+| `Vec<T>` response | Wrapper message with `repeated T` |
+| `Protected<Auth, E>` | Noted as requiring auth metadata (comment in .proto) |
+
+---
+
+## Part 5: Resolved Design Decisions
+
+1. **Streaming RPCs**: Punt to a `StreamingEndpoint` marker type. Don't auto-detect from `Vec<T>` return types — that changes the handler interface. Explicit opt-in only.
+
+2. **Field numbering**: Require `#[proto(tag = N)]` attributes for stability. `#[derive(ToProtoType)]` generates initial numbers from field order, but the user must maintain them for wire compatibility.
+
+3. **Error mapping**: Provide `impl IntoGrpcStatus for JsonError` mapping HTTP status codes to gRPC status codes (404 → NOT_FOUND, 401 → UNAUTHENTICATED, 500 → INTERNAL, etc.).
+
+4. **Auth**: `Protected<Auth, E>` maps to a gRPC metadata interceptor. The `GrpcBridge` checks metadata for the auth token the same way the REST extractor checks the Authorization header.
+
+---
+
+## Implementation Order
+
+Start with Phase A — .proto generation is useful standalone and validates the type mapping. Each subsequent phase delivers independent value:
+
+- **Phase A**: `ToProtoType` trait, `ApiToProto`, CLI `proto-from-api` command
+- **Phase B**: Tonic service trait generation, `GrpcBridge` adapter
+- **Phase C**: `with_grpc()` on Server, bidirectional embedding helpers
+- **Phase D**: Build script, `api-from-proto` CLI command (proto parser)
 
 This is a v0.2 feature. It doesn't block v0.1 publishing.
