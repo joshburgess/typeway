@@ -117,6 +117,7 @@ mod tests {
                 definition: String::new(),
             },
             server_streaming: false,
+            client_streaming: false,
         }
     }
 

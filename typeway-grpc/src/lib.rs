@@ -52,6 +52,8 @@
 pub mod bridge;
 #[cfg(feature = "client")]
 pub mod client;
+#[cfg(feature = "client")]
+pub mod interceptors;
 pub mod codegen;
 pub mod framing;
 pub mod health;
@@ -65,10 +67,13 @@ pub mod status;
 pub mod streaming;
 #[cfg(feature = "test-client")]
 pub mod test_client;
+pub mod validate;
 
 pub use codegen::generate_typeway_from_proto;
 #[cfg(feature = "client")]
 pub use client::GrpcClientError;
+#[cfg(feature = "client")]
+pub use interceptors::{GrpcClientConfig, GrpcRequestInterceptor};
 pub use framing::{decode_grpc_frame, encode_grpc_frame, FramingError};
 pub use health::{HealthService, HealthStatus};
 pub use mapping::{build_message, ProtoField, ToProtoType};
@@ -77,7 +82,8 @@ pub use proto_gen::{ApiToProto, CollectRpcs, EndpointToRpc, ProtoMessage, RpcMet
 pub use proto_parse::{parse_proto, ParsedField, ParsedMessage, ProtoFile, ProtoRpcMethod, ProtoService};
 pub use reflection::ReflectionService;
 pub use service::{ApiToServiceDescriptor, GrpcMethodDescriptor, GrpcServiceDescriptor};
-pub use status::{http_to_grpc_code, GrpcCode, GrpcStatus, IntoGrpcStatus};
-pub use streaming::ServerStream;
+pub use status::{http_to_grpc_code, parse_grpc_timeout, GrpcCode, GrpcStatus, IntoGrpcStatus};
+pub use streaming::{BidirectionalStream, ClientStream, ServerStream};
+pub use validate::{validate_proto, ProtoValidationError};
 #[cfg(feature = "test-client")]
 pub use test_client::{GrpcTestClient, GrpcTestResponse};

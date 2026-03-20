@@ -1,9 +1,11 @@
-//! Server-streaming gRPC endpoint marker.
+//! Streaming gRPC endpoint markers.
 //!
-//! [`ServerStream`] wraps an endpoint type to indicate that the corresponding
-//! gRPC method uses server-side streaming. The REST handler returns a normal
-//! response (e.g., `Vec<T>`), and the gRPC bridge converts it to a stream of
-//! individual messages.
+//! These marker types wrap endpoint types to indicate streaming behavior
+//! in the generated gRPC service:
+//!
+//! - [`ServerStream`] — server-side streaming (`returns (stream ResponseType)`)
+//! - [`ClientStream`] — client-side streaming (`rpc Method(stream RequestType)`)
+//! - [`BidirectionalStream`] — bidirectional streaming (`rpc Method(stream Req) returns (stream Res)`)
 
 use std::marker::PhantomData;
 
@@ -33,3 +35,43 @@ use typeway_core::api::ApiSpec;
 pub struct ServerStream<E>(PhantomData<E>);
 
 impl<E: ApiSpec> ApiSpec for ServerStream<E> {}
+
+/// Marks an endpoint as a client-streaming gRPC endpoint.
+///
+/// The client sends a stream of request messages; the server responds once.
+/// Proto output: `rpc Method(stream RequestType) returns (ResponseType);`
+///
+/// # Example
+///
+/// ```ignore
+/// use typeway_core::*;
+/// use typeway_grpc::streaming::ClientStream;
+///
+/// type API = (
+///     // Client-streaming RPC
+///     ClientStream<PostEndpoint<UploadPath, Chunk, Summary>>,
+/// );
+/// ```
+pub struct ClientStream<E>(PhantomData<E>);
+
+impl<E: ApiSpec> ApiSpec for ClientStream<E> {}
+
+/// Marks an endpoint as a bidirectional-streaming gRPC endpoint.
+///
+/// Both client and server send streams of messages.
+/// Proto output: `rpc Method(stream RequestType) returns (stream ResponseType);`
+///
+/// # Example
+///
+/// ```ignore
+/// use typeway_core::*;
+/// use typeway_grpc::streaming::BidirectionalStream;
+///
+/// type API = (
+///     // Bidirectional-streaming RPC
+///     BidirectionalStream<GetEndpoint<ChatPath, Message>>,
+/// );
+/// ```
+pub struct BidirectionalStream<E>(PhantomData<E>);
+
+impl<E: ApiSpec> ApiSpec for BidirectionalStream<E> {}

@@ -1,6 +1,6 @@
 use typeway_core::*;
 use typeway_grpc::mapping::ToProtoType;
-use typeway_grpc::streaming::ServerStream;
+use typeway_grpc::streaming::{BidirectionalStream, ClientStream, ServerStream};
 use typeway_grpc::{ApiToProto, CollectRpcs};
 use typeway_macros::typeway_path;
 
@@ -85,4 +85,96 @@ fn server_stream_in_tuple_api() {
     // First should be streaming, second should not.
     assert!(rpcs[0].server_streaming);
     assert!(!rpcs[1].server_streaming);
+}
+
+// ---------------------------------------------------------------------------
+// ClientStream tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn client_stream_implements_api_spec() {
+    assert_api_spec::<ClientStream<PostEndpoint<UsersPath, User, User>>>();
+}
+
+#[test]
+fn client_stream_sets_client_streaming_flag() {
+    type E = ClientStream<PostEndpoint<UsersPath, User, User>>;
+    let rpcs = E::collect_rpcs();
+    assert_eq!(rpcs.len(), 1);
+    assert!(
+        rpcs[0].client_streaming,
+        "Expected client_streaming to be true"
+    );
+    assert!(
+        !rpcs[0].server_streaming,
+        "Expected server_streaming to be false for client-only streaming"
+    );
+}
+
+#[test]
+fn proto_output_contains_stream_request() {
+    type API = (
+        ClientStream<PostEndpoint<UsersPath, User, User>>,
+        GetEndpoint<UserByIdPath, User>,
+    );
+    let proto = API::to_proto("UserService", "users.v1");
+    // The client-streaming endpoint should have "rpc ...(stream ...)" in input.
+    assert!(
+        proto.contains("(stream "),
+        "Expected 'rpc ...(stream ...)' in proto:\n{}",
+        proto,
+    );
+    // The non-streaming endpoint should NOT have "stream" in its request.
+    assert!(
+        proto.contains("rpc GetUser(GetUserRequest) returns (User);"),
+        "Expected non-streaming GetUser in proto:\n{}",
+        proto,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// BidirectionalStream tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bidi_stream_implements_api_spec() {
+    assert_api_spec::<BidirectionalStream<PostEndpoint<UsersPath, User, User>>>();
+}
+
+#[test]
+fn bidirectional_stream_sets_both_flags() {
+    type E = BidirectionalStream<PostEndpoint<UsersPath, User, User>>;
+    let rpcs = E::collect_rpcs();
+    assert_eq!(rpcs.len(), 1);
+    assert!(
+        rpcs[0].client_streaming,
+        "Expected client_streaming to be true for bidi stream"
+    );
+    assert!(
+        rpcs[0].server_streaming,
+        "Expected server_streaming to be true for bidi stream"
+    );
+}
+
+#[test]
+fn proto_output_contains_bidi_stream() {
+    type API = (BidirectionalStream<PostEndpoint<UsersPath, User, User>>,);
+    let proto = API::to_proto("ChatService", "chat.v1");
+    // Should have "stream" in both request and response.
+    // Match the rpc line pattern: rpc Name(stream Req) returns (stream Res);
+    let lines: Vec<&str> = proto.lines().collect();
+    let rpc_line = lines
+        .iter()
+        .find(|l| l.contains("rpc "))
+        .expect("expected an rpc line in proto output");
+    assert!(
+        rpc_line.contains("(stream "),
+        "Expected 'stream' in request of bidi rpc:\n{}",
+        rpc_line,
+    );
+    assert!(
+        rpc_line.contains("returns (stream "),
+        "Expected 'stream' in response of bidi rpc:\n{}",
+        rpc_line,
+    );
 }

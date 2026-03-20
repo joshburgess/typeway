@@ -266,6 +266,56 @@ impl GrpcStatus {
     }
 }
 
+/// Parse a gRPC timeout header value into a [`Duration`](std::time::Duration).
+///
+/// The gRPC specification defines the `grpc-timeout` header with the format
+/// `<number><unit>` where unit is one of:
+///
+/// - `H` — hours
+/// - `M` — minutes
+/// - `S` — seconds
+/// - `m` — milliseconds
+/// - `u` — microseconds
+/// - `n` — nanoseconds
+///
+/// Returns `None` if the value is empty, the number cannot be parsed, or
+/// the unit is unrecognized.
+///
+/// # Examples
+///
+/// ```
+/// use typeway_grpc::status::parse_grpc_timeout;
+/// use std::time::Duration;
+///
+/// assert_eq!(parse_grpc_timeout("30S"), Some(Duration::from_secs(30)));
+/// assert_eq!(parse_grpc_timeout("500m"), Some(Duration::from_millis(500)));
+/// assert_eq!(parse_grpc_timeout("1H"), Some(Duration::from_secs(3600)));
+/// assert_eq!(parse_grpc_timeout(""), None);
+/// assert_eq!(parse_grpc_timeout("abc"), None);
+/// ```
+pub fn parse_grpc_timeout(value: &str) -> Option<std::time::Duration> {
+    let value = value.trim();
+    if value.is_empty() {
+        return None;
+    }
+    if value.len() < 2 {
+        return None;
+    }
+
+    let (num_str, unit) = value.split_at(value.len() - 1);
+    let num: u64 = num_str.parse().ok()?;
+
+    match unit {
+        "H" => Some(std::time::Duration::from_secs(num * 3600)),
+        "M" => Some(std::time::Duration::from_secs(num * 60)),
+        "S" => Some(std::time::Duration::from_secs(num)),
+        "m" => Some(std::time::Duration::from_millis(num)),
+        "u" => Some(std::time::Duration::from_micros(num)),
+        "n" => Some(std::time::Duration::from_nanos(num)),
+        _ => None,
+    }
+}
+
 /// Default impl for [`http::StatusCode`] — uses the existing
 /// [`http_to_grpc_code`] mapping.
 impl IntoGrpcStatus for http::StatusCode {
@@ -413,5 +463,78 @@ mod tests {
         for code in codes {
             assert_eq!(GrpcCode::from_i32(code.as_i32()), code);
         }
+    }
+
+    #[test]
+    fn parse_grpc_timeout_seconds() {
+        assert_eq!(
+            parse_grpc_timeout("30S"),
+            Some(std::time::Duration::from_secs(30))
+        );
+        assert_eq!(
+            parse_grpc_timeout("1S"),
+            Some(std::time::Duration::from_secs(1))
+        );
+        assert_eq!(
+            parse_grpc_timeout("0S"),
+            Some(std::time::Duration::from_secs(0))
+        );
+    }
+
+    #[test]
+    fn parse_grpc_timeout_milliseconds() {
+        assert_eq!(
+            parse_grpc_timeout("500m"),
+            Some(std::time::Duration::from_millis(500))
+        );
+        assert_eq!(
+            parse_grpc_timeout("1m"),
+            Some(std::time::Duration::from_millis(1))
+        );
+    }
+
+    #[test]
+    fn parse_grpc_timeout_hours() {
+        assert_eq!(
+            parse_grpc_timeout("1H"),
+            Some(std::time::Duration::from_secs(3600))
+        );
+        assert_eq!(
+            parse_grpc_timeout("2H"),
+            Some(std::time::Duration::from_secs(7200))
+        );
+    }
+
+    #[test]
+    fn parse_grpc_timeout_minutes() {
+        assert_eq!(
+            parse_grpc_timeout("5M"),
+            Some(std::time::Duration::from_secs(300))
+        );
+    }
+
+    #[test]
+    fn parse_grpc_timeout_microseconds() {
+        assert_eq!(
+            parse_grpc_timeout("100u"),
+            Some(std::time::Duration::from_micros(100))
+        );
+    }
+
+    #[test]
+    fn parse_grpc_timeout_nanoseconds() {
+        assert_eq!(
+            parse_grpc_timeout("1000n"),
+            Some(std::time::Duration::from_nanos(1000))
+        );
+    }
+
+    #[test]
+    fn parse_grpc_timeout_invalid() {
+        assert_eq!(parse_grpc_timeout(""), None);
+        assert_eq!(parse_grpc_timeout("S"), None);
+        assert_eq!(parse_grpc_timeout("abc"), None);
+        assert_eq!(parse_grpc_timeout("30x"), None);
+        assert_eq!(parse_grpc_timeout("  "), None);
     }
 }

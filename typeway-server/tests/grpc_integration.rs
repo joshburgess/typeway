@@ -486,6 +486,99 @@ async fn grpc_response_is_framed() {
     assert!(parsed.is_array());
 }
 
+/// Sending a request with a generous grpc-timeout should not time out.
+#[tokio::test]
+async fn grpc_timeout_header_propagated() {
+    let port = start_grpc_server().await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!(
+            "http://127.0.0.1:{port}/users.v1.UserService/ListUser"
+        ))
+        .header("content-type", "application/grpc+json")
+        .header("grpc-timeout", "30S")
+        .body("")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+
+    let grpc_status = resp
+        .headers()
+        .get("grpc-status")
+        .expect("missing grpc-status header")
+        .to_str()
+        .unwrap();
+    // 30 seconds is plenty — should succeed.
+    assert_eq!(grpc_status, "0");
+}
+
+/// Sending a request with an impossibly short grpc-timeout should return
+/// grpc-status 4 (DEADLINE_EXCEEDED).
+///
+/// Uses a dedicated slow handler to ensure the timeout fires before the
+/// handler completes.
+#[tokio::test]
+async fn grpc_timeout_exceeded_returns_deadline_exceeded() {
+    // A handler that sleeps long enough for even the most generous "short"
+    // timeout to expire.
+    async fn slow_list_users(state: State<AppState>) -> Json<Vec<User>> {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        Json(state.0.lock().unwrap().clone())
+    }
+
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![User {
+        id: 1,
+        name: "Alice".into(),
+    }]));
+
+    let grpc_server = Server::<TestAPI>::new((
+        bind::<_, _, _>(slow_list_users),
+        bind::<_, _, _>(get_user),
+        bind::<_, _, _>(create_user),
+        bind::<_, _, _>(delete_user),
+    ))
+    .with_state(state)
+    .with_grpc("UserService", "users.v1");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    tokio::spawn(async move {
+        grpc_server
+            .serve_with_shutdown(listener, std::future::pending())
+            .await
+            .unwrap();
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!(
+            "http://127.0.0.1:{port}/users.v1.UserService/ListUser"
+        ))
+        .header("content-type", "application/grpc+json")
+        // 10 milliseconds — the handler sleeps for 200ms so this will expire.
+        .header("grpc-timeout", "10m")
+        .body("")
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+
+    let grpc_status = resp
+        .headers()
+        .get("grpc-status")
+        .expect("missing grpc-status header")
+        .to_str()
+        .unwrap();
+    assert_eq!(grpc_status, "4"); // DEADLINE_EXCEEDED
+}
+
 /// Verify that `.with_grpc()` can be chained after `.with_state()` on Server.
 #[test]
 fn with_state_then_with_grpc() {

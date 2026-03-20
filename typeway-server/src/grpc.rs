@@ -445,6 +445,13 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                     }
                 };
 
+                // Parse the grpc-timeout header for deadline propagation.
+                let grpc_timeout = req
+                    .headers()
+                    .get("grpc-timeout")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(typeway_grpc::parse_grpc_timeout);
+
                 // Collect the body and strip gRPC framing.
                 let (mut parts, body) = req.into_parts();
                 let body_bytes = match http_body_util::BodyExt::collect(body).await {
@@ -473,8 +480,41 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                         http::HeaderValue::from_static("application/json"),
                     );
 
-                // Route with pre-collected bytes (framing already stripped).
-                let rest_res = router.route_with_bytes(parts, unframed).await;
+                // Route with pre-collected bytes, applying timeout if present.
+                let rest_res = if let Some(timeout_duration) = grpc_timeout {
+                    match tokio::time::timeout(
+                        timeout_duration,
+                        router.route_with_bytes(parts, unframed),
+                    )
+                    .await
+                    {
+                        Ok(res) => res,
+                        Err(_) => {
+                            // Deadline exceeded — return grpc-status 4.
+                            let grpc_status = typeway_grpc::GrpcStatus {
+                                code: typeway_grpc::GrpcCode::DeadlineExceeded,
+                                message: "deadline exceeded".to_string(),
+                            };
+                            let mut res = http::Response::new(empty_body());
+                            *res.status_mut() = http::StatusCode::OK;
+                            for (name, value) in grpc_status.to_headers() {
+                                if let (Ok(name), Ok(value)) = (
+                                    name.parse::<http::header::HeaderName>(),
+                                    value.parse::<http::HeaderValue>(),
+                                ) {
+                                    res.headers_mut().insert(name, value);
+                                }
+                            }
+                            res.headers_mut().insert(
+                                "content-type",
+                                http::HeaderValue::from_static("application/grpc+json"),
+                            );
+                            return Ok(res);
+                        }
+                    }
+                } else {
+                    router.route_with_bytes(parts, unframed).await
+                };
 
                 // Collect the REST response body and wrap it in a gRPC frame.
                 let (mut res_parts, res_body) = rest_res.into_parts();

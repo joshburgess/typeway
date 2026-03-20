@@ -76,27 +76,44 @@ macro_rules! grpc_client {
             base_url: ::url::Url,
             inner: ::reqwest::Client,
             service_path: ::std::string::String,
+            config: $crate::interceptors::GrpcClientConfig,
         }
 
         impl $name {
             /// Create a new gRPC client pointing at the given base URL.
             ///
-            /// The client is configured with HTTP/2 prior knowledge, which is
-            /// required for gRPC communication.
+            /// The client is configured with HTTP/2 prior knowledge and a
+            /// default 30-second timeout.
             $vis fn new(base_url: &str) -> ::core::result::Result<Self, $crate::client::GrpcClientError> {
+                Self::with_config(base_url, $crate::interceptors::GrpcClientConfig::default())
+            }
+
+            /// Create a new gRPC client with the given configuration.
+            ///
+            /// The client is configured with HTTP/2 prior knowledge. The
+            /// `config` controls default metadata, timeout, and interceptors
+            /// applied to every request.
+            $vis fn with_config(
+                base_url: &str,
+                config: $crate::interceptors::GrpcClientConfig,
+            ) -> ::core::result::Result<Self, $crate::client::GrpcClientError> {
                 let base_url = ::url::Url::parse(base_url)
                     .map_err($crate::client::GrpcClientError::Url)?;
-                let inner = ::reqwest::Client::builder()
-                    .http2_prior_knowledge()
-                    .build()
+                let mut builder = ::reqwest::Client::builder()
+                    .http2_prior_knowledge();
+                if let ::core::option::Option::Some(timeout) = config.timeout {
+                    builder = builder.timeout(timeout);
+                }
+                let inner = builder.build()
                     .map_err($crate::client::GrpcClientError::Http)?;
                 let service_path = ::std::format!("{}.{}", $package, $service);
-                ::core::result::Result::Ok($name { base_url, inner, service_path })
+                ::core::result::Result::Ok($name { base_url, inner, service_path, config })
             }
 
             /// Create a gRPC client wrapping an existing `reqwest::Client`.
             ///
             /// The caller is responsible for configuring the client for HTTP/2.
+            /// Uses default configuration (no metadata, no interceptors, 30s timeout).
             $vis fn with_client(
                 base_url: &str,
                 client: ::reqwest::Client,
@@ -108,12 +125,18 @@ macro_rules! grpc_client {
                     base_url,
                     inner: client,
                     service_path,
+                    config: $crate::interceptors::GrpcClientConfig::default(),
                 })
             }
 
             /// Return the fully-qualified service path (e.g., `"users.v1.UserService"`).
             $vis fn service_path(&self) -> &str {
                 &self.service_path
+            }
+
+            /// Return a reference to the client configuration.
+            $vis fn config(&self) -> &$crate::interceptors::GrpcClientConfig {
+                &self.config
             }
 
             $(
@@ -153,11 +176,23 @@ macro_rules! grpc_client {
                     };
                     let body = $crate::framing::encode_grpc_frame(&raw_body);
 
-                    let response = self.inner
+                    let mut request = self.inner
                         .post(url)
                         .header("content-type", "application/grpc+json")
                         .header("te", "trailers")
-                        .body(body)
+                        .body(body);
+
+                    // Apply default metadata from config.
+                    for (key, value) in &self.config.default_metadata {
+                        request = request.header(key.as_str(), value.as_str());
+                    }
+
+                    // Apply request interceptors.
+                    for interceptor in &self.config.interceptors {
+                        request = interceptor(request);
+                    }
+
+                    let response = request
                         .send()
                         .await
                         .map_err($crate::client::GrpcClientError::Http)?;

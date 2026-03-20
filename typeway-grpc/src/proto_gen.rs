@@ -40,6 +40,8 @@ pub struct RpcMethod {
     pub response_message: ProtoMessage,
     /// Whether this RPC uses server-side streaming for the response.
     pub server_streaming: bool,
+    /// Whether this RPC uses client-side streaming for the request.
+    pub client_streaming: bool,
 }
 
 /// A protobuf message definition paired with its name.
@@ -95,6 +97,7 @@ where
             request_message,
             response_message,
             server_streaming: false,
+            client_streaming: false,
         }
     }
 }
@@ -158,6 +161,7 @@ macro_rules! impl_endpoint_to_rpc_with_body {
                     request_message,
                     response_message,
                     server_streaming: false,
+                    client_streaming: false,
                 }
             }
         }
@@ -191,6 +195,27 @@ impl<Inner: EndpointToRpc> EndpointToRpc for typeway_core::versioning::Deprecate
 impl<E: EndpointToRpc> EndpointToRpc for crate::streaming::ServerStream<E> {
     fn to_rpc() -> RpcMethod {
         let mut rpc = E::to_rpc();
+        rpc.server_streaming = true;
+        rpc
+    }
+}
+
+/// `ClientStream<E>` delegates to the inner endpoint but marks it as
+/// client-streaming.
+impl<E: EndpointToRpc> EndpointToRpc for crate::streaming::ClientStream<E> {
+    fn to_rpc() -> RpcMethod {
+        let mut rpc = E::to_rpc();
+        rpc.client_streaming = true;
+        rpc
+    }
+}
+
+/// `BidirectionalStream<E>` delegates to the inner endpoint but marks it as
+/// both client-streaming and server-streaming.
+impl<E: EndpointToRpc> EndpointToRpc for crate::streaming::BidirectionalStream<E> {
+    fn to_rpc() -> RpcMethod {
+        let mut rpc = E::to_rpc();
+        rpc.client_streaming = true;
         rpc.server_streaming = true;
         rpc
     }
@@ -286,6 +311,19 @@ pub trait ApiToProto: CollectRpcs {
         let rpcs = Self::collect_rpcs();
         generate_proto_file(service_name, package, &rpcs)
     }
+
+    /// Generate a `.proto` file and validate it.
+    ///
+    /// Returns the proto string and any validation errors.
+    /// An empty error list means the proto is valid.
+    fn to_proto_validated(
+        service_name: &str,
+        package: &str,
+    ) -> (String, Vec<crate::validate::ProtoValidationError>) {
+        let proto = Self::to_proto(service_name, package);
+        let errors = crate::validate::validate_proto(&proto);
+        (proto, errors)
+    }
 }
 
 /// Blanket impl: anything that can collect RPCs can generate a `.proto` file.
@@ -322,11 +360,12 @@ fn generate_proto_file(service_name: &str, package: &str, rpcs: &[RpcMethod]) ->
             .map(|m| m.name.as_str())
             .unwrap_or("google.protobuf.Empty");
         let res_type = &rpc.response_message.name;
-        let stream_prefix = if rpc.server_streaming { "stream " } else { "" };
+        let req_prefix = if rpc.client_streaming { "stream " } else { "" };
+        let res_prefix = if rpc.server_streaming { "stream " } else { "" };
         lines.push(format!("  // {} {}", rpc.http_method, rpc.path_pattern));
         lines.push(format!(
-            "  rpc {}({}) returns ({}{});",
-            rpc.name, req_type, stream_prefix, res_type
+            "  rpc {}({}{}) returns ({}{});",
+            rpc.name, req_prefix, req_type, res_prefix, res_type
         ));
     }
     lines.push("}".to_string());
