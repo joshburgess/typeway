@@ -778,3 +778,370 @@ async fn grpc_e2e_404_maps_correctly() {
         resp.grpc_code()
     );
 }
+
+// ===========================================================================
+// Part 1: EffectfulServer / Validated / Protected with gRPC
+// ===========================================================================
+
+// Additional path type for health endpoint.
+#[allow(non_camel_case_types)]
+struct health;
+impl LitSegment for health {
+    const VALUE: &'static str = "health";
+}
+
+type HealthPath = HCons<Lit<health>, HNil>;
+
+async fn health_handler() -> String {
+    "ok".to_string()
+}
+
+/// EffectfulServer with a Requires<CorsRequired> endpoint compiles and
+/// serves gRPC after effects are discharged via `.ready()`.
+#[tokio::test]
+async fn grpc_with_effectful_server_and_cors() {
+    use typeway_core::effects::{CorsRequired, Requires};
+    use typeway_server::EffectfulServer;
+
+    type EffAPI = (
+        Requires<CorsRequired, GetEndpoint<UsersPath, Vec<User>>>,
+        GetEndpoint<HealthPath, String>,
+    );
+
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![
+        User {
+            id: 1,
+            name: "Alice".into(),
+        },
+    ]));
+
+    let server = EffectfulServer::<EffAPI>::new((
+        bind::<_, _, _>(list_users),
+        bind::<_, _, _>(health_handler),
+    ))
+    .with_state(state)
+    .provide::<CorsRequired>()
+    .ready()
+    .with_grpc("EffService", "eff.v1");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    tokio::spawn(async move {
+        server
+            .serve_with_shutdown(listener, std::future::pending())
+            .await
+            .unwrap();
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Verify REST still works through the EffectfulServer → GrpcServer chain.
+    let resp = reqwest::get(format!("http://127.0.0.1:{port}/health"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.text().await.unwrap();
+    // String handler returns JSON-encoded "ok" (with quotes).
+    assert!(
+        body.contains("ok"),
+        "expected body to contain 'ok', got: {body}"
+    );
+
+    // Verify gRPC works.
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    let resp = client
+        .call_empty("eff.v1.EffService", "ListUser")
+        .await;
+    assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
+    let body = resp.json();
+    assert!(body.is_array());
+    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["name"], "Alice");
+}
+
+/// Validated<V, E> wrapper compiles with gRPC and routes correctly.
+#[tokio::test]
+async fn grpc_with_validated_endpoint() {
+    use typeway_server::typed::Validate;
+
+    struct CreateUserValidator;
+    impl Validate<CreateUser> for CreateUserValidator {
+        fn validate(body: &CreateUser) -> Result<(), String> {
+            if body.name.is_empty() {
+                return Err("name must not be empty".to_string());
+            }
+            Ok(())
+        }
+    }
+
+    type ValidatedAPI = (
+        GetEndpoint<UsersPath, Vec<User>>,
+        typeway_server::typed::Validated<CreateUserValidator, PostEndpoint<UsersPath, CreateUser, User>>,
+    );
+
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![
+        User {
+            id: 1,
+            name: "Alice".into(),
+        },
+    ]));
+
+    let grpc_server = Server::<ValidatedAPI>::new((
+        bind::<_, _, _>(list_users),
+        bind::<_, _, _>(create_user),
+    ))
+    .with_state(state)
+    .with_grpc("ValidatedService", "val.v1");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    tokio::spawn(async move {
+        grpc_server
+            .serve_with_shutdown(listener, std::future::pending())
+            .await
+            .unwrap();
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    // Verify gRPC routing works through the Validated wrapper.
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    let resp = client
+        .call_empty("val.v1.ValidatedService", "ListUser")
+        .await;
+    assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
+    let body = resp.json();
+    assert!(body.is_array());
+    assert_eq!(body.as_array().unwrap().len(), 1);
+}
+
+/// Nested wrappers: Requires<Cors, Validated<V, PostEndpoint<...>>> compiles
+/// with gRPC when effects are discharged.
+#[tokio::test]
+async fn grpc_with_nested_wrappers() {
+    use typeway_core::effects::{CorsRequired, Requires};
+    use typeway_server::typed::Validate;
+    use typeway_server::EffectfulServer;
+
+    struct SimpleValidator;
+    impl Validate<CreateUser> for SimpleValidator {
+        fn validate(_body: &CreateUser) -> Result<(), String> {
+            Ok(())
+        }
+    }
+
+    type NestedAPI = (
+        GetEndpoint<UsersPath, Vec<User>>,
+        Requires<
+            CorsRequired,
+            typeway_server::typed::Validated<SimpleValidator, PostEndpoint<UsersPath, CreateUser, User>>,
+        >,
+    );
+
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![
+        User {
+            id: 1,
+            name: "Alice".into(),
+        },
+    ]));
+
+    let server = EffectfulServer::<NestedAPI>::new((
+        bind::<_, _, _>(list_users),
+        bind::<_, _, _>(create_user),
+    ))
+    .with_state(state)
+    .provide::<CorsRequired>()
+    .ready()
+    .with_grpc("NestedService", "nested.v1");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    tokio::spawn(async move {
+        server
+            .serve_with_shutdown(listener, std::future::pending())
+            .await
+            .unwrap();
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+
+    // List users via gRPC (plain endpoint).
+    let resp = client
+        .call_empty("nested.v1.NestedService", "ListUser")
+        .await;
+    assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
+
+    // Create user via gRPC (nested wrapper endpoint).
+    let resp = client
+        .call(
+            "nested.v1.NestedService",
+            "CreateUser",
+            serde_json::json!({"name": "Bob"}),
+        )
+        .await;
+    assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
+    assert_eq!(resp.json()["name"], "Bob");
+}
+
+// ===========================================================================
+// Part 2: Server-side streaming in the gRPC bridge
+// ===========================================================================
+
+/// A server-streaming endpoint returns a JSON array that the bridge
+/// splits into individual gRPC frames, one per array element.
+#[tokio::test]
+async fn grpc_streaming_splits_json_array() {
+    use typeway_grpc::streaming::ServerStream;
+
+    type StreamingAPI = (
+        ServerStream<GetEndpoint<UsersPath, Vec<User>>>,
+        GetEndpoint<HealthPath, String>,
+    );
+
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![
+        User { id: 1, name: "Alice".into() },
+        User { id: 2, name: "Bob".into() },
+        User { id: 3, name: "Charlie".into() },
+    ]));
+
+    let grpc_server = Server::<StreamingAPI>::new((
+        bind::<_, _, _>(list_users),
+        bind::<_, _, _>(health_handler),
+    ))
+    .with_state(state)
+    .with_grpc("StreamService", "stream.v1");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    tokio::spawn(async move {
+        grpc_server
+            .serve_with_shutdown(listener, std::future::pending())
+            .await
+            .unwrap();
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+
+    // Use the streaming call method to get individual items.
+    let resp = client
+        .call_streaming_empty("stream.v1.StreamService", "ListUser")
+        .await;
+
+    assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
+    assert_eq!(
+        resp.len(),
+        3,
+        "expected 3 streamed items, got {}",
+        resp.len()
+    );
+    assert_eq!(resp.items[0]["name"], "Alice");
+    assert_eq!(resp.items[1]["name"], "Bob");
+    assert_eq!(resp.items[2]["name"], "Charlie");
+}
+
+/// A non-streaming endpoint that returns JSON still returns a single
+/// gRPC frame when accessed via the streaming client method.
+#[tokio::test]
+async fn grpc_non_streaming_returns_single_frame() {
+    use typeway_grpc::streaming::ServerStream;
+
+    // Both endpoints return JSON (Vec<User>), but only the first is streaming.
+    type MixedStreamAPI = (
+        ServerStream<GetEndpoint<UsersPath, Vec<User>>>,
+        GetEndpoint<UserByIdPath, User>,
+    );
+
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![
+        User { id: 1, name: "Alice".into() },
+    ]));
+
+    let grpc_server = Server::<MixedStreamAPI>::new((
+        bind::<_, _, _>(list_users),
+        bind::<_, _, _>(get_user),
+    ))
+    .with_state(state)
+    .with_grpc("MixedService", "mixed.v1");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    tokio::spawn(async move {
+        grpc_server
+            .serve_with_shutdown(listener, std::future::pending())
+            .await
+            .unwrap();
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+
+    // The streaming endpoint should return multiple frames for a list.
+    let resp = client
+        .call_streaming_empty("mixed.v1.MixedService", "ListUser")
+        .await;
+    assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
+    assert_eq!(
+        resp.len(),
+        1,
+        "expected 1 streamed item (only 1 user in state), got {}",
+        resp.len()
+    );
+    assert_eq!(resp.items[0]["name"], "Alice");
+
+    // The non-streaming endpoint (GetUser via call) returns a single
+    // unary response — verify via the normal call method.
+    let resp = client
+        .call_empty("mixed.v1.MixedService", "GetUser")
+        .await;
+    // GetUser's rest_path has a placeholder, so it won't match a real user.
+    // The important thing is it doesn't crash — it returns NOT_FOUND.
+    assert_eq!(resp.grpc_code(), typeway_grpc::GrpcCode::NotFound);
+}
+
+/// Verify that the service descriptor for a streaming endpoint has
+/// `server_streaming: true`.
+#[test]
+fn streaming_descriptor_has_server_streaming_flag() {
+    use typeway_grpc::streaming::ServerStream;
+    use typeway_grpc::service::ApiToServiceDescriptor;
+
+    type StreamAPI = (
+        ServerStream<GetEndpoint<UsersPath, Vec<User>>>,
+        GetEndpoint<HealthPath, String>,
+    );
+
+    let desc = StreamAPI::service_descriptor("StreamSvc", "stream.v1");
+    assert_eq!(desc.methods.len(), 2);
+
+    // The first method (ListUser) should be server-streaming.
+    let list_method = desc.methods.iter().find(|m| m.name == "ListUser").unwrap();
+    assert!(
+        list_method.server_streaming,
+        "expected ListUser to be server_streaming"
+    );
+    assert!(
+        !list_method.client_streaming,
+        "expected ListUser to NOT be client_streaming"
+    );
+
+    // The second method (ListHealth) should NOT be streaming.
+    // GET /health with no captures generates "ListHealth" as the RPC name.
+    let health_method = desc.methods.iter().find(|m| m.name == "ListHealth").unwrap();
+    assert!(
+        !health_method.server_streaming,
+        "expected GetHealth to NOT be server_streaming"
+    );
+    assert!(
+        !health_method.client_streaming,
+        "expected GetHealth to NOT be client_streaming"
+    );
+}

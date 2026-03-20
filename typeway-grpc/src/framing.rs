@@ -116,6 +116,68 @@ impl std::fmt::Display for FramingError {
 
 impl std::error::Error for FramingError {}
 
+/// Decode multiple gRPC frames from a byte buffer.
+///
+/// Standard gRPC framing uses a 5-byte header per frame:
+/// - Byte 0: flag (0x00 = data, 0x80 = trailers)
+/// - Bytes 1-4: big-endian message length
+///
+/// This function parses consecutive frames, returning data frames
+/// (flag 0x00) as byte slices. If a trailers frame (flag 0x80) is
+/// encountered, parsing stops and the trailer payload is returned
+/// separately.
+///
+/// # Returns
+///
+/// A tuple of `(data_frames, trailers)`:
+/// - `data_frames`: a `Vec` of byte slices, one per data frame
+/// - `trailers`: the trailers frame payload, if one was present
+///
+/// # Example
+///
+/// ```
+/// use typeway_grpc::framing::{encode_grpc_frame, decode_grpc_frames};
+///
+/// let mut buf = Vec::new();
+/// buf.extend_from_slice(&encode_grpc_frame(b"first"));
+/// buf.extend_from_slice(&encode_grpc_frame(b"second"));
+///
+/// let (frames, trailers) = decode_grpc_frames(&buf);
+/// assert_eq!(frames.len(), 2);
+/// assert_eq!(frames[0], b"first");
+/// assert_eq!(frames[1], b"second");
+/// assert!(trailers.is_none());
+/// ```
+pub fn decode_grpc_frames(data: &[u8]) -> (Vec<&[u8]>, Option<&[u8]>) {
+    let mut frames = Vec::new();
+    let mut trailers = None;
+    let mut offset = 0;
+
+    while offset + 5 <= data.len() {
+        let flag = data[offset];
+        let len = u32::from_be_bytes([
+            data[offset + 1],
+            data[offset + 2],
+            data[offset + 3],
+            data[offset + 4],
+        ]) as usize;
+        offset += 5;
+        if offset + len > data.len() {
+            break;
+        }
+        let frame = &data[offset..offset + len];
+        if flag == 0x80 {
+            trailers = Some(frame);
+            break;
+        } else {
+            frames.push(frame);
+        }
+        offset += len;
+    }
+
+    (frames, trailers)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -238,5 +300,82 @@ mod tests {
             err.to_string(),
             "incomplete frame: expected 10 bytes, got 3"
         );
+    }
+
+    // --- decode_grpc_frames tests ---
+
+    #[test]
+    fn decode_frames_empty_input() {
+        let (frames, trailers) = decode_grpc_frames(&[]);
+        assert!(frames.is_empty());
+        assert!(trailers.is_none());
+    }
+
+    #[test]
+    fn decode_frames_single_data_frame() {
+        let buf = encode_grpc_frame(b"hello");
+        let (frames, trailers) = decode_grpc_frames(&buf);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0], b"hello");
+        assert!(trailers.is_none());
+    }
+
+    #[test]
+    fn decode_frames_multiple_data_frames() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&encode_grpc_frame(b"first"));
+        buf.extend_from_slice(&encode_grpc_frame(b"second"));
+        buf.extend_from_slice(&encode_grpc_frame(b"third"));
+
+        let (frames, trailers) = decode_grpc_frames(&buf);
+        assert_eq!(frames.len(), 3);
+        assert_eq!(frames[0], b"first");
+        assert_eq!(frames[1], b"second");
+        assert_eq!(frames[2], b"third");
+        assert!(trailers.is_none());
+    }
+
+    #[test]
+    fn decode_frames_data_then_trailers() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&encode_grpc_frame(b"data1"));
+        buf.extend_from_slice(&encode_grpc_frame(b"data2"));
+        // Trailers frame: flag 0x80
+        let trailer_payload = b"grpc-status: 0\r\n";
+        let len = trailer_payload.len() as u32;
+        buf.push(0x80);
+        buf.extend_from_slice(&len.to_be_bytes());
+        buf.extend_from_slice(trailer_payload);
+
+        let (frames, trailers) = decode_grpc_frames(&buf);
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0], b"data1");
+        assert_eq!(frames[1], b"data2");
+        assert_eq!(trailers.unwrap(), trailer_payload.as_slice());
+    }
+
+    #[test]
+    fn decode_frames_trailers_only() {
+        let trailer_payload = b"grpc-status: 5\r\n";
+        let len = trailer_payload.len() as u32;
+        let mut buf = Vec::new();
+        buf.push(0x80);
+        buf.extend_from_slice(&len.to_be_bytes());
+        buf.extend_from_slice(trailer_payload);
+
+        let (frames, trailers) = decode_grpc_frames(&buf);
+        assert!(frames.is_empty());
+        assert_eq!(trailers.unwrap(), trailer_payload.as_slice());
+    }
+
+    #[test]
+    fn decode_frames_truncated_header_ignored() {
+        // A buffer that has a complete frame followed by an incomplete header.
+        let mut buf = encode_grpc_frame(b"ok");
+        buf.extend_from_slice(&[0, 0, 0]); // incomplete 3-byte header
+        let (frames, trailers) = decode_grpc_frames(&buf);
+        assert_eq!(frames.len(), 1);
+        assert_eq!(frames[0], b"ok");
+        assert!(trailers.is_none());
     }
 }

@@ -139,6 +139,92 @@ macro_rules! grpc_client {
                 &self.config
             }
 
+            /// Call a server-streaming gRPC method by name, collecting all
+            /// response frames as a `Vec<serde_json::Value>`.
+            ///
+            /// This is a generic method for streaming endpoints. The
+            /// `method_name` should be the snake_case method name (e.g.,
+            /// `"list_users"`); it is converted to PascalCase automatically.
+            $vis async fn call_streaming(
+                &self,
+                method_name: &str,
+                body: ::serde_json::Value,
+            ) -> ::core::result::Result<
+                ::std::vec::Vec<::serde_json::Value>,
+                $crate::client::GrpcClientError,
+            > {
+                let pascal_name: ::std::string::String = method_name
+                    .split('_')
+                    .map(|w| {
+                        let mut c = w.chars();
+                        match c.next() {
+                            ::core::option::Option::Some(f) => {
+                                f.to_uppercase().to_string() + &c.collect::<::std::string::String>()
+                            }
+                            ::core::option::Option::None => ::std::string::String::new(),
+                        }
+                    })
+                    .collect();
+
+                let path = ::std::format!("/{}/{}", self.service_path, pascal_name);
+                let url = self.base_url.join(&path)
+                    .map_err($crate::client::GrpcClientError::Url)?;
+
+                let json_bytes = ::serde_json::to_vec(&body)
+                    .map_err(|e| $crate::client::GrpcClientError::Serialize(e.to_string()))?;
+                let framed_body = $crate::framing::encode_grpc_frame(&json_bytes);
+
+                let mut request = self.inner
+                    .post(url)
+                    .header("content-type", "application/grpc+json")
+                    .header("te", "trailers")
+                    .body(framed_body);
+
+                for (key, value) in &self.config.default_metadata {
+                    request = request.header(key.as_str(), value.as_str());
+                }
+                for interceptor in &self.config.interceptors {
+                    request = interceptor(request);
+                }
+
+                let response = request
+                    .send()
+                    .await
+                    .map_err($crate::client::GrpcClientError::Http)?;
+
+                let grpc_status = response.headers()
+                    .get("grpc-status")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<i32>().ok())
+                    .unwrap_or(0);
+
+                if grpc_status != 0 {
+                    let grpc_message = response.headers()
+                        .get("grpc-message")
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("")
+                        .to_string();
+                    return ::core::result::Result::Err(
+                        $crate::client::GrpcClientError::Status {
+                            code: grpc_status,
+                            message: grpc_message,
+                        }
+                    );
+                }
+
+                let bytes = response.bytes().await
+                    .map_err($crate::client::GrpcClientError::Http)?;
+
+                let (data_frames, _trailers) = $crate::framing::decode_grpc_frames(&bytes);
+
+                let items: ::std::vec::Vec<::serde_json::Value> = data_frames
+                    .iter()
+                    .filter_map(|frame| ::serde_json::from_slice(frame).ok())
+                    .collect();
+
+                ::core::result::Result::Ok(items)
+            }
+
             $(
                 $(#[$method_meta])*
                 $vis async fn $method(

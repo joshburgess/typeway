@@ -92,7 +92,7 @@ pub use diff::{diff_protos, ChangeKind, ProtoChange};
 pub use client::GrpcClientError;
 #[cfg(feature = "client")]
 pub use interceptors::{GrpcClientConfig, GrpcRequestInterceptor};
-pub use framing::{decode_grpc_frame, encode_grpc_frame, FramingError};
+pub use framing::{decode_grpc_frame, decode_grpc_frames, encode_grpc_frame, FramingError};
 pub use health::{HealthService, HealthStatus};
 pub use mapping::{build_message, ProtoField, ToProtoType};
 pub use multiplex::{is_grpc_request, GrpcMultiplexer};
@@ -108,4 +108,4 @@ pub use web::{
     TRAILERS_FRAME_FLAG,
 };
 #[cfg(feature = "test-client")]
-pub use test_client::{GrpcTestClient, GrpcTestResponse};
+pub use test_client::{GrpcStreamingResponse, GrpcTestClient, GrpcTestResponse};

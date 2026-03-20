@@ -523,7 +523,7 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                     router.route_with_bytes(parts, unframed).await
                 };
 
-                // Collect the REST response body and wrap it in a gRPC frame.
+                // Collect the REST response body and wrap it in gRPC frame(s).
                 let (mut res_parts, res_body) = rest_res.into_parts();
                 let grpc_code = http_to_grpc_code(res_parts.status);
 
@@ -531,7 +531,30 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                     Ok(collected) => collected.to_bytes(),
                     Err(_) => bytes::Bytes::new(),
                 };
-                let framed = typeway_grpc::framing::encode_grpc_frame(&res_bytes);
+
+                // For server-streaming methods, split JSON arrays into
+                // individual gRPC frames — one per array element.
+                let framed = if method.server_streaming
+                    && grpc_code == typeway_grpc::GrpcCode::Ok
+                {
+                    match serde_json::from_slice::<serde_json::Value>(&res_bytes) {
+                        Ok(serde_json::Value::Array(items)) => {
+                            let mut buf = Vec::new();
+                            for item in &items {
+                                let item_bytes =
+                                    serde_json::to_vec(item).unwrap_or_default();
+                                buf.extend_from_slice(
+                                    &typeway_grpc::framing::encode_grpc_frame(&item_bytes),
+                                );
+                            }
+                            buf
+                        }
+                        // Not a JSON array — fall back to single frame.
+                        _ => typeway_grpc::framing::encode_grpc_frame(&res_bytes),
+                    }
+                } else {
+                    typeway_grpc::framing::encode_grpc_frame(&res_bytes)
+                };
 
                 // gRPC always returns HTTP 200; the real status is in grpc-status.
                 res_parts.status = http::StatusCode::OK;
@@ -587,5 +610,55 @@ impl<Auth, E: EndpointToRpc> EndpointToRpc for crate::auth::Protected<Auth, E> {
 impl<V: Send + Sync + 'static, E: EndpointToRpc> EndpointToRpc for crate::typed::Validated<V, E> {
     fn to_rpc() -> RpcMethod {
         E::to_rpc()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// BindableEndpoint delegation for streaming wrapper types
+// ---------------------------------------------------------------------------
+
+use crate::handler_for::BindableEndpoint;
+
+/// `ServerStream<E>` delegates `BindableEndpoint` to the inner endpoint.
+///
+/// At the REST layer, a server-streaming endpoint behaves identically to
+/// a normal endpoint (it returns `Vec<T>` as JSON). The streaming behavior
+/// is only visible at the gRPC bridge layer, which splits the JSON array
+/// into individual gRPC frames.
+impl<E: BindableEndpoint> BindableEndpoint for typeway_grpc::streaming::ServerStream<E> {
+    fn method() -> http::Method {
+        E::method()
+    }
+    fn pattern() -> String {
+        E::pattern()
+    }
+    fn match_fn() -> crate::router::MatchFn {
+        E::match_fn()
+    }
+}
+
+/// `ClientStream<E>` delegates `BindableEndpoint` to the inner endpoint.
+impl<E: BindableEndpoint> BindableEndpoint for typeway_grpc::streaming::ClientStream<E> {
+    fn method() -> http::Method {
+        E::method()
+    }
+    fn pattern() -> String {
+        E::pattern()
+    }
+    fn match_fn() -> crate::router::MatchFn {
+        E::match_fn()
+    }
+}
+
+/// `BidirectionalStream<E>` delegates `BindableEndpoint` to the inner endpoint.
+impl<E: BindableEndpoint> BindableEndpoint for typeway_grpc::streaming::BidirectionalStream<E> {
+    fn method() -> http::Method {
+        E::method()
+    }
+    fn pattern() -> String {
+        E::pattern()
+    }
+    fn match_fn() -> crate::router::MatchFn {
+        E::match_fn()
     }
 }

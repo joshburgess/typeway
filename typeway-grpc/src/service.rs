@@ -18,6 +18,10 @@ pub struct GrpcMethodDescriptor {
     pub http_method: http::Method,
     /// The REST path pattern (e.g., `"/users/{}"`).
     pub rest_path: String,
+    /// Whether this method uses server-side streaming for the response.
+    pub server_streaming: bool,
+    /// Whether this method uses client-side streaming for the request.
+    pub client_streaming: bool,
 }
 
 /// Describes a complete gRPC service.
@@ -79,6 +83,8 @@ impl<T: CollectRpcs> ApiToServiceDescriptor for T {
                         },
                     ),
                     rest_path: rpc.path_pattern.clone(),
+                    server_streaming: rpc.server_streaming,
+                    client_streaming: rpc.client_streaming,
                 })
                 .collect(),
         }
@@ -111,6 +117,8 @@ mod tests {
                         },
                     ),
                     rest_path: rpc.path_pattern.clone(),
+                    server_streaming: rpc.server_streaming,
+                    client_streaming: rpc.client_streaming,
                 })
                 .collect(),
         }
