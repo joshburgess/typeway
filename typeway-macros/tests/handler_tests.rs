@@ -33,3 +33,9 @@ fn schema_derive_pass() {
     let t = trybuild::TestCases::new();
     t.pass("tests/schema_derive/pass_*.rs");
 }
+
+#[test]
+fn proto_derive_pass() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/proto_derive/pass_*.rs");
+}

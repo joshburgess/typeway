@@ -1420,6 +1420,200 @@ fn extract_serde_field_rename(attrs: &[syn::Attribute]) -> Option<String> {
     None
 }
 
+// ---------------------------------------------------------------------------
+// #[derive(ToProtoType)] — protobuf message derivation from struct definitions
+// ---------------------------------------------------------------------------
+
+/// Derives a `ToProtoType` implementation for a struct with named fields.
+///
+/// Each field is mapped to a [`ProtoField`](typeway_grpc::ProtoField) entry.
+/// Field tags can be specified explicitly with `#[proto(tag = N)]`; fields
+/// without an explicit tag are auto-numbered based on their 1-indexed position.
+///
+/// `Option<T>` fields produce `optional` proto fields. `Vec<T>` fields produce
+/// `repeated` proto fields (except `Vec<u8>`, which maps to `bytes`).
+///
+/// # Example
+///
+/// ```ignore
+/// #[derive(ToProtoType)]
+/// struct User {
+///     #[proto(tag = 1)]
+///     id: u32,
+///     #[proto(tag = 2)]
+///     name: String,
+///     #[proto(tag = 3)]
+///     bio: Option<String>,
+/// }
+/// ```
+#[proc_macro_derive(ToProtoType, attributes(proto))]
+pub fn derive_to_proto_type(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    match derive_to_proto_type_impl(input) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+fn derive_to_proto_type_impl(input: syn::DeriveInput) -> syn::Result<TokenStream2> {
+    let name = &input.ident;
+    let name_str = name.to_string();
+
+    let fields = match &input.data {
+        syn::Data::Struct(data) => match &data.fields {
+            syn::Fields::Named(named) => &named.named,
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    name,
+                    "ToProtoType only supports structs with named fields",
+                ));
+            }
+        },
+        _ => {
+            return Err(syn::Error::new_spanned(
+                name,
+                "ToProtoType only supports structs",
+            ));
+        }
+    };
+
+    let mut field_entries = Vec::new();
+    let mut collect_stmts = Vec::new();
+
+    for (i, field) in fields.iter().enumerate() {
+        let field_ident = field.ident.as_ref().unwrap();
+        let field_name_str = field_ident.to_string();
+        let field_ty = &field.ty;
+        let tag = extract_proto_tag(&field.attrs).unwrap_or((i as u32) + 1);
+
+        // Detect Option<T> and Vec<T> to set optional/repeated and use the inner type.
+        let (proto_type_ty, optional, repeated) = if let Some(inner) = is_option_type(field_ty) {
+            (inner.clone(), true, false)
+        } else if is_vec_u8(field_ty) {
+            // Vec<u8> maps to bytes — use Vec<u8> directly, not repeated.
+            (field_ty.clone(), false, false)
+        } else if let Some(inner) = is_vec_type(field_ty) {
+            (inner.clone(), false, true)
+        } else {
+            (field_ty.clone(), false, false)
+        };
+
+        field_entries.push(quote! {
+            ::typeway_grpc::ProtoField {
+                name: #field_name_str.to_string(),
+                proto_type: <#proto_type_ty as ::typeway_grpc::ToProtoType>::proto_type_name().to_string(),
+                tag: #tag,
+                repeated: #repeated,
+                optional: #optional,
+            }
+        });
+
+        collect_stmts.push(quote! {
+            msgs.extend(<#proto_type_ty as ::typeway_grpc::ToProtoType>::collect_messages());
+        });
+    }
+
+    let expanded = quote! {
+        impl ::typeway_grpc::ToProtoType for #name {
+            fn proto_type_name() -> &'static str {
+                #name_str
+            }
+
+            fn is_message() -> bool {
+                true
+            }
+
+            fn message_definition() -> ::core::option::Option<::std::string::String> {
+                ::core::option::Option::Some(::typeway_grpc::build_message(#name_str, &[
+                    #(#field_entries),*
+                ]))
+            }
+
+            fn collect_messages() -> ::std::vec::Vec<::std::string::String> {
+                let mut msgs = ::std::vec::Vec::new();
+                #(#collect_stmts)*
+                if let ::core::option::Option::Some(def) = Self::message_definition() {
+                    msgs.push(def);
+                }
+                msgs
+            }
+        }
+    };
+
+    Ok(expanded)
+}
+
+/// Extract a `#[proto(tag = N)]` attribute value from field attributes.
+fn extract_proto_tag(attrs: &[syn::Attribute]) -> Option<u32> {
+    for attr in attrs {
+        if attr.path().is_ident("proto") {
+            if let Ok(meta) = attr.parse_args::<syn::MetaNameValue>() {
+                if meta.path.is_ident("tag") {
+                    if let syn::Expr::Lit(lit) = &meta.value {
+                        if let syn::Lit::Int(int) = &lit.lit {
+                            return int.base10_parse().ok();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// If the type is `Option<T>`, return `Some(T)`.
+fn is_option_type(ty: &syn::Type) -> Option<&syn::Type> {
+    if let syn::Type::Path(path) = ty {
+        if let Some(seg) = path.path.segments.last() {
+            if seg.ident == "Option" {
+                if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                        return Some(inner);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// If the type is `Vec<T>`, return `Some(T)`.
+fn is_vec_type(ty: &syn::Type) -> Option<&syn::Type> {
+    if let syn::Type::Path(path) = ty {
+        if let Some(seg) = path.path.segments.last() {
+            if seg.ident == "Vec" {
+                if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+                    if let Some(syn::GenericArgument::Type(inner)) = args.args.first() {
+                        return Some(inner);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Check if the type is `Vec<u8>` (which maps to protobuf `bytes`).
+fn is_vec_u8(ty: &syn::Type) -> bool {
+    if let syn::Type::Path(path) = ty {
+        if let Some(seg) = path.path.segments.last() {
+            if seg.ident == "Vec" {
+                if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+                    if let Some(syn::GenericArgument::Type(syn::Type::Path(inner_path))) =
+                        args.args.first()
+                    {
+                        if let Some(inner_seg) = inner_path.path.segments.last() {
+                            return inner_seg.ident == "u8"
+                                && inner_seg.arguments.is_none();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Apply a serde rename strategy to a snake_case field name.
 fn apply_rename_strategy(name: &str, strategy: &str) -> String {
     match strategy {

@@ -100,6 +100,151 @@ pub fn http_to_grpc_code(http_status: http::StatusCode) -> GrpcCode {
     }
 }
 
+/// Trait for converting error types to gRPC status responses.
+///
+/// Implement this on your error types to provide rich gRPC error information
+/// beyond the default HTTP-to-gRPC status code mapping.
+///
+/// # Example
+///
+/// ```ignore
+/// use typeway_grpc::status::{IntoGrpcStatus, GrpcStatus};
+///
+/// struct AppError { code: u16, message: String }
+///
+/// impl IntoGrpcStatus for AppError {
+///     fn into_grpc_status(&self) -> GrpcStatus {
+///         match self.code {
+///             404 => GrpcStatus::not_found(&self.message),
+///             401 => GrpcStatus::unauthenticated(&self.message),
+///             _ => GrpcStatus::internal(&self.message),
+///         }
+///     }
+/// }
+/// ```
+#[allow(clippy::wrong_self_convention)]
+pub trait IntoGrpcStatus {
+    /// Convert this value into a [`GrpcStatus`].
+    ///
+    /// Takes `&self` rather than `self` because error values are often
+    /// borrowed (e.g., logged before conversion).
+    fn into_grpc_status(&self) -> GrpcStatus;
+}
+
+/// A gRPC status with code and message.
+#[derive(Debug, Clone)]
+pub struct GrpcStatus {
+    /// The gRPC status code.
+    pub code: GrpcCode,
+    /// A human-readable error message.
+    pub message: String,
+}
+
+impl GrpcStatus {
+    /// Successful status with no message.
+    pub fn ok() -> Self {
+        GrpcStatus {
+            code: GrpcCode::Ok,
+            message: String::new(),
+        }
+    }
+
+    /// The requested entity was not found.
+    pub fn not_found(msg: &str) -> Self {
+        GrpcStatus {
+            code: GrpcCode::NotFound,
+            message: msg.to_string(),
+        }
+    }
+
+    /// The client specified an invalid argument.
+    pub fn invalid_argument(msg: &str) -> Self {
+        GrpcStatus {
+            code: GrpcCode::InvalidArgument,
+            message: msg.to_string(),
+        }
+    }
+
+    /// The caller is not authenticated.
+    pub fn unauthenticated(msg: &str) -> Self {
+        GrpcStatus {
+            code: GrpcCode::Unauthenticated,
+            message: msg.to_string(),
+        }
+    }
+
+    /// The caller does not have permission.
+    pub fn permission_denied(msg: &str) -> Self {
+        GrpcStatus {
+            code: GrpcCode::PermissionDenied,
+            message: msg.to_string(),
+        }
+    }
+
+    /// Internal server error.
+    pub fn internal(msg: &str) -> Self {
+        GrpcStatus {
+            code: GrpcCode::Internal,
+            message: msg.to_string(),
+        }
+    }
+
+    /// The operation is not implemented or not supported.
+    pub fn unimplemented(msg: &str) -> Self {
+        GrpcStatus {
+            code: GrpcCode::Unimplemented,
+            message: msg.to_string(),
+        }
+    }
+
+    /// The service is currently unavailable.
+    pub fn unavailable(msg: &str) -> Self {
+        GrpcStatus {
+            code: GrpcCode::Unavailable,
+            message: msg.to_string(),
+        }
+    }
+
+    /// The entity that the client attempted to create already exists.
+    pub fn already_exists(msg: &str) -> Self {
+        GrpcStatus {
+            code: GrpcCode::AlreadyExists,
+            message: msg.to_string(),
+        }
+    }
+
+    /// Some resource has been exhausted (e.g., rate limit).
+    pub fn resource_exhausted(msg: &str) -> Self {
+        GrpcStatus {
+            code: GrpcCode::ResourceExhausted,
+            message: msg.to_string(),
+        }
+    }
+
+    /// Convert to gRPC response headers.
+    ///
+    /// Always includes `grpc-status`. Includes `grpc-message` only when
+    /// the message is non-empty.
+    pub fn to_headers(&self) -> Vec<(String, String)> {
+        let mut headers = vec![("grpc-status".to_string(), self.code.as_i32().to_string())];
+        if !self.message.is_empty() {
+            headers.push(("grpc-message".to_string(), self.message.clone()));
+        }
+        headers
+    }
+}
+
+/// Default impl for [`http::StatusCode`] — uses the existing
+/// [`http_to_grpc_code`] mapping.
+impl IntoGrpcStatus for http::StatusCode {
+    fn into_grpc_status(&self) -> GrpcStatus {
+        GrpcStatus {
+            code: http_to_grpc_code(*self),
+            message: self.canonical_reason().unwrap_or("").to_string(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

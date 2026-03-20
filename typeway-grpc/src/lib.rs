@@ -57,6 +57,7 @@ pub mod proto_gen;
 pub mod proto_parse;
 pub mod service;
 pub mod status;
+pub mod streaming;
 
 pub use codegen::generate_typeway_from_proto;
 pub use mapping::{build_message, ProtoField, ToProtoType};
@@ -64,4 +65,5 @@ pub use multiplex::{is_grpc_request, GrpcMultiplexer};
 pub use proto_gen::{ApiToProto, CollectRpcs, EndpointToRpc, ProtoMessage, RpcMethod};
 pub use proto_parse::{parse_proto, ParsedField, ParsedMessage, ProtoFile, ProtoRpcMethod, ProtoService};
 pub use service::{ApiToServiceDescriptor, GrpcMethodDescriptor, GrpcServiceDescriptor};
-pub use status::{http_to_grpc_code, GrpcCode};
+pub use status::{http_to_grpc_code, GrpcCode, GrpcStatus, IntoGrpcStatus};
+pub use streaming::ServerStream;

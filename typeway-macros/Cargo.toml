@@ -16,6 +16,7 @@ trybuild = "1"
 typeway-core = { path = "../typeway-core" }
 typeway-server = { path = "../typeway-server" }
 typeway-openapi = { path = "../typeway-openapi" }
+typeway-grpc = { path = "../typeway-grpc" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 http = "1"

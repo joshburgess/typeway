@@ -38,6 +38,8 @@ pub struct RpcMethod {
     pub request_message: Option<ProtoMessage>,
     /// Response message definition.
     pub response_message: ProtoMessage,
+    /// Whether this RPC uses server-side streaming for the response.
+    pub server_streaming: bool,
 }
 
 /// A protobuf message definition paired with its name.
@@ -92,6 +94,7 @@ where
             path_pattern: path,
             request_message,
             response_message,
+            server_streaming: false,
         }
     }
 }
@@ -140,6 +143,7 @@ macro_rules! impl_endpoint_to_rpc_with_body {
                     path_pattern: path,
                     request_message,
                     response_message,
+                    server_streaming: false,
                 }
             }
         }
@@ -165,6 +169,16 @@ impl<Eff: Effect, Inner: EndpointToRpc> EndpointToRpc for Requires<Eff, Inner> {
 impl<Inner: EndpointToRpc> EndpointToRpc for typeway_core::versioning::Deprecated<Inner> {
     fn to_rpc() -> RpcMethod {
         Inner::to_rpc()
+    }
+}
+
+/// `ServerStream<E>` delegates to the inner endpoint but marks it as
+/// server-streaming.
+impl<E: EndpointToRpc> EndpointToRpc for crate::streaming::ServerStream<E> {
+    fn to_rpc() -> RpcMethod {
+        let mut rpc = E::to_rpc();
+        rpc.server_streaming = true;
+        rpc
     }
 }
 
@@ -294,10 +308,11 @@ fn generate_proto_file(service_name: &str, package: &str, rpcs: &[RpcMethod]) ->
             .map(|m| m.name.as_str())
             .unwrap_or("google.protobuf.Empty");
         let res_type = &rpc.response_message.name;
+        let stream_prefix = if rpc.server_streaming { "stream " } else { "" };
         lines.push(format!("  // {} {}", rpc.http_method, rpc.path_pattern));
         lines.push(format!(
-            "  rpc {}({}) returns ({});",
-            rpc.name, req_type, res_type
+            "  rpc {}({}) returns ({}{});",
+            rpc.name, req_type, stream_prefix, res_type
         ));
     }
     lines.push("}".to_string());

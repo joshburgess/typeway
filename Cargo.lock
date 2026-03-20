@@ -3035,6 +3035,7 @@ dependencies = [
  "tokio",
  "trybuild",
  "typeway-core",
+ "typeway-grpc",
  "typeway-openapi",
  "typeway-server",
 ]

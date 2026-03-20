@@ -116,6 +116,7 @@ mod tests {
                 name: format!("{}Response", name),
                 definition: String::new(),
             },
+            server_streaming: false,
         }
     }
 

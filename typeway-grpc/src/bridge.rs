@@ -31,7 +31,7 @@ use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt, Empty};
 
 use crate::service::{ApiToServiceDescriptor, GrpcServiceDescriptor};
-use crate::status::http_to_grpc_code;
+use crate::status::{http_to_grpc_code, GrpcStatus};
 
 /// The body type used by the bridge.
 ///
@@ -192,18 +192,19 @@ where
 
             // Translate response: map HTTP status to gRPC status code.
             let (mut parts, body) = rest_res.into_parts();
-            let grpc_code = http_to_grpc_code(parts.status);
+            let grpc_status = GrpcStatus {
+                code: http_to_grpc_code(parts.status),
+                message: String::new(),
+            };
 
-            // gRPC always returns HTTP 200; the real status is in grpc-status.
+            // gRPC always returns HTTP 200; the real status is in grpc-status
+            // and grpc-message headers.
             parts.status = http::StatusCode::OK;
-            parts.headers.insert(
-                "grpc-status",
-                grpc_code
-                    .as_i32()
-                    .to_string()
-                    .parse()
-                    .expect("valid header value for grpc-status"),
-            );
+            for (name, value) in grpc_status.to_headers() {
+                if let (Ok(name), Ok(value)) = (name.parse::<http::header::HeaderName>(), value.parse::<http::HeaderValue>()) {
+                    parts.headers.insert(name, value);
+                }
+            }
             parts.headers.insert(
                 "content-type",
                 http::HeaderValue::from_static("application/grpc+json"),
