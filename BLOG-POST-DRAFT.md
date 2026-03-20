@@ -589,53 +589,64 @@ Nothing like this exists in Servant. Haskell's type system is powerful enough to
 
 ### gRPC from the Same API Type
 
-The same type that drives the REST server, the type-safe client, and the OpenAPI spec now also generates Protocol Buffers service definitions, serves gRPC alongside REST, provides a type-safe gRPC client, and exposes server reflection so tools like `grpcurl` work out of the box. One API type, seven projections: REST server, REST client, OpenAPI spec, gRPC server, gRPC client, `.proto` file, and server reflection.
+This is the feature I'm most proud of, because nothing else in any language does it.
 
-`#[derive(ToProtoType)]` eliminates hand-written message definitions — the Rust struct is the source of truth, with field tags declared inline:
+The same type that drives the REST server, the type-safe client, and the OpenAPI spec now also generates Protocol Buffers service definitions, serves gRPC alongside REST on the same port, provides a type-safe gRPC client, exposes server reflection, runs a health check service, serves gRPC documentation, supports gRPC-Web for browser clients, and validates proto compatibility across versions. One API type, eight projections: REST server, REST client, OpenAPI spec + Swagger UI, gRPC server, gRPC client, `.proto` file, gRPC spec + docs page, and server reflection.
+
+`#[derive(ToProtoType)]` eliminates hand-written message definitions entirely. The Rust struct is the source of truth, with field tags declared inline for stable wire format numbering:
 
 ```rust
+/// A registered user.
 #[derive(ToProtoType)]
 struct User {
+    /// The unique user identifier.
     #[proto(tag = 1)]
     id: u32,
+    /// Display name.
     #[proto(tag = 2)]
     name: String,
+    /// Account metadata.
+    #[proto(tag = 3)]
+    metadata: HashMap<String, String>,
 }
 ```
 
-Generating a `.proto` file is still a single method call:
+Doc comments flow through to the proto output. `HashMap` and `BTreeMap` map to proto `map<K,V>` fields. Enums work too: simple enums become proto `enum` definitions, tagged enums with data become `oneof` fields. Request message bodies are flattened — fields are inlined into the request message rather than wrapped in a `body` field, so the proto API looks natural.
 
-```rust
-let proto = API::to_proto("UserService", "users.v1");
-```
+The compile-time safety extends to the gRPC layer. `.with_grpc()` requires the API type to satisfy the `GrpcReady` trait — a compile-time check that every request and response type in the API has a `ToProtoType` implementation. If any type is missing, you get a compile error at the `.with_grpc()` call, not a runtime panic when a gRPC request arrives. This is the same philosophy as `Serves<API>` for handler completeness, applied to the proto layer.
 
-Serving gRPC alongside REST is a one-liner on the server builder:
+Serving gRPC alongside REST is still a one-liner on the server builder:
 
 ```rust
 Server::<API>::new(handlers)
     .with_grpc("UserService", "users.v1")
+    .with_grpc_docs()
     .serve(addr)
     .await?;
 ```
 
-The gRPC layer uses Tonic under the hood, sharing the same Tower middleware and Tokio runtime. Handlers are reused — a single handler implementation serves both REST and gRPC requests. `ServerStream<E>` supports server-streaming RPCs for cases where a request produces a stream of responses rather than a single reply.
+The gRPC bridge shares handlers between REST and gRPC — there is no duplication. A single handler implementation serves both protocols, sharing the same Tower middleware stack and Tokio runtime. The bridge handles gRPC framing (length-prefix encoding) and deadline propagation (the `grpc-timeout` header becomes a Tower timeout) transparently.
 
-The `grpc_client!` macro means I get both REST and gRPC clients from the same API type:
+Streaming is supported across all three gRPC patterns. `ServerStream<E>` splits JSON arrays into per-element gRPC frames for server-streaming RPCs. `ClientStream<E>` handles client-streaming. `BidirectionalStream<E>` handles full-duplex streaming. All three generate the correct `stream` annotations in the `.proto` output.
+
+Two macros generate type-safe gRPC clients. `grpc_client!` gives manual control over method names, while `auto_grpc_client!` derives them automatically from the API type:
 
 ```rust
-grpc_client! {
+auto_grpc_client! {
     pub struct UserServiceClient;
+    api = UsersAPI;
     service = "UserService";
     package = "users.v1";
-
-    list_users => GetEndpoint<UsersPath, Json<Vec<User>>>;
-    get_user => GetEndpoint<UserByIdPath, Json<User>>;
 }
 ```
 
-Change the API type, and both the REST client and the gRPC client refuse to compile until they're updated. Server reflection means `grpcurl -plaintext localhost:3000 list` discovers services at runtime without needing a `.proto` file on disk. The health check service handles graceful shutdown, transitioning to `NOT_SERVING` during drain so load balancers route traffic away cleanly. The `IntoGrpcStatus` trait maps handler error types to gRPC status codes, so the same error types work consistently across both protocols.
+Both macros include a `GrpcReady` compile-time assertion. Client interceptors are configurable via `GrpcClientConfig` for metadata injection and timeouts.
 
-Servant has no gRPC story at all. The Haskell gRPC ecosystem (`grpc-haskell`, `proto-lens`) is completely separate from Servant — different type hierarchies, different code generation pipelines, different middleware stacks. If you want both REST and gRPC in a Haskell service, you maintain two independent API definitions with no shared types or handlers. Typeway unifies REST and gRPC under one type, one set of handlers, and one middleware stack. I'm not aware of any other web framework in any language that derives both REST and gRPC from a single type-level API definition.
+Change the API type, and both the REST client and the gRPC client refuse to compile until they're updated. Server reflection means `grpcurl -plaintext localhost:3000 list` discovers services at runtime without needing a `.proto` file on disk. `.with_grpc_docs()` serves `/grpc-spec` (a structured JSON spec) and `/grpc-docs` (an HTML documentation page) — the gRPC equivalent of OpenAPI + Swagger UI. `GrpcWebLayer` handles browser clients that can't do HTTP/2 gRPC natively. The health check service handles graceful shutdown. The `IntoGrpcStatus` trait maps handler error types to gRPC status codes consistently across both protocols.
+
+On the tooling side, `validate_proto()` checks generated proto files for validity, and `diff_protos()` compares two proto files and reports breaking vs. compatible changes — suitable for CI pipelines via the `typeway-grpc diff` CLI. For the reverse direction, `typeway-grpc api-from-proto` converts an existing `.proto` file into Typeway API types, and `typeway-grpc spec-from-proto` generates documentation from any proto file.
+
+The contrast with Haskell is stark. Servant has no gRPC story at all. The Haskell gRPC ecosystem (`grpc-haskell`, `proto-lens`) is completely separate from Servant — different type hierarchies, different code generation pipelines, different middleware stacks. If you want both REST and gRPC in a Haskell service, you maintain two independent API definitions with no shared types, no shared handlers, no unified serving. Typeway unifies REST and gRPC under one type, one set of handlers, and one middleware stack. I'm not aware of any other web framework in any language that derives both REST and gRPC from a single type-level API definition.
 
 ---
 

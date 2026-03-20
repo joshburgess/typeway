@@ -57,9 +57,14 @@ type UsersAPI = (
 ```
 
 This single type drives:
-- **Server** — compile-time verification that every endpoint has a handler
-- **Client** — type-safe HTTP calls derived from the same endpoints
-- **OpenAPI** — spec generated at startup from the type
+- **REST Server** — compile-time verification that every endpoint has a handler
+- **REST Client** — type-safe HTTP calls derived from the same endpoints
+- **OpenAPI** — spec + Swagger UI generated at startup from the type
+- **gRPC Server** — same handlers serve gRPC alongside REST (with the `grpc` feature)
+- **gRPC Client** — type-safe gRPC calls derived from the same endpoints
+- **`.proto` File** — Protocol Buffers service definition generated from the type
+- **gRPC Spec + Docs** — structured service spec and HTML documentation page
+- **Server Reflection** — runtime service discovery for tools like `grpcurl`
 
 ## Installation
 
@@ -85,7 +90,7 @@ typeway = "0.1"
 | `tls` | no | HTTPS via tokio-rustls |
 | `ws` | no | WebSocket upgrade support |
 | `multipart` | no | Multipart form upload (file uploads) |
-| `grpc` | no | gRPC server, client, .proto generation, server reflection, health check (Tonic) |
+| `grpc` | no | gRPC server + client, `.proto` generation, `#[derive(ToProtoType)]`, server reflection, health check, gRPC-Web, service spec + docs, proto diff/validation CLI (Tonic) |
 | `full` | no | server + client + openapi |
 
 ## Workspace Structure
@@ -98,7 +103,7 @@ typeway = "0.1"
 | `typeway-client` | Type-safe HTTP client |
 | `typeway-openapi` | OpenAPI 3.1 spec derivation |
 | `typeway-macros` | Proc macros (`typeway_path!`, `#[handler]`, `#[api_description]`) |
-| `typeway-grpc` | gRPC/Protocol Buffers generation and serving via Tonic |
+| `typeway-grpc` | gRPC bridge: `.proto` generation, `#[derive(ToProtoType)]`, REST+gRPC co-serving, type-safe client, server reflection, health check, gRPC-Web, service spec/docs, proto diff/validation, `api-from-proto`/`spec-from-proto` CLI |
 
 ## What Makes Typeway Different
 
@@ -375,25 +380,52 @@ The `ApiChangelog` trait provides runtime introspection of the change set — ho
 
 ## gRPC / Protocol Buffers
 
-With the `grpc` feature, the same API type that drives your REST server, client, and OpenAPI spec also generates Protocol Buffers service definitions, serves gRPC alongside REST, provides a type-safe gRPC client, exposes server reflection for tools like `grpcurl`, and runs a health check service with graceful shutdown support.
+With the `grpc` feature, the same API type that drives your REST server, client, and OpenAPI spec also generates Protocol Buffers service definitions, serves gRPC alongside REST, provides a type-safe gRPC client, exposes server reflection, runs a health check service, serves gRPC documentation, supports gRPC-Web for browser clients, and validates proto compatibility across versions.
 
-One API type, seven projections: REST server, REST client, OpenAPI spec, gRPC server, gRPC client, `.proto` file, and server reflection.
+One API type, eight projections: REST server, REST client, OpenAPI spec + Swagger UI, gRPC server, gRPC client, `.proto` file, gRPC spec + docs page, and server reflection.
 
 ### Message Types from Rust Structs
 
-`#[derive(ToProtoType)]` generates Protocol Buffers message definitions directly from Rust structs, with field tags specified via `#[proto(tag = N)]`:
+`#[derive(ToProtoType)]` generates Protocol Buffers message definitions directly from Rust structs. Field tags are specified via `#[proto(tag = N)]` for stable wire format numbering:
 
 ```rust
 use typeway_grpc::ToProtoType;
 
+/// A registered user.
 #[derive(ToProtoType)]
 struct User {
+    /// The unique user identifier.
     #[proto(tag = 1)]
     id: u32,
+    /// Display name.
     #[proto(tag = 2)]
     name: String,
+    /// Account metadata.
+    #[proto(tag = 3)]
+    metadata: HashMap<String, String>,
 }
 ```
+
+Doc comments on structs and fields are emitted as proto comments. `HashMap<K,V>` and `BTreeMap<K,V>` map to proto `map<K,V>` fields.
+
+Enums are also supported. Simple (fieldless) enums become proto `enum` definitions; tagged enums with data become `oneof` fields:
+
+```rust
+#[derive(ToProtoType)]
+enum Status {
+    Active,    // -> ACTIVE = 0;
+    Inactive,  // -> INACTIVE = 1;
+}
+
+#[derive(ToProtoType)]
+enum Payload {
+    Text(String),         // -> oneof payload { string text = 1; }
+    Binary(Vec<u8>),      // ->                  bytes binary = 2;
+    Structured(UserData), // ->                  UserData structured = 3;
+}
+```
+
+`chrono::DateTime` and `uuid::Uuid` are mapped to their proto equivalents when the corresponding feature flags are enabled.
 
 No hand-written `.proto` message definitions needed — the Rust struct is the source of truth.
 
@@ -408,6 +440,20 @@ let proto = API::to_proto("UserService", "users.v1");
 std::fs::write("users.proto", proto)?;
 ```
 
+Request messages are flattened: body fields are inlined into the request message rather than wrapped in a `body` field, producing a natural proto API.
+
+### `GrpcReady` Compile-Time Check
+
+The `.with_grpc()` method requires the API type to implement `GrpcReady` — a compile-time check that every request and response type in the API has a `ToProtoType` implementation. If any type is missing, you get a compile error at the `.with_grpc()` call site, not a runtime panic when a gRPC request arrives:
+
+```rust
+// This won't compile if any endpoint type lacks ToProtoType:
+Server::<API>::new(handlers)
+    .with_grpc("UserService", "users.v1")
+    .serve(addr)
+    .await?;
+```
+
 ### Serving gRPC and REST Together
 
 Serve gRPC alongside REST on the same port:
@@ -419,9 +465,9 @@ Server::<API>::new(handlers)
     .await?;
 ```
 
-The gRPC bridge uses **JSON encoding** (`application/grpc+json`), not binary Protocol Buffers. Since the REST handlers already use JSON, this avoids protobuf transcoding entirely. Standard gRPC clients (grpcurl, tonic, Postman) need to be configured for JSON mode. The `grpc_client!` macro generates clients that use JSON encoding automatically, so typeway client-to-server communication works seamlessly. For binary protobuf support, use Tonic directly alongside typeway via the `.with_fallback()` method.
+The gRPC bridge uses **JSON encoding** (`application/grpc+json`), not binary Protocol Buffers. Since the REST handlers already use JSON, this avoids protobuf transcoding entirely. Standard gRPC clients (grpcurl, tonic, Postman) need to be configured for JSON mode. The `grpc_client!` and `auto_grpc_client!` macros generate clients that use JSON encoding automatically, so typeway client-to-server communication works seamlessly. For binary protobuf support, use Tonic directly alongside typeway via the `.with_fallback()` method.
 
-Handlers are reused — a single handler implementation serves both REST and gRPC requests, sharing the same Tower middleware stack and Tokio runtime.
+Handlers are reused — a single handler implementation serves both REST and gRPC requests, sharing the same Tower middleware stack and Tokio runtime. gRPC framing (length-prefix encoding) is handled transparently by the bridge.
 
 ### Server Reflection and Health Checks
 
@@ -434,19 +480,23 @@ grpcurl -plaintext localhost:3000 list
 
 The health check service supports graceful shutdown — it reports `SERVING` while the server is running and transitions to `NOT_SERVING` during shutdown, giving load balancers time to drain connections.
 
-### Server-Streaming RPCs
+### Streaming RPCs
 
-`ServerStream<E>` supports server-streaming RPCs where a single request produces a stream of responses:
+Three streaming markers cover all gRPC streaming patterns:
 
 ```rust
 type API = (
-    GetEndpoint<EventsPath, ServerStream<Event>>,
+    GetEndpoint<EventsPath, ServerStream<Event>>,                   // server-streaming
+    PostEndpoint<UploadPath, ClientStream<Chunk>, Summary>,         // client-streaming
+    GetEndpoint<ChatPath, BidirectionalStream<Message>>,            // bidirectional
 );
 ```
 
+`ServerStream<E>` splits JSON arrays into per-element gRPC frames. `ClientStream<E>` and `BidirectionalStream<E>` generate the corresponding `stream` annotations in the `.proto` output.
+
 ### Type-Safe gRPC Client
 
-The `grpc_client!` macro generates a type-safe gRPC client from the same endpoint types used by the server:
+Two macros generate type-safe gRPC clients. `grpc_client!` gives manual control over method names:
 
 ```rust
 use typeway_grpc::grpc_client;
@@ -464,7 +514,40 @@ let client = UserServiceClient::connect("http://localhost:3000").await?;
 let user = client.get_user(42u32).await?;
 ```
 
+`auto_grpc_client!` derives method names automatically from the API type — no manual endpoint listing needed:
+
+```rust
+use typeway_grpc::auto_grpc_client;
+
+auto_grpc_client! {
+    pub struct UserServiceClient;
+    api = UsersAPI;
+    service = "UserService";
+    package = "users.v1";
+}
+```
+
+Both macros include a `GrpcReady` compile-time assertion — the macro won't expand if any type in the API is missing its `ToProtoType` impl.
+
+Client interceptors are configurable via `GrpcClientConfig` for metadata injection, timeouts, and retry policies.
+
 Both REST and gRPC clients are derived from the same API type — change the type, and both clients update.
+
+### gRPC-Web for Browser Clients
+
+The `GrpcWebLayer` Tower middleware translates between gRPC-Web (HTTP/1.1 with base64 or binary framing) and the gRPC bridge, enabling browser-to-server gRPC without a separate proxy:
+
+```rust
+Server::<API>::new(handlers)
+    .with_grpc("UserService", "users.v1")
+    .layer(GrpcWebLayer)
+    .serve(addr)
+    .await?;
+```
+
+### Deadline/Timeout Propagation
+
+The gRPC bridge parses the `grpc-timeout` header and propagates deadlines to the REST handler as a Tower timeout. When a gRPC client sets a 5-second deadline, the handler is cancelled after 5 seconds.
 
 ### Error Mapping
 
@@ -481,15 +564,44 @@ impl IntoGrpcStatus for MyError {
 }
 ```
 
-### Importing Existing `.proto` Files
+### gRPC Service Spec and Documentation
 
-For the reverse direction — importing an existing `.proto` file and generating Typeway API types — the `typeway-grpc` CLI provides:
+`.with_grpc_docs()` serves a structured gRPC service specification and an HTML documentation page — the gRPC equivalent of OpenAPI + Swagger UI:
 
-```sh
-typeway-grpc api-from-proto --file service.proto
+```rust
+Server::<API>::new(handlers)
+    .with_grpc("UserService", "users.v1")
+    .with_grpc_docs()
+    .serve(addr)
+    .await?;
+// GET /grpc-spec  -> JSON service specification
+// GET /grpc-docs  -> HTML documentation page
 ```
 
-This outputs the `typeway_path!` declarations, endpoint types, and request/response struct definitions corresponding to the proto service, giving you a starting point for a type-safe Typeway server that matches an existing gRPC contract.
+### Proto Validation and Diff
+
+`validate_proto()` checks generated `.proto` files for validity — unique field tags, valid type names, no reserved word conflicts, tag numbers in the valid range.
+
+`diff_protos()` compares two `.proto` files and reports breaking changes (removed fields, changed types, renumbered tags) vs. compatible changes (added fields, renamed fields). The `typeway-grpc diff` CLI exits with code 1 on breaking changes, making it suitable for CI pipelines:
+
+```sh
+typeway-grpc diff --old v1.proto --new v2.proto
+```
+
+### Importing Existing `.proto` Files
+
+For the reverse direction — importing an existing `.proto` file and generating Typeway API types — the `typeway-grpc` CLI provides two commands:
+
+```sh
+# Generate typeway_path! declarations, endpoint types, and struct definitions
+typeway-grpc api-from-proto --file service.proto
+
+# Generate a structured JSON spec or HTML docs page from a .proto file
+typeway-grpc spec-from-proto --file service.proto --format json
+typeway-grpc spec-from-proto --file service.proto --format html
+```
+
+`api-from-proto` gives you a starting point for a type-safe Typeway server that matches an existing gRPC contract. `spec-from-proto` generates documentation from any `.proto` file, even ones not generated by Typeway.
 
 ## Performance: The Cost of Type Safety
 
@@ -550,7 +662,10 @@ Typeway trades ~1 µs of dispatch overhead for compile-time guarantees that elim
 | Session-typed WebSockets | Yes | No | No | No | No |
 | Content negotiation (type-level) | Yes | No | No | No | Partial (via servant-content-types) |
 | Type-level API versioning | Yes | No | No | No | No |
-| gRPC from API type | Yes | No | No | No | No |
+| gRPC from API type (shared handlers) | Yes | No | No | No | No |
+| gRPC client from API type | Yes | No | No | No | No |
+| `.proto` generation from types | Yes | No | No | No | No |
+| Proto diff / validation | Yes | No | No | No | No |
 | Stable Rust | Yes | Yes | Yes | Yes | N/A |
 
 ## How Typeway Improves on Servant

@@ -18,15 +18,32 @@ Updated status of all planned work. Checked items are complete.
 - [x] **Client ergonomics** — `client_api!` macro, interceptors, cookies, streaming, per-call builder, `TypedResponse`, query params, Accept header, tracing
 - [x] **OpenAPI enhancements** — `ExampleValue`, security schemes from `Protected`, auto-tag grouping, deprecated marking, `EndpointToOperation` for wrappers
 - [x] **OpenAPI: struct field doc comment extraction** — `#[derive(TypewaySchema)]` extracts field doc comments into OpenAPI property descriptions, with `#[serde(rename_all)]` support
-- [x] **gRPC / Tonic interop** — Fully implemented in `typeway-grpc` (191 tests):
-  - `.proto` generation via `API::to_proto()` + `typeway-grpc api-from-proto` CLI
-  - Unified REST+gRPC serving via `.with_grpc()` on one port
+- [x] **gRPC / Tonic interop** — Fully implemented in `typeway-grpc` (351 tests, 15/15 roadmap items complete):
   - `#[derive(ToProtoType)]` with `#[proto(tag = N)]` for stable field numbering
-  - `IntoGrpcStatus` trait for rich error mapping
-  - `ServerStream<E>` marker for server-streaming RPCs
-  - `grpc_client!` macro for type-safe gRPC client generation
+  - Enum support: simple enums map to proto `enum`, tagged enums map to `oneof`
+  - `map<K,V>` support for `HashMap`/`BTreeMap`
+  - Doc comments on structs and fields flow through to proto output
+  - Request message flattening (body fields inlined, not wrapped)
+  - `chrono::DateTime` and `uuid::Uuid` type mappings
+  - `.proto` generation via `API::to_proto()` + `typeway-grpc api-from-proto` CLI
+  - `typeway-grpc spec-from-proto` CLI for .proto to spec/docs conversion
+  - Unified REST+gRPC serving via `.with_grpc()` on one port (shared handlers, no duplication)
+  - `GrpcReady` compile-time check — `.with_grpc()` won't compile if any type lacks `ToProtoType`
+  - `ServerStream<E>`, `ClientStream<E>`, `BidirectionalStream<E>` streaming markers
+  - `grpc_client!` macro for type-safe gRPC client with manual method names
+  - `auto_grpc_client!` macro for auto-derived client from API type
+  - `GrpcClientConfig` for client interceptors (metadata injection, timeouts)
   - Server reflection (`grpc.reflection.v1alpha`)
-  - Health check service (`grpc.health.v1.Health/Check`)
+  - Health check service (`grpc.health.v1.Health/Check`) with graceful shutdown
+  - `GrpcWebLayer` Tower middleware for browser clients
+  - `IntoGrpcStatus` trait for error mapping across REST and gRPC
+  - gRPC framing (length-prefix encoding)
+  - Deadline/timeout propagation (`grpc-timeout` header)
+  - `.with_grpc_docs()` serving `/grpc-docs` (HTML) + `/grpc-spec` (JSON)
+  - `validate_proto()` for proto syntax validation
+  - `diff_protos()` and `typeway-grpc diff` CLI for breaking change detection
+  - `typeway-grpc api-from-proto` CLI for .proto to typeway conversion
+  - Audit fixes: compression handling, E2E test coverage, improved error messages
 - [ ] **Publish to crates.io** — On hold per user request.
 
 ---
