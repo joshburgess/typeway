@@ -10,6 +10,7 @@ path = "src/main.rs"
 [features]
 default = []
 client = ["dep:typeway-client", "dep:reqwest", "dep:url", "dep:thiserror"]
+test-client = ["dep:reqwest", "dep:serde_json"]
 
 [dependencies]
 typeway-core = { path = "../typeway-core" }
@@ -23,6 +24,7 @@ bytes = "1"
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 reqwest = { version = "0.12", features = ["json"], optional = true }
+serde_json = { version = "1", optional = true }
 url = { version = "2", optional = true }
 thiserror = { version = "2", optional = true }
 

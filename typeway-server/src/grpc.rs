@@ -39,7 +39,7 @@ use typeway_grpc::service::{ApiToServiceDescriptor, GrpcServiceDescriptor};
 use typeway_grpc::status::http_to_grpc_code;
 use typeway_grpc::CollectRpcs;
 
-use crate::body::{body_from_string, empty_body, BoxBody};
+use crate::body::{body_from_bytes, empty_body, BoxBody};
 use crate::router::{Router, RouterService};
 
 /// A server that serves both REST and gRPC on the same port.
@@ -362,8 +362,11 @@ pub struct Multiplexer {
 }
 
 /// Build a gRPC JSON response with the given body and status code 0 (OK).
+///
+/// The response body is wrapped in gRPC length-prefix framing.
 fn grpc_json_response(json_body: &str) -> http::Response<BoxBody> {
-    let mut res = http::Response::new(body_from_string(json_body.to_string()));
+    let framed = typeway_grpc::framing::encode_grpc_frame(json_body.as_bytes());
+    let mut res = http::Response::new(body_from_bytes(bytes::Bytes::from(framed)));
     *res.status_mut() = http::StatusCode::OK;
     res.headers_mut().insert(
         "grpc-status",
@@ -412,7 +415,10 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                         Ok(collected) => collected.to_bytes(),
                         Err(_) => bytes::Bytes::new(),
                     };
-                    let body_str = String::from_utf8_lossy(&body_bytes);
+                    // Strip gRPC framing if present.
+                    let unframed = typeway_grpc::framing::decode_grpc_frame(&body_bytes)
+                        .unwrap_or(&body_bytes);
+                    let body_str = String::from_utf8_lossy(unframed);
                     let _ = parts; // consumed
                     let response_json = reflection.handle_request(&body_str);
                     return Ok(grpc_json_response(&response_json));
@@ -439,16 +445,26 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                     }
                 };
 
-                // Rewrite the request to target the REST endpoint.
+                // Collect the body and strip gRPC framing.
                 let (mut parts, body) = req.into_parts();
+                let body_bytes = match http_body_util::BodyExt::collect(body).await {
+                    Ok(collected) => collected.to_bytes(),
+                    Err(_) => bytes::Bytes::new(),
+                };
+
+                // Strip gRPC length-prefix framing if present.
+                let unframed = typeway_grpc::framing::decode_grpc_frame(&body_bytes)
+                    .map(bytes::Bytes::copy_from_slice)
+                    .unwrap_or(body_bytes);
+
+                // Rewrite the request to target the REST endpoint.
                 parts.method = method.http_method.clone();
 
                 if let Ok(uri) = method.rest_path.parse::<http::Uri>() {
                     parts.uri = uri;
                 }
 
-                // Remove the gRPC content-type so the REST router handles
-                // it normally (e.g., as application/json).
+                // Set content-type to JSON for the REST handler.
                 parts.headers.remove(http::header::CONTENT_TYPE);
                 parts
                     .headers
@@ -457,16 +473,22 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                         http::HeaderValue::from_static("application/json"),
                     );
 
-                let rest_req = http::Request::from_parts(parts, body);
-                let rest_res = router.route(rest_req).await;
+                // Route with pre-collected bytes (framing already stripped).
+                let rest_res = router.route_with_bytes(parts, unframed).await;
 
-                // Translate the HTTP response to a gRPC response.
-                let (mut parts, body) = rest_res.into_parts();
-                let grpc_code = http_to_grpc_code(parts.status);
+                // Collect the REST response body and wrap it in a gRPC frame.
+                let (mut res_parts, res_body) = rest_res.into_parts();
+                let grpc_code = http_to_grpc_code(res_parts.status);
+
+                let res_bytes = match http_body_util::BodyExt::collect(res_body).await {
+                    Ok(collected) => collected.to_bytes(),
+                    Err(_) => bytes::Bytes::new(),
+                };
+                let framed = typeway_grpc::framing::encode_grpc_frame(&res_bytes);
 
                 // gRPC always returns HTTP 200; the real status is in grpc-status.
-                parts.status = http::StatusCode::OK;
-                parts.headers.insert(
+                res_parts.status = http::StatusCode::OK;
+                res_parts.headers.insert(
                     "grpc-status",
                     grpc_code
                         .as_i32()
@@ -474,12 +496,13 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                         .parse()
                         .expect("valid header value for grpc-status"),
                 );
-                parts.headers.insert(
+                res_parts.headers.insert(
                     "content-type",
                     http::HeaderValue::from_static("application/grpc+json"),
                 );
 
-                Ok(http::Response::from_parts(parts, body))
+                let framed_body = body_from_bytes(bytes::Bytes::from(framed));
+                Ok(http::Response::from_parts(res_parts, framed_body))
             })
         } else {
             // Regular REST request — delegate to the router service.

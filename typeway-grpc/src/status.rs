@@ -45,6 +45,38 @@ impl GrpcCode {
     pub fn as_i32(self) -> i32 {
         self as i32
     }
+
+    /// Convert an integer to a gRPC code.
+    ///
+    /// Unknown values map to [`GrpcCode::Unknown`].
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use typeway_grpc::status::GrpcCode;
+    ///
+    /// assert_eq!(GrpcCode::from_i32(0), GrpcCode::Ok);
+    /// assert_eq!(GrpcCode::from_i32(5), GrpcCode::NotFound);
+    /// assert_eq!(GrpcCode::from_i32(999), GrpcCode::Unknown);
+    /// ```
+    pub fn from_i32(code: i32) -> Self {
+        match code {
+            0 => GrpcCode::Ok,
+            1 => GrpcCode::Cancelled,
+            2 => GrpcCode::Unknown,
+            3 => GrpcCode::InvalidArgument,
+            4 => GrpcCode::DeadlineExceeded,
+            5 => GrpcCode::NotFound,
+            6 => GrpcCode::AlreadyExists,
+            7 => GrpcCode::PermissionDenied,
+            8 => GrpcCode::ResourceExhausted,
+            12 => GrpcCode::Unimplemented,
+            13 => GrpcCode::Internal,
+            14 => GrpcCode::Unavailable,
+            16 => GrpcCode::Unauthenticated,
+            _ => GrpcCode::Unknown,
+        }
+    }
 }
 
 impl std::fmt::Display for GrpcCode {
@@ -335,5 +367,51 @@ mod tests {
         assert_eq!(GrpcCode::NotFound.as_i32(), 5);
         assert_eq!(GrpcCode::Internal.as_i32(), 13);
         assert_eq!(GrpcCode::Unauthenticated.as_i32(), 16);
+    }
+
+    #[test]
+    fn grpc_code_from_i32() {
+        assert_eq!(GrpcCode::from_i32(0), GrpcCode::Ok);
+        assert_eq!(GrpcCode::from_i32(1), GrpcCode::Cancelled);
+        assert_eq!(GrpcCode::from_i32(2), GrpcCode::Unknown);
+        assert_eq!(GrpcCode::from_i32(3), GrpcCode::InvalidArgument);
+        assert_eq!(GrpcCode::from_i32(4), GrpcCode::DeadlineExceeded);
+        assert_eq!(GrpcCode::from_i32(5), GrpcCode::NotFound);
+        assert_eq!(GrpcCode::from_i32(6), GrpcCode::AlreadyExists);
+        assert_eq!(GrpcCode::from_i32(7), GrpcCode::PermissionDenied);
+        assert_eq!(GrpcCode::from_i32(8), GrpcCode::ResourceExhausted);
+        assert_eq!(GrpcCode::from_i32(12), GrpcCode::Unimplemented);
+        assert_eq!(GrpcCode::from_i32(13), GrpcCode::Internal);
+        assert_eq!(GrpcCode::from_i32(14), GrpcCode::Unavailable);
+        assert_eq!(GrpcCode::from_i32(16), GrpcCode::Unauthenticated);
+    }
+
+    #[test]
+    fn grpc_code_from_i32_unknown_values() {
+        assert_eq!(GrpcCode::from_i32(-1), GrpcCode::Unknown);
+        assert_eq!(GrpcCode::from_i32(99), GrpcCode::Unknown);
+        assert_eq!(GrpcCode::from_i32(999), GrpcCode::Unknown);
+    }
+
+    #[test]
+    fn grpc_code_roundtrip() {
+        let codes = [
+            GrpcCode::Ok,
+            GrpcCode::Cancelled,
+            GrpcCode::Unknown,
+            GrpcCode::InvalidArgument,
+            GrpcCode::DeadlineExceeded,
+            GrpcCode::NotFound,
+            GrpcCode::AlreadyExists,
+            GrpcCode::PermissionDenied,
+            GrpcCode::ResourceExhausted,
+            GrpcCode::Unimplemented,
+            GrpcCode::Internal,
+            GrpcCode::Unavailable,
+            GrpcCode::Unauthenticated,
+        ];
+        for code in codes {
+            assert_eq!(GrpcCode::from_i32(code.as_i32()), code);
+        }
     }
 }

@@ -1459,24 +1459,34 @@ fn derive_to_proto_type_impl(input: syn::DeriveInput) -> syn::Result<TokenStream
     let name = &input.ident;
     let name_str = name.to_string();
 
-    let fields = match &input.data {
+    match &input.data {
         syn::Data::Struct(data) => match &data.fields {
-            syn::Fields::Named(named) => &named.named,
-            _ => {
-                return Err(syn::Error::new_spanned(
-                    name,
-                    "ToProtoType only supports structs with named fields",
-                ));
-            }
-        },
-        _ => {
-            return Err(syn::Error::new_spanned(
+            syn::Fields::Named(named) => derive_to_proto_type_struct(name, name_str, &named.named),
+            _ => Err(syn::Error::new_spanned(
                 name,
-                "ToProtoType only supports structs",
-            ));
+                "ToProtoType only supports structs with named fields or enums",
+            )),
+        },
+        syn::Data::Enum(data) => {
+            let is_simple = data.variants.iter().all(|v| v.fields.is_empty());
+            if is_simple {
+                derive_to_proto_type_simple_enum(name, name_str, data)
+            } else {
+                derive_to_proto_type_oneof_enum(name, name_str, data)
+            }
         }
-    };
+        syn::Data::Union(_) => Err(syn::Error::new_spanned(
+            name,
+            "ToProtoType does not support unions",
+        )),
+    }
+}
 
+fn derive_to_proto_type_struct(
+    name: &Ident,
+    name_str: String,
+    fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+) -> syn::Result<TokenStream2> {
     let mut field_entries = Vec::new();
     let mut collect_stmts = Vec::new();
 
@@ -1485,6 +1495,7 @@ fn derive_to_proto_type_impl(input: syn::DeriveInput) -> syn::Result<TokenStream
         let field_name_str = field_ident.to_string();
         let field_ty = &field.ty;
         let tag = extract_proto_tag(&field.attrs).unwrap_or((i as u32) + 1);
+        let field_doc = extract_doc_string(&field.attrs);
 
         // Detect Option<T> and Vec<T> to set optional/repeated and use the inner type.
         let (proto_type_ty, optional, repeated) = if let Some(inner) = is_option_type(field_ty) {
@@ -1498,6 +1509,11 @@ fn derive_to_proto_type_impl(input: syn::DeriveInput) -> syn::Result<TokenStream
             (field_ty.clone(), false, false)
         };
 
+        let doc_expr = match &field_doc {
+            Some(doc) => quote! { ::core::option::Option::Some(#doc.to_string()) },
+            None => quote! { ::core::option::Option::None },
+        };
+
         field_entries.push(quote! {
             ::typeway_grpc::ProtoField {
                 name: #field_name_str.to_string(),
@@ -1505,6 +1521,7 @@ fn derive_to_proto_type_impl(input: syn::DeriveInput) -> syn::Result<TokenStream
                 tag: #tag,
                 repeated: #repeated,
                 optional: #optional,
+                doc: #doc_expr,
             }
         });
 
@@ -1527,6 +1544,147 @@ fn derive_to_proto_type_impl(input: syn::DeriveInput) -> syn::Result<TokenStream
                 ::core::option::Option::Some(::typeway_grpc::build_message(#name_str, &[
                     #(#field_entries),*
                 ]))
+            }
+
+            fn collect_messages() -> ::std::vec::Vec<::std::string::String> {
+                let mut msgs = ::std::vec::Vec::new();
+                #(#collect_stmts)*
+                if let ::core::option::Option::Some(def) = Self::message_definition() {
+                    msgs.push(def);
+                }
+                msgs
+            }
+
+            fn proto_fields() -> ::std::vec::Vec<::typeway_grpc::ProtoField> {
+                ::std::vec![#(#field_entries),*]
+            }
+        }
+    };
+
+    Ok(expanded)
+}
+
+/// Generate a `ToProtoType` impl for a simple (fieldless) enum as a protobuf enum.
+fn derive_to_proto_type_simple_enum(
+    name: &Ident,
+    name_str: String,
+    data: &syn::DataEnum,
+) -> syn::Result<TokenStream2> {
+    let mut variant_names = Vec::new();
+    let mut variant_tags = Vec::new();
+
+    for (i, variant) in data.variants.iter().enumerate() {
+        let tag = extract_proto_tag(&variant.attrs).unwrap_or(i as u32);
+        let proto_name = to_screaming_snake(&variant.ident.to_string());
+        variant_names.push(proto_name);
+        variant_tags.push(tag);
+    }
+
+    let expanded = quote! {
+        impl ::typeway_grpc::ToProtoType for #name {
+            fn proto_type_name() -> &'static str {
+                #name_str
+            }
+
+            fn is_message() -> bool {
+                true
+            }
+
+            fn message_definition() -> ::core::option::Option<::std::string::String> {
+                let mut lines = ::std::vec![::std::format!("enum {} {{", #name_str)];
+                #(
+                    lines.push(::std::format!("  {} = {};", #variant_names, #variant_tags));
+                )*
+                lines.push("}".to_string());
+                ::core::option::Option::Some(lines.join("\n"))
+            }
+
+            fn collect_messages() -> ::std::vec::Vec<::std::string::String> {
+                let mut msgs = ::std::vec::Vec::new();
+                if let ::core::option::Option::Some(def) = Self::message_definition() {
+                    msgs.push(def);
+                }
+                msgs
+            }
+        }
+    };
+
+    Ok(expanded)
+}
+
+/// Generate a `ToProtoType` impl for a tagged enum as a protobuf `oneof` in a
+/// wrapper message.
+fn derive_to_proto_type_oneof_enum(
+    name: &Ident,
+    name_str: String,
+    data: &syn::DataEnum,
+) -> syn::Result<TokenStream2> {
+    let oneof_name = to_snake_case(&name_str);
+
+    let mut variant_field_names = Vec::new();
+    let mut variant_types: Vec<syn::Type> = Vec::new();
+    let mut variant_tags = Vec::new();
+    let mut collect_stmts = Vec::new();
+
+    for (i, variant) in data.variants.iter().enumerate() {
+        let tag = extract_proto_tag(&variant.attrs).unwrap_or((i + 1) as u32);
+        let field_name = to_snake_case(&variant.ident.to_string());
+        variant_field_names.push(field_name);
+        variant_tags.push(tag);
+
+        match &variant.fields {
+            syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                let ty = fields.unnamed[0].ty.clone();
+                collect_stmts.push(quote! {
+                    msgs.extend(<#ty as ::typeway_grpc::ToProtoType>::collect_messages());
+                });
+                variant_types.push(ty);
+            }
+            syn::Fields::Unnamed(_) => {
+                return Err(syn::Error::new_spanned(
+                    &variant.ident,
+                    "ToProtoType oneof variants must have exactly one field",
+                ));
+            }
+            syn::Fields::Named(_) => {
+                return Err(syn::Error::new_spanned(
+                    &variant.ident,
+                    "ToProtoType oneof variants must use tuple syntax, e.g., Variant(Type)",
+                ));
+            }
+            syn::Fields::Unit => {
+                return Err(syn::Error::new_spanned(
+                    &variant.ident,
+                    "mixed unit and data variants are not supported; \
+                     all variants must have fields for oneof generation",
+                ));
+            }
+        }
+    }
+
+    let expanded = quote! {
+        impl ::typeway_grpc::ToProtoType for #name {
+            fn proto_type_name() -> &'static str {
+                #name_str
+            }
+
+            fn is_message() -> bool {
+                true
+            }
+
+            fn message_definition() -> ::core::option::Option<::std::string::String> {
+                let mut lines = ::std::vec![::std::format!("message {} {{", #name_str)];
+                lines.push(::std::format!("  oneof {} {{", #oneof_name));
+                #(
+                    lines.push(::std::format!("    {} {} = {};",
+                        <#variant_types as ::typeway_grpc::ToProtoType>::proto_type_name(),
+                        #variant_field_names,
+                        #variant_tags,
+                    ));
+                )*
+                lines.push("  }".to_string());
+                lines.push("}".to_string());
+                ::core::option::Option::Some(lines.join("\n"))
             }
 
             fn collect_messages() -> ::std::vec::Vec<::std::string::String> {

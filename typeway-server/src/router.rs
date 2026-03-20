@@ -287,9 +287,9 @@ impl Router {
 
     /// Route a request with pre-collected body bytes.
     ///
-    /// Used by the Axum interop adapter where the body has already been
-    /// collected from Axum's body type.
-    #[cfg(feature = "axum-interop")]
+    /// Used by the Axum interop adapter and the gRPC multiplexer where
+    /// the body has already been collected (e.g., to strip gRPC framing).
+    #[cfg(any(feature = "axum-interop", feature = "grpc"))]
     pub(crate) fn route_with_bytes(
         self: &Arc<Self>,
         mut parts: http::request::Parts,

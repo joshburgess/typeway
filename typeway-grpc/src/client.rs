@@ -144,13 +144,14 @@ macro_rules! grpc_client {
                     let url = self.base_url.join(&path)
                         .map_err($crate::client::GrpcClientError::Url)?;
 
-                    // Serialize request body.
-                    let body = match <$endpoint as ::typeway_client::CallEndpoint>::request_body(&args) {
+                    // Serialize request body and wrap in gRPC frame.
+                    let raw_body = match <$endpoint as ::typeway_client::CallEndpoint>::request_body(&args) {
                         ::core::option::Option::Some(result) => {
                             result.map_err(|e| $crate::client::GrpcClientError::Serialize(e.to_string()))?
                         }
                         ::core::option::Option::None => ::std::vec::Vec::new(),
                     };
+                    let body = $crate::framing::encode_grpc_frame(&raw_body);
 
                     let response = self.inner
                         .post(url)
@@ -182,9 +183,12 @@ macro_rules! grpc_client {
                         );
                     }
 
+                    // Decode gRPC frame from response.
                     let bytes = response.bytes().await
                         .map_err($crate::client::GrpcClientError::Http)?;
-                    <$endpoint as ::typeway_client::CallEndpoint>::parse_response(&bytes)
+                    let unframed = $crate::framing::decode_grpc_frame(&bytes)
+                        .unwrap_or(&bytes);
+                    <$endpoint as ::typeway_client::CallEndpoint>::parse_response(unframed)
                         .map_err(|e| $crate::client::GrpcClientError::Deserialize(e.to_string()))
                 }
             )*

@@ -114,19 +114,33 @@ macro_rules! impl_endpoint_to_rpc_with_body {
                 let path = P::pattern();
                 let rpc_name = path_to_rpc_name(&method_str, &path);
 
-                // Request = capture fields + body reference.
+                // Request = capture fields + body fields (flattened or wrapped).
                 let mut fields = captures_from_pattern(&path);
-                let body_tag = fields.len() as u32 + 1;
 
                 let body_type_name = Req::proto_type_name();
                 if body_type_name != "google.protobuf.Empty" {
-                    fields.push(ProtoField {
-                        name: "body".to_string(),
-                        proto_type: body_type_name.to_string(),
-                        tag: body_tag,
-                        repeated: Req::is_repeated(),
-                        optional: false,
-                    });
+                    let body_fields = Req::proto_fields();
+                    if Req::is_message() && !body_fields.is_empty() {
+                        // Flatten: inline the body type's fields into the
+                        // request message, re-tagging to avoid collisions
+                        // with capture fields.
+                        let offset = fields.len() as u32;
+                        for mut field in body_fields {
+                            field.tag += offset;
+                            fields.push(field);
+                        }
+                    } else {
+                        // Wrap: include the body as a single field reference.
+                        let body_tag = fields.len() as u32 + 1;
+                        fields.push(ProtoField {
+                            name: "body".to_string(),
+                            proto_type: body_type_name.to_string(),
+                            tag: body_tag,
+                            repeated: Req::is_repeated(),
+                            optional: false,
+                            doc: None,
+                        });
+                    }
                 }
 
                 let req_name = format!("{}Request", rpc_name);
@@ -353,6 +367,7 @@ fn captures_from_pattern(pattern: &str) -> Vec<ProtoField> {
                 tag: (i + 1) as u32,
                 repeated: false,
                 optional: false,
+                doc: None,
             }
         })
         .collect()
@@ -390,6 +405,7 @@ fn build_response_message<Res: ToProtoType>(rpc_name: &str) -> ProtoMessage {
                     tag: 1,
                     repeated: Res::is_repeated(),
                     optional: false,
+                    doc: None,
                 }],
             ),
         }

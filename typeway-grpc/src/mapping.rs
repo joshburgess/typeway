@@ -52,6 +52,15 @@ pub trait ToProtoType {
     fn collect_messages() -> Vec<String> {
         Vec::new()
     }
+
+    /// Return the proto fields for this message type.
+    ///
+    /// Used for request message flattening: when a body type is a message,
+    /// its fields can be inlined into the request message instead of being
+    /// wrapped in a `body` field.
+    fn proto_fields() -> Vec<ProtoField> {
+        Vec::new()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -227,10 +236,15 @@ pub struct ProtoField {
     pub repeated: bool,
     /// Whether this field is `optional` (proto3 explicit optional).
     pub optional: bool,
+    /// Optional doc comment to emit above the field in the proto definition.
+    pub doc: Option<String>,
 }
 
 impl ProtoField {
-    /// Render this field as a single line in a protobuf message definition.
+    /// Render this field as one or more lines in a protobuf message definition.
+    ///
+    /// If a doc comment is present, it is emitted as a proto comment on the
+    /// line(s) preceding the field definition.
     pub fn to_proto_line(&self) -> String {
         let prefix = if self.repeated {
             "repeated "
@@ -239,7 +253,20 @@ impl ProtoField {
         } else {
             ""
         };
-        format!("  {}{} {} = {};", prefix, self.proto_type, self.name, self.tag)
+        let field_line = format!("  {}{} {} = {};", prefix, self.proto_type, self.name, self.tag);
+        match &self.doc {
+            Some(doc) if !doc.is_empty() => {
+                let comment_lines: Vec<String> = doc
+                    .lines()
+                    .map(|line| format!("  // {}", line))
+                    .collect();
+                let mut result = comment_lines.join("\n");
+                result.push('\n');
+                result.push_str(&field_line);
+                result
+            }
+            _ => field_line,
+        }
     }
 }
 
@@ -251,7 +278,7 @@ impl ProtoField {
 /// use typeway_grpc::mapping::{ProtoField, build_message};
 ///
 /// let msg = build_message("GetUserRequest", &[
-///     ProtoField { name: "id".into(), proto_type: "uint32".into(), tag: 1, repeated: false, optional: false },
+///     ProtoField { name: "id".into(), proto_type: "uint32".into(), tag: 1, repeated: false, optional: false, doc: None },
 /// ]);
 /// assert!(msg.contains("message GetUserRequest {"));
 /// assert!(msg.contains("uint32 id = 1;"));
@@ -306,6 +333,7 @@ mod tests {
                     tag: 1,
                     repeated: false,
                     optional: false,
+                    doc: None,
                 },
                 ProtoField {
                     name: "ids".into(),
@@ -313,6 +341,7 @@ mod tests {
                     tag: 2,
                     repeated: true,
                     optional: false,
+                    doc: None,
                 },
             ],
         );
@@ -330,6 +359,7 @@ mod tests {
             tag: 1,
             repeated: false,
             optional: true,
+            doc: None,
         };
         assert_eq!(field.to_proto_line(), "  optional string email = 1;");
     }

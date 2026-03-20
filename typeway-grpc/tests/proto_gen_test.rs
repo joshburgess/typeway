@@ -148,3 +148,99 @@ fn single_endpoint_works() {
     assert!(proto.contains("ListUserResponse"));
     println!("{}", proto);
 }
+
+// --- Request message flattening ---
+
+struct FlatCreateUser;
+
+impl ToProtoType for FlatCreateUser {
+    fn proto_type_name() -> &'static str {
+        "FlatCreateUser"
+    }
+    fn is_message() -> bool {
+        true
+    }
+    fn message_definition() -> Option<String> {
+        Some("message FlatCreateUser {\n  string name = 1;\n  string email = 2;\n}".to_string())
+    }
+    fn proto_fields() -> Vec<ProtoField> {
+        vec![
+            ProtoField {
+                name: "name".to_string(),
+                proto_type: "string".to_string(),
+                tag: 1,
+                repeated: false,
+                optional: false,
+                doc: None,
+            },
+            ProtoField {
+                name: "email".to_string(),
+                proto_type: "string".to_string(),
+                tag: 2,
+                repeated: false,
+                optional: false,
+                doc: None,
+            },
+        ]
+    }
+}
+
+#[test]
+fn post_with_proto_fields_flattens_request() {
+    type FlatAPI = (PostEndpoint<UsersPath, FlatCreateUser, User>,);
+    let proto = FlatAPI::to_proto("FlatService", "flat.v1");
+    // The request message should contain the flattened fields directly,
+    // not a `body` field referencing FlatCreateUser.
+    assert!(
+        proto.contains("string name = 1"),
+        "Expected flattened 'name' field in request:\n{}",
+        proto,
+    );
+    assert!(
+        proto.contains("string email = 2"),
+        "Expected flattened 'email' field in request:\n{}",
+        proto,
+    );
+    assert!(
+        !proto.contains("FlatCreateUser body"),
+        "Expected no wrapped 'body' field in request:\n{}",
+        proto,
+    );
+    println!("{}", proto);
+}
+
+#[test]
+fn post_without_proto_fields_wraps_body() {
+    // CreateUser doesn't implement proto_fields(), so it should stay wrapped.
+    type WrappedAPI = (PostEndpoint<UsersPath, CreateUser, User>,);
+    let proto = WrappedAPI::to_proto("WrappedService", "wrapped.v1");
+    assert!(
+        proto.contains("CreateUser body"),
+        "Expected wrapped 'body' field in request:\n{}",
+        proto,
+    );
+    println!("{}", proto);
+}
+
+#[test]
+fn post_with_captures_and_flattening() {
+    type CaptureAPI = (PostEndpoint<UserByIdPath, FlatCreateUser, User>,);
+    let proto = CaptureAPI::to_proto("CaptureService", "capture.v1");
+    // Should have the capture field (param1 = 1) plus flattened fields (name = 2, email = 3).
+    assert!(
+        proto.contains("param1"),
+        "Expected capture field in request:\n{}",
+        proto,
+    );
+    assert!(
+        proto.contains("string name = 2"),
+        "Expected flattened 'name' field with offset tag:\n{}",
+        proto,
+    );
+    assert!(
+        proto.contains("string email = 3"),
+        "Expected flattened 'email' field with offset tag:\n{}",
+        proto,
+    );
+    println!("{}", proto);
+}

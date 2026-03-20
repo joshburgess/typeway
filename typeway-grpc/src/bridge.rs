@@ -28,8 +28,9 @@ use std::task::{Context, Poll};
 
 use bytes::Bytes;
 use http_body_util::combinators::UnsyncBoxBody;
-use http_body_util::{BodyExt, Empty};
+use http_body_util::{BodyExt, Empty, Full};
 
+use crate::framing;
 use crate::service::{ApiToServiceDescriptor, GrpcServiceDescriptor};
 use crate::status::{http_to_grpc_code, GrpcStatus};
 
@@ -46,6 +47,11 @@ pub type BoxBodyError = Box<dyn std::error::Error + Send + Sync>;
 /// Create an empty [`BoxBody`].
 fn empty_body() -> BoxBody {
     Empty::new().map_err(|e| match e {}).boxed_unsync()
+}
+
+/// Create a [`BoxBody`] from bytes.
+fn body_from_bytes(bytes: Bytes) -> BoxBody {
+    Full::new(bytes).map_err(|e| match e {}).boxed_unsync()
 }
 
 /// A bridge that translates gRPC requests into REST requests
@@ -190,27 +196,35 @@ where
             let rest_req = http::Request::from_parts(parts, body);
             let rest_res = inner.call(rest_req).await?;
 
+            // Collect the REST response body and wrap it in a gRPC frame.
+            let (mut res_parts, res_body) = rest_res.into_parts();
+            let res_bytes = match res_body.collect().await {
+                Ok(collected) => collected.to_bytes(),
+                Err(_) => Bytes::new(),
+            };
+            let framed = framing::encode_grpc_frame(&res_bytes);
+
             // Translate response: map HTTP status to gRPC status code.
-            let (mut parts, body) = rest_res.into_parts();
             let grpc_status = GrpcStatus {
-                code: http_to_grpc_code(parts.status),
+                code: http_to_grpc_code(res_parts.status),
                 message: String::new(),
             };
 
             // gRPC always returns HTTP 200; the real status is in grpc-status
             // and grpc-message headers.
-            parts.status = http::StatusCode::OK;
+            res_parts.status = http::StatusCode::OK;
             for (name, value) in grpc_status.to_headers() {
                 if let (Ok(name), Ok(value)) = (name.parse::<http::header::HeaderName>(), value.parse::<http::HeaderValue>()) {
-                    parts.headers.insert(name, value);
+                    res_parts.headers.insert(name, value);
                 }
             }
-            parts.headers.insert(
+            res_parts.headers.insert(
                 "content-type",
                 http::HeaderValue::from_static("application/grpc+json"),
             );
 
-            Ok(http::Response::from_parts(parts, body))
+            let framed_body = body_from_bytes(Bytes::from(framed));
+            Ok(http::Response::from_parts(res_parts, framed_body))
         })
     }
 }

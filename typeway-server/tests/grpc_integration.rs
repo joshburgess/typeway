@@ -376,6 +376,116 @@ fn grpc_server_exposes_service_descriptor() {
     assert!(names.contains(&"DeleteUser"));
 }
 
+// ---------------------------------------------------------------------------
+// GrpcTestClient integration tests
+// ---------------------------------------------------------------------------
+
+/// Verify the test client can make a framed gRPC call and get a framed response.
+#[tokio::test]
+async fn grpc_test_client_list_users() {
+    let port = start_grpc_server().await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    let resp = client
+        .call_empty("users.v1.UserService", "ListUser")
+        .await;
+
+    assert!(resp.is_ok());
+    assert_eq!(resp.grpc_code(), typeway_grpc::GrpcCode::Ok);
+
+    let body = resp.json();
+    assert!(body.is_array());
+    let arr = body.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["name"], "Alice");
+    assert_eq!(arr[1]["name"], "Bob");
+}
+
+/// Verify the test client gets UNIMPLEMENTED for unknown methods.
+#[tokio::test]
+async fn grpc_test_client_unknown_method() {
+    let port = start_grpc_server().await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    let resp = client
+        .call_empty("users.v1.UserService", "DoesNotExist")
+        .await;
+
+    assert!(!resp.is_ok());
+    assert_eq!(resp.grpc_code(), typeway_grpc::GrpcCode::Unimplemented);
+}
+
+/// Verify that a framed gRPC request to CreateUser works end-to-end.
+#[tokio::test]
+async fn grpc_test_client_create_user() {
+    let port = start_grpc_server().await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    let resp = client
+        .call(
+            "users.v1.UserService",
+            "CreateUser",
+            serde_json::json!({"name": "Charlie"}),
+        )
+        .await;
+
+    assert!(resp.is_ok());
+    let body = resp.json();
+    assert_eq!(body["name"], "Charlie");
+    assert!(body["id"].as_u64().unwrap() > 0);
+}
+
+/// Verify that the response from a framed request is itself properly framed
+/// (the test client decodes it transparently).
+#[tokio::test]
+async fn grpc_response_is_framed() {
+    let port = start_grpc_server().await;
+
+    // Send a raw framed request and check the raw response has framing.
+    let json_bytes = serde_json::to_vec(&serde_json::json!({})).unwrap();
+    let framed_req = typeway_grpc::framing::encode_grpc_frame(&json_bytes);
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!(
+            "http://127.0.0.1:{port}/users.v1.UserService/ListUser"
+        ))
+        .header("content-type", "application/grpc+json")
+        .body(framed_req)
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+
+    let grpc_status = resp
+        .headers()
+        .get("grpc-status")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert_eq!(grpc_status, "0");
+
+    let body_bytes = resp.bytes().await.unwrap();
+
+    // The response should be gRPC-framed (5-byte header + payload).
+    assert!(body_bytes.len() >= 5, "response too short for gRPC frame");
+    assert_eq!(body_bytes[0], 0, "compression flag should be 0");
+
+    let declared_len =
+        u32::from_be_bytes([body_bytes[1], body_bytes[2], body_bytes[3], body_bytes[4]]) as usize;
+    assert_eq!(
+        body_bytes.len(),
+        5 + declared_len,
+        "frame length mismatch"
+    );
+
+    // Decode the frame and verify it's valid JSON.
+    let unframed = typeway_grpc::framing::decode_grpc_frame(&body_bytes).unwrap();
+    let parsed: serde_json::Value = serde_json::from_slice(unframed).unwrap();
+    assert!(parsed.is_array());
+}
+
 /// Verify that `.with_grpc()` can be chained after `.with_state()` on Server.
 #[test]
 fn with_state_then_with_grpc() {
