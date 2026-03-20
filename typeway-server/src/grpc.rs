@@ -65,6 +65,8 @@ pub struct GrpcServer<A: ApiSpec> {
     reflection: ReflectionService,
     health: HealthService,
     reflection_enabled: bool,
+    grpc_spec_json: Option<Arc<String>>,
+    grpc_docs_html: Option<Arc<String>>,
     _api: PhantomData<A>,
 }
 
@@ -80,6 +82,8 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
             reflection,
             health,
             reflection_enabled: true,
+            grpc_spec_json: None,
+            grpc_docs_html: None,
             _api: PhantomData,
         }
     }
@@ -130,6 +134,57 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
         self
     }
 
+    /// Serve a gRPC service specification at `GET /grpc-spec` (JSON) and an
+    /// HTML documentation page at `GET /grpc-docs`.
+    ///
+    /// These are regular REST endpoints (not gRPC), so they can be accessed
+    /// from any browser or HTTP client.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Server::<API>::new(handlers)
+    ///     .with_state(state)
+    ///     .with_grpc("UserService", "users.v1")
+    ///     .with_grpc_docs()
+    ///     .serve(addr)
+    ///     .await?;
+    /// ```
+    pub fn with_grpc_docs(mut self) -> Self {
+        use typeway_grpc::spec::ApiToGrpcSpec;
+        let spec = A::grpc_spec(&self.service_name, &self.package);
+        let json = serde_json::to_string_pretty(&spec).expect("spec serialization");
+        let html = typeway_grpc::docs_page::generate_docs_html(&spec);
+        self.grpc_spec_json = Some(Arc::new(json));
+        self.grpc_docs_html = Some(Arc::new(html));
+        self
+    }
+
+    /// Serve a gRPC service specification with handler documentation applied.
+    ///
+    /// Handler docs (from the `#[documented_handler]` macro) are matched to
+    /// RPC methods to populate summaries, descriptions, and tags.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Server::<API>::new(handlers)
+    ///     .with_state(state)
+    ///     .with_grpc("UserService", "users.v1")
+    ///     .with_grpc_docs_with_handler_docs(&[LIST_USERS_DOC, GET_USER_DOC])
+    ///     .serve(addr)
+    ///     .await?;
+    /// ```
+    pub fn with_grpc_docs_with_handler_docs(mut self, docs: &[typeway_core::HandlerDoc]) -> Self {
+        use typeway_grpc::spec::ApiToGrpcSpec;
+        let spec = A::grpc_spec_with_docs(&self.service_name, &self.package, docs);
+        let json = serde_json::to_string_pretty(&spec).expect("spec serialization");
+        let html = typeway_grpc::docs_page::generate_docs_html(&spec);
+        self.grpc_spec_json = Some(Arc::new(json));
+        self.grpc_docs_html = Some(Arc::new(html));
+        self
+    }
+
     /// Start serving both REST and gRPC.
     ///
     /// Binds to the given address and accepts connections. REST requests are
@@ -172,6 +227,8 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
             reflection: Arc::new(self.reflection),
             health: self.health,
             reflection_enabled: self.reflection_enabled,
+            grpc_spec_json: self.grpc_spec_json,
+            grpc_docs_html: self.grpc_docs_html,
         };
 
         tokio::pin!(shutdown);
@@ -244,6 +301,8 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
             reflection: Arc::new(self.reflection),
             health: self.health,
             reflection_enabled: self.reflection_enabled,
+            grpc_spec_json: self.grpc_spec_json,
+            grpc_docs_html: self.grpc_docs_html,
         };
         LayeredGrpcServer {
             service: layer.layer(multiplexer),
@@ -359,6 +418,8 @@ pub struct Multiplexer {
     pub(crate) reflection: Arc<ReflectionService>,
     pub(crate) health: HealthService,
     pub(crate) reflection_enabled: bool,
+    pub(crate) grpc_spec_json: Option<Arc<String>>,
+    pub(crate) grpc_docs_html: Option<Arc<String>>,
 }
 
 /// Build a gRPC JSON response with the given body and status code 0 (OK).
@@ -389,6 +450,37 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
     }
 
     fn call(&mut self, req: http::Request<hyper::body::Incoming>) -> Self::Future {
+        // Serve gRPC spec and docs as REST endpoints before any other routing.
+        let path = req.uri().path();
+        if req.method() == http::Method::GET && path == "/grpc-spec" {
+            if let Some(spec_json) = self.grpc_spec_json.clone() {
+                return Box::pin(async move {
+                    let mut res = http::Response::new(body_from_bytes(
+                        bytes::Bytes::from(spec_json.as_bytes().to_vec()),
+                    ));
+                    res.headers_mut().insert(
+                        http::header::CONTENT_TYPE,
+                        http::HeaderValue::from_static("application/json; charset=utf-8"),
+                    );
+                    Ok(res)
+                });
+            }
+        }
+        if req.method() == http::Method::GET && path == "/grpc-docs" {
+            if let Some(docs_html) = self.grpc_docs_html.clone() {
+                return Box::pin(async move {
+                    let mut res = http::Response::new(body_from_bytes(
+                        bytes::Bytes::from(docs_html.as_bytes().to_vec()),
+                    ));
+                    res.headers_mut().insert(
+                        http::header::CONTENT_TYPE,
+                        http::HeaderValue::from_static("text/html; charset=utf-8"),
+                    );
+                    Ok(res)
+                });
+            }
+        }
+
         if typeway_grpc::is_grpc_request(&req) {
             let descriptor = self.grpc_descriptor.clone();
             let router = self.router.clone();

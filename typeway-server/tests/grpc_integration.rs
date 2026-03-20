@@ -1145,3 +1145,151 @@ fn streaming_descriptor_has_server_streaming_flag() {
         "expected GetHealth to NOT be client_streaming"
     );
 }
+
+// ===========================================================================
+// Part 3: gRPC documentation endpoints
+// ===========================================================================
+
+/// Helper to start a GrpcServer with docs enabled.
+async fn start_grpc_server_with_docs() -> u16 {
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![
+        User {
+            id: 1,
+            name: "Alice".into(),
+        },
+        User {
+            id: 2,
+            name: "Bob".into(),
+        },
+    ]));
+
+    let grpc_server = Server::<TestAPI>::new((
+        bind::<_, _, _>(list_users),
+        bind::<_, _, _>(get_user),
+        bind::<_, _, _>(create_user),
+        bind::<_, _, _>(delete_user),
+    ))
+    .with_state(state)
+    .with_grpc("UserService", "users.v1")
+    .with_grpc_docs();
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    tokio::spawn(async move {
+        grpc_server
+            .serve_with_shutdown(listener, std::future::pending())
+            .await
+            .unwrap();
+    });
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    port
+}
+
+/// GET /grpc-docs should return an HTML documentation page.
+#[tokio::test]
+async fn grpc_docs_endpoint_serves_html() {
+    let port = start_grpc_server_with_docs().await;
+
+    let resp = reqwest::get(format!("http://127.0.0.1:{port}/grpc-docs"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .expect("missing content-type")
+        .to_str()
+        .unwrap();
+    assert!(
+        content_type.contains("text/html"),
+        "expected text/html, got: {content_type}"
+    );
+
+    let body = resp.text().await.unwrap();
+    assert!(body.contains("<!DOCTYPE html>"), "expected HTML document");
+    assert!(body.contains("UserService"), "expected service name in HTML");
+    assert!(
+        body.contains("ListUser"),
+        "expected method name in HTML"
+    );
+    assert!(
+        body.contains("GetUser"),
+        "expected method name in HTML"
+    );
+}
+
+/// GET /grpc-spec should return a JSON service specification.
+#[tokio::test]
+async fn grpc_spec_endpoint_serves_json() {
+    let port = start_grpc_server_with_docs().await;
+
+    let resp = reqwest::get(format!("http://127.0.0.1:{port}/grpc-spec"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .expect("missing content-type")
+        .to_str()
+        .unwrap();
+    assert!(
+        content_type.contains("application/json"),
+        "expected application/json, got: {content_type}"
+    );
+
+    let spec: typeway_grpc::GrpcServiceSpec = resp.json().await.unwrap();
+    assert_eq!(spec.service.name, "UserService");
+    assert_eq!(spec.service.package, "users.v1");
+    assert_eq!(spec.service.full_name, "users.v1.UserService");
+    assert!(!spec.methods.is_empty(), "expected methods in spec");
+    assert!(spec.methods.contains_key("ListUser"));
+    assert!(spec.methods.contains_key("GetUser"));
+    assert!(spec.methods.contains_key("CreateUser"));
+    assert!(spec.methods.contains_key("DeleteUser"));
+    assert!(
+        !spec.proto.is_empty(),
+        "expected proto content in spec"
+    );
+}
+
+/// Without .with_grpc_docs(), /grpc-docs and /grpc-spec should 404.
+#[tokio::test]
+async fn grpc_docs_not_served_without_with_grpc_docs() {
+    let port = start_grpc_server().await;
+
+    let resp = reqwest::get(format!("http://127.0.0.1:{port}/grpc-docs"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+
+    let resp = reqwest::get(format!("http://127.0.0.1:{port}/grpc-spec"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+}
+
+/// REST and gRPC still work when docs endpoints are enabled.
+#[tokio::test]
+async fn grpc_docs_does_not_break_rest_or_grpc() {
+    let port = start_grpc_server_with_docs().await;
+
+    // REST still works.
+    let resp = reqwest::get(format!("http://127.0.0.1:{port}/users"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let user_list: Vec<User> = resp.json().await.unwrap();
+    assert_eq!(user_list.len(), 2);
+
+    // gRPC still works.
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    let resp = client
+        .call_empty("users.v1.UserService", "ListUser")
+        .await;
+    assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
+}

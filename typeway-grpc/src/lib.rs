@@ -80,6 +80,8 @@ pub mod proto_parse;
 pub mod ready;
 pub mod reflection;
 pub mod service;
+pub mod spec;
+pub mod docs_page;
 pub mod status;
 pub mod streaming;
 #[cfg(feature = "test-client")]
@@ -102,6 +104,8 @@ pub use ready::GrpcReady;
 pub use proto_parse::{parse_proto, ParsedField, ParsedMessage, ProtoFile, ProtoRpcMethod, ProtoService};
 pub use reflection::ReflectionService;
 pub use service::{ApiToServiceDescriptor, GrpcMethodDescriptor, GrpcServiceDescriptor};
+pub use spec::{ApiToGrpcSpec, GrpcServiceSpec};
+pub use docs_page::generate_docs_html;
 pub use status::{http_to_grpc_code, parse_grpc_timeout, GrpcCode, GrpcStatus, IntoGrpcStatus};
 pub use streaming::{BidirectionalStream, ClientStream, ServerStream};
 pub use validate::{validate_proto, ProtoValidationError};

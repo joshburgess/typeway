@@ -62,6 +62,24 @@ enum Command {
         #[arg(long)]
         new: PathBuf,
     },
+
+    /// Generate a service specification from a .proto file.
+    ///
+    /// Reads a .proto file and produces either a structured JSON spec
+    /// (the gRPC equivalent of an OpenAPI spec) or an HTML documentation page.
+    SpecFromProto {
+        /// The .proto file to read.
+        #[arg(long)]
+        file: PathBuf,
+
+        /// Output format: "json" or "html".
+        #[arg(long, default_value = "json")]
+        format: String,
+
+        /// Output file path. If omitted, prints to stdout.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -164,5 +182,139 @@ fn main() -> anyhow::Result<()> {
 
             Ok(())
         }
+
+        Command::SpecFromProto {
+            file,
+            format,
+            output,
+        } => {
+            let source = std::fs::read_to_string(&file)
+                .map_err(|e| anyhow::anyhow!("failed to read {}: {}", file.display(), e))?;
+
+            let proto_file = typeway_grpc::proto_parse::parse_proto(&source)
+                .map_err(|e| anyhow::anyhow!("failed to parse proto: {}", e))?;
+
+            let spec = spec_from_parsed_proto(&proto_file, &source);
+
+            let result = match format.as_str() {
+                "json" => serde_json::to_string_pretty(&spec)
+                    .map_err(|e| anyhow::anyhow!("JSON serialization failed: {}", e))?,
+                "html" => typeway_grpc::docs_page::generate_docs_html(&spec),
+                other => anyhow::bail!("unsupported format '{}' — use 'json' or 'html'", other),
+            };
+
+            if let Some(out_path) = output {
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&out_path, &result)?;
+                eprintln!(
+                    "Generated {} spec from {} -> {}",
+                    format,
+                    file.display(),
+                    out_path.display()
+                );
+            } else {
+                println!("{}", result);
+            }
+
+            Ok(())
+        }
+    }
+}
+
+/// Build a [`GrpcServiceSpec`] from a parsed proto file.
+fn spec_from_parsed_proto(
+    proto_file: &typeway_grpc::ProtoFile,
+    raw_proto: &str,
+) -> typeway_grpc::GrpcServiceSpec {
+    use indexmap::IndexMap;
+    use typeway_grpc::spec::*;
+
+    let package = proto_file.package.clone();
+
+    // Take the first service (or synthesize an empty one).
+    let service = proto_file.services.first();
+    let service_name = service
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| "Service".to_string());
+
+    let mut methods = IndexMap::new();
+    let mut messages = IndexMap::new();
+
+    // Collect messages from the parsed proto file.
+    for msg in &proto_file.messages {
+        let fields: Vec<FieldSpec> = msg
+            .fields
+            .iter()
+            .map(|f| FieldSpec {
+                name: f.name.clone(),
+                proto_type: f.proto_type.clone(),
+                tag: f.tag,
+                repeated: f.repeated,
+                optional: f.optional,
+                is_map: false,
+                map_key_type: None,
+                map_value_type: None,
+                description: None,
+            })
+            .collect();
+        messages.insert(
+            msg.name.clone(),
+            MessageSpec {
+                name: msg.name.clone(),
+                fields,
+                description: None,
+            },
+        );
+    }
+
+    // Collect methods from the first service.
+    if let Some(svc) = service {
+        for rpc in &svc.methods {
+            let full_path = format!("/{}.{}/{}", package, service_name, rpc.name);
+            methods.insert(
+                rpc.name.clone(),
+                MethodSpec {
+                    name: rpc.name.clone(),
+                    full_path,
+                    rest_path: String::new(),
+                    http_method: String::new(),
+                    request_type: rpc.input_type.clone(),
+                    response_type: rpc.output_type.clone(),
+                    server_streaming: false,
+                    client_streaming: false,
+                    description: None,
+                    summary: None,
+                    tags: Vec::new(),
+                    requires_auth: false,
+                },
+            );
+        }
+    }
+
+    GrpcServiceSpec {
+        proto: raw_proto.to_string(),
+        service: ServiceInfo {
+            name: service_name,
+            package: package.clone(),
+            full_name: if package.is_empty() {
+                service
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| "Service".to_string())
+            } else {
+                format!(
+                    "{}.{}",
+                    package,
+                    service
+                        .map(|s| s.name.as_str())
+                        .unwrap_or("Service")
+                )
+            },
+            description: None,
+            version: None,
+        },
+        methods,
+        messages,
     }
 }
