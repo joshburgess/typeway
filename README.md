@@ -419,7 +419,9 @@ Server::<API>::new(handlers)
     .await?;
 ```
 
-The gRPC layer uses Tonic under the hood, sharing the same Tower middleware stack and Tokio runtime as the REST server. Handlers are reused — a single handler implementation serves both REST and gRPC requests.
+The gRPC bridge uses **JSON encoding** (`application/grpc+json`), not binary Protocol Buffers. Since the REST handlers already use JSON, this avoids protobuf transcoding entirely. Standard gRPC clients (grpcurl, tonic, Postman) need to be configured for JSON mode. The `grpc_client!` macro generates clients that use JSON encoding automatically, so typeway client-to-server communication works seamlessly. For binary protobuf support, use Tonic directly alongside typeway via the `.with_fallback()` method.
+
+Handlers are reused — a single handler implementation serves both REST and gRPC requests, sharing the same Tower middleware stack and Tokio runtime.
 
 ### Server Reflection and Health Checks
 

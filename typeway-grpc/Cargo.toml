@@ -6,11 +6,13 @@ edition = "2021"
 [[bin]]
 name = "typeway-grpc"
 path = "src/main.rs"
+required-features = ["cli"]
 
 [features]
 default = []
 client = ["dep:typeway-client", "dep:reqwest", "dep:url", "dep:thiserror"]
 test-client = ["dep:reqwest", "dep:serde_json"]
+cli = ["dep:clap", "dep:anyhow"]
 
 [dependencies]
 typeway-core = { path = "../typeway-core" }
@@ -23,8 +25,8 @@ hyper = { version = "1", features = ["full"] }
 http-body = "1"
 http-body-util = "0.1"
 bytes = "1"
-clap = { version = "4", features = ["derive"] }
-anyhow = "1"
+clap = { version = "4", features = ["derive"], optional = true }
+anyhow = { version = "1", optional = true }
 reqwest = { version = "0.12", features = ["json"], optional = true }
 serde_json = { version = "1", optional = true }
 url = { version = "2", optional = true }

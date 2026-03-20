@@ -430,13 +430,20 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexe
                 let method = match method {
                     Some(m) => m,
                     None => {
-                        // UNIMPLEMENTED (12)
+                        // UNIMPLEMENTED (12) with a descriptive grpc-message.
+                        let status = typeway_grpc::GrpcStatus::unimplemented(
+                            &format!("method '{}' not found in service", grpc_path),
+                        );
                         let mut res = http::Response::new(empty_body());
                         *res.status_mut() = http::StatusCode::OK;
-                        res.headers_mut().insert(
-                            "grpc-status",
-                            http::HeaderValue::from_static("12"),
-                        );
+                        for (name, value) in status.to_headers() {
+                            if let (Ok(name), Ok(value)) = (
+                                name.parse::<http::header::HeaderName>(),
+                                value.parse::<http::HeaderValue>(),
+                            ) {
+                                res.headers_mut().insert(name, value);
+                            }
+                        }
                         res.headers_mut().insert(
                             "content-type",
                             http::HeaderValue::from_static("application/grpc"),

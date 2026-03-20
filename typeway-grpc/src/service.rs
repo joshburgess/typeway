@@ -69,10 +69,15 @@ impl<T: CollectRpcs> ApiToServiceDescriptor for T {
                 .map(|rpc| GrpcMethodDescriptor {
                     name: rpc.name.clone(),
                     full_path: format!("/{}.{}/{}", package, service_name, rpc.name),
-                    http_method: rpc
-                        .http_method
-                        .parse()
-                        .unwrap_or(http::Method::GET),
+                    http_method: rpc.http_method.parse::<http::Method>().unwrap_or_else(
+                        |_| {
+                            panic!(
+                                "invalid HTTP method '{}' for gRPC method '{}' \
+                                 — this is a bug in proto generation",
+                                rpc.http_method, rpc.name
+                            )
+                        },
+                    ),
                     rest_path: rpc.path_pattern.clone(),
                 })
                 .collect(),
@@ -96,10 +101,15 @@ mod tests {
                 .map(|rpc| GrpcMethodDescriptor {
                     name: rpc.name.clone(),
                     full_path: format!("/test.v1.TestService/{}", rpc.name),
-                    http_method: rpc
-                        .http_method
-                        .parse()
-                        .unwrap_or(http::Method::GET),
+                    http_method: rpc.http_method.parse::<http::Method>().unwrap_or_else(
+                        |_| {
+                            panic!(
+                                "invalid HTTP method '{}' for gRPC method '{}' \
+                                 — this is a bug in proto generation",
+                                rpc.http_method, rpc.name
+                            )
+                        },
+                    ),
                     rest_path: rpc.path_pattern.clone(),
                 })
                 .collect(),

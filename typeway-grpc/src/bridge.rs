@@ -5,12 +5,11 @@
 //! requests that the typeway router can handle. This enables serving both
 //! REST and gRPC from the same handler logic.
 //!
-//! # Simplified JSON bridge
-//!
-//! This implementation uses JSON-encoded gRPC (`application/grpc+json`)
-//! rather than full protobuf encoding. This validates the routing bridge
-//! architecture without requiring protobuf serialization. Full protobuf
-//! support with length-prefixed framing is planned for Phase D.
+//! The bridge uses JSON encoding (`application/grpc+json`) over gRPC framing.
+//! This is a deliberate design choice: since the REST handlers already use JSON,
+//! the bridge avoids protobuf transcoding entirely. The trade-off is that standard
+//! gRPC clients expecting binary protobuf (`application/grpc+proto`) need to be
+//! configured for JSON mode.
 //!
 //! # How it works
 //!

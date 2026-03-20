@@ -11,6 +11,21 @@
 //!    them to the typeway router, enabling dual-protocol serving from the same
 //!    handler logic.
 //!
+//! ## Important: JSON Encoding
+//!
+//! The gRPC bridge uses **JSON encoding** (`application/grpc+json`), not binary
+//! Protocol Buffers. This means:
+//!
+//! - **Standard gRPC clients** (grpcurl, tonic, Postman) need to be configured
+//!   for JSON encoding or won't work out of the box
+//! - **The `grpc_client!` macro** generates clients that use JSON encoding,
+//!   so client-to-server communication within typeway works seamlessly
+//! - **Performance** is slightly lower than binary protobuf but the handlers
+//!   are shared with REST (which already uses JSON), avoiding transcoding
+//!
+//! For binary protobuf support, use Tonic directly alongside typeway via
+//! the `.with_fallback()` method on `Server`.
+//!
 //! # Example
 //!
 //! ```ignore

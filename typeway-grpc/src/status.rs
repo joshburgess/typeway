@@ -306,8 +306,8 @@ pub fn parse_grpc_timeout(value: &str) -> Option<std::time::Duration> {
     let num: u64 = num_str.parse().ok()?;
 
     match unit {
-        "H" => Some(std::time::Duration::from_secs(num * 3600)),
-        "M" => Some(std::time::Duration::from_secs(num * 60)),
+        "H" => num.checked_mul(3600).map(std::time::Duration::from_secs),
+        "M" => num.checked_mul(60).map(std::time::Duration::from_secs),
         "S" => Some(std::time::Duration::from_secs(num)),
         "m" => Some(std::time::Duration::from_millis(num)),
         "u" => Some(std::time::Duration::from_micros(num)),
@@ -536,5 +536,12 @@ mod tests {
         assert_eq!(parse_grpc_timeout("abc"), None);
         assert_eq!(parse_grpc_timeout("30x"), None);
         assert_eq!(parse_grpc_timeout("  "), None);
+    }
+
+    #[test]
+    fn parse_grpc_timeout_overflow_returns_none() {
+        // u64::MAX * 3600 would overflow — should return None, not panic.
+        assert_eq!(parse_grpc_timeout(&format!("{}H", u64::MAX)), None);
+        assert_eq!(parse_grpc_timeout(&format!("{}M", u64::MAX)), None);
     }
 }

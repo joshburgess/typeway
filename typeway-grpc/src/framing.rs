@@ -10,6 +10,9 @@
 
 /// Encode a message with gRPC length-prefix framing.
 ///
+/// The compression flag is always set to 0 (uncompressed). Compressed
+/// gRPC frames are not supported by this implementation.
+///
 /// Format: `[1 byte: compressed flag (0)] [4 bytes: big-endian length] [message bytes]`
 ///
 /// # Example
@@ -53,7 +56,10 @@ pub fn decode_grpc_frame(data: &[u8]) -> Result<&[u8], FramingError> {
             got: data.len(),
         });
     }
-    let _compressed = data[0]; // TODO: handle compression
+    let compressed = data[0];
+    if compressed != 0 {
+        return Err(FramingError::CompressedNotSupported);
+    }
     let len = u32::from_be_bytes([data[1], data[2], data[3], data[4]]) as usize;
     if data.len() < 5 + len {
         return Err(FramingError::Incomplete {
@@ -72,6 +78,10 @@ pub enum FramingError {
         /// Number of bytes actually provided.
         got: usize,
     },
+    /// The frame has the compression flag set, which is not supported.
+    ///
+    /// Send uncompressed frames or use a gRPC proxy that handles decompression.
+    CompressedNotSupported,
     /// The frame header declares a message length that exceeds the available data.
     Incomplete {
         /// The declared message length from the header.
@@ -86,6 +96,13 @@ impl std::fmt::Display for FramingError {
         match self {
             FramingError::TooShort { got } => {
                 write!(f, "frame too short: got {got} bytes, need at least 5")
+            }
+            FramingError::CompressedNotSupported => {
+                write!(
+                    f,
+                    "compressed gRPC frames are not supported \
+                     — send uncompressed or use a gRPC proxy"
+                )
             }
             FramingError::Incomplete { expected, got } => {
                 write!(
@@ -185,6 +202,24 @@ mod tests {
         let data = [0, 0, 0, 0, 2, b'a', b'b', b'c', b'd', b'e'];
         let decoded = decode_grpc_frame(&data).unwrap();
         assert_eq!(decoded, b"ab");
+    }
+
+    #[test]
+    fn compressed_frame_returns_error() {
+        // Frame with compression flag = 1, length = 3, payload "abc".
+        let data = [1, 0, 0, 0, 3, b'a', b'b', b'c'];
+        assert_eq!(
+            decode_grpc_frame(&data),
+            Err(FramingError::CompressedNotSupported)
+        );
+    }
+
+    #[test]
+    fn uncompressed_frame_succeeds() {
+        // Frame with compression flag = 0, length = 3, payload "abc".
+        let data = [0, 0, 0, 0, 3, b'a', b'b', b'c'];
+        let decoded = decode_grpc_frame(&data).unwrap();
+        assert_eq!(decoded, b"abc");
     }
 
     #[test]

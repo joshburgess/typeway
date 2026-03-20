@@ -268,6 +268,18 @@ async fn grpc_unknown_method_returns_unimplemented() {
         .to_str()
         .unwrap();
     assert_eq!(grpc_status, "12"); // UNIMPLEMENTED
+
+    // Verify grpc-message is present and descriptive.
+    let grpc_message = resp
+        .headers()
+        .get("grpc-message")
+        .expect("missing grpc-message header for UNIMPLEMENTED")
+        .to_str()
+        .unwrap();
+    assert!(
+        grpc_message.contains("not found"),
+        "grpc-message should describe the missing method, got: {grpc_message}"
+    );
 }
 
 /// A REST 404 (user not found) should be translated to grpc-status: 5 (NOT_FOUND)
@@ -592,4 +604,177 @@ fn with_state_then_with_grpc() {
     ))
     .with_state(state)
     .with_grpc("Svc", "pkg.v1");
+}
+
+// ---------------------------------------------------------------------------
+// End-to-end gRPC roundtrip tests (Issue #6)
+// ---------------------------------------------------------------------------
+
+/// E2E: List users via gRPC and verify the JSON response body.
+#[tokio::test]
+async fn grpc_e2e_list_users() {
+    let port = start_grpc_server().await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    let resp = client
+        .call_empty("users.v1.UserService", "ListUser")
+        .await;
+
+    assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
+    assert_eq!(resp.grpc_code(), typeway_grpc::GrpcCode::Ok);
+
+    let body = resp.json();
+    assert!(body.is_array(), "expected JSON array, got {body}");
+    let arr = body.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["id"], 1);
+    assert_eq!(arr[0]["name"], "Alice");
+    assert_eq!(arr[1]["id"], 2);
+    assert_eq!(arr[1]["name"], "Bob");
+}
+
+/// E2E: Create a user via gRPC POST and verify the response.
+#[tokio::test]
+async fn grpc_e2e_create_user() {
+    let port = start_grpc_server().await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    let resp = client
+        .call(
+            "users.v1.UserService",
+            "CreateUser",
+            serde_json::json!({"name": "Dave"}),
+        )
+        .await;
+
+    assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
+    let body = resp.json();
+    assert_eq!(body["name"], "Dave");
+    assert!(
+        body["id"].as_u64().unwrap() > 0,
+        "expected positive id, got {}",
+        body["id"]
+    );
+}
+
+/// E2E: Call the health check endpoint via gRPC and verify SERVING status.
+#[tokio::test]
+async fn grpc_e2e_health_check() {
+    let port = start_grpc_server().await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    let resp = client
+        .call_empty("grpc.health.v1.Health", "Check")
+        .await;
+
+    assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
+    let body = resp.json();
+    assert_eq!(
+        body["status"], "SERVING",
+        "expected SERVING, got {body}"
+    );
+}
+
+/// E2E: Call the reflection endpoint and verify service names in response.
+#[tokio::test]
+async fn grpc_e2e_reflection() {
+    let port = start_grpc_server().await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    let resp = client
+        .call(
+            "grpc.reflection.v1alpha.ServerReflection",
+            "ServerReflectionInfo",
+            serde_json::json!({"list_services": ""}),
+        )
+        .await;
+
+    assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
+    let body = resp.json();
+    // The reflection response should mention the UserService.
+    let body_str = body.to_string();
+    assert!(
+        body_str.contains("UserService"),
+        "expected reflection response to contain 'UserService', got: {body_str}"
+    );
+}
+
+/// E2E: Call a non-existent method and verify UNIMPLEMENTED.
+#[tokio::test]
+async fn grpc_e2e_unknown_method() {
+    let port = start_grpc_server().await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    let resp = client
+        .call_empty("users.v1.UserService", "NonExistentMethod")
+        .await;
+
+    assert!(!resp.is_ok());
+    assert_eq!(
+        resp.grpc_code(),
+        typeway_grpc::GrpcCode::Unimplemented,
+        "expected UNIMPLEMENTED, got {:?}",
+        resp.grpc_code()
+    );
+}
+
+/// E2E: On the same gRPC-enabled server, make a normal REST request
+/// and verify it still works alongside gRPC.
+#[tokio::test]
+async fn grpc_e2e_rest_still_works() {
+    let port = start_grpc_server().await;
+
+    // REST: list users
+    let resp = reqwest::get(format!("http://127.0.0.1:{port}/users"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let user_list: Vec<User> = resp.json().await.unwrap();
+    assert_eq!(user_list.len(), 2);
+    assert_eq!(user_list[0].name, "Alice");
+
+    // REST: get single user
+    let resp = reqwest::get(format!("http://127.0.0.1:{port}/users/2"))
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+
+    let user: User = resp.json().await.unwrap();
+    assert_eq!(user.id, 2);
+    assert_eq!(user.name, "Bob");
+
+    // REST: create user
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("http://127.0.0.1:{port}/users"))
+        .json(&serde_json::json!({"name": "Eve"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+
+    let user: User = resp.json().await.unwrap();
+    assert_eq!(user.name, "Eve");
+}
+
+/// E2E: A gRPC call that would produce a REST 404 maps to grpc-status NOT_FOUND.
+#[tokio::test]
+async fn grpc_e2e_404_maps_correctly() {
+    let port = start_grpc_server().await;
+
+    let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
+    // GetUser's rest_path contains a placeholder "{}" that won't parse as a u32,
+    // so the REST router returns 404 which maps to NOT_FOUND.
+    let resp = client
+        .call_empty("users.v1.UserService", "GetUser")
+        .await;
+
+    assert!(!resp.is_ok());
+    assert_eq!(
+        resp.grpc_code(),
+        typeway_grpc::GrpcCode::NotFound,
+        "expected NOT_FOUND, got {:?}",
+        resp.grpc_code()
+    );
 }
