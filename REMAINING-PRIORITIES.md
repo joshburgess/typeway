@@ -17,8 +17,16 @@ Updated status of all planned work. Checked items are complete.
 
 - [x] **Client ergonomics** — `client_api!` macro, interceptors, cookies, streaming, per-call builder, `TypedResponse`, query params, Accept header, tracing
 - [x] **OpenAPI enhancements** — `ExampleValue`, security schemes from `Protected`, auto-tag grouping, deprecated marking, `EndpointToOperation` for wrappers
-- [ ] **OpenAPI: struct field doc comment extraction** — Function-level doc comments are extracted, but struct field doc comments are not yet propagated into OpenAPI schema property descriptions. Requires proc-macro or build script to read source.
-- [x] **gRPC / Tonic interop** — Fully implemented in `typeway-grpc`. API type generates `.proto` files via `API::to_proto()`, gRPC served alongside REST via `.with_grpc()`, shared handlers and Tower middleware. CLI tool `typeway-grpc api-from-proto` generates Typeway types from existing `.proto` files.
+- [x] **OpenAPI: struct field doc comment extraction** — `#[derive(TypewaySchema)]` extracts field doc comments into OpenAPI property descriptions, with `#[serde(rename_all)]` support
+- [x] **gRPC / Tonic interop** — Fully implemented in `typeway-grpc` (191 tests):
+  - `.proto` generation via `API::to_proto()` + `typeway-grpc api-from-proto` CLI
+  - Unified REST+gRPC serving via `.with_grpc()` on one port
+  - `#[derive(ToProtoType)]` with `#[proto(tag = N)]` for stable field numbering
+  - `IntoGrpcStatus` trait for rich error mapping
+  - `ServerStream<E>` marker for server-streaming RPCs
+  - `grpc_client!` macro for type-safe gRPC client generation
+  - Server reflection (`grpc.reflection.v1alpha`)
+  - Health check service (`grpc.health.v1.Health/Check`)
 - [ ] **Publish to crates.io** — On hold per user request.
 
 ---

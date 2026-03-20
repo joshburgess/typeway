@@ -85,7 +85,7 @@ typeway = "0.1"
 | `tls` | no | HTTPS via tokio-rustls |
 | `ws` | no | WebSocket upgrade support |
 | `multipart` | no | Multipart form upload (file uploads) |
-| `grpc` | no | gRPC serving + .proto generation (Tonic) |
+| `grpc` | no | gRPC server, client, .proto generation, server reflection, health check (Tonic) |
 | `full` | no | server + client + openapi |
 
 ## Workspace Structure
@@ -375,7 +375,29 @@ The `ApiChangelog` trait provides runtime introspection of the change set — ho
 
 ## gRPC / Protocol Buffers
 
-With the `grpc` feature, the same API type that drives your REST server, client, and OpenAPI spec also generates Protocol Buffers service definitions and serves gRPC alongside REST.
+With the `grpc` feature, the same API type that drives your REST server, client, and OpenAPI spec also generates Protocol Buffers service definitions, serves gRPC alongside REST, provides a type-safe gRPC client, exposes server reflection for tools like `grpcurl`, and runs a health check service with graceful shutdown support.
+
+One API type, seven projections: REST server, REST client, OpenAPI spec, gRPC server, gRPC client, `.proto` file, and server reflection.
+
+### Message Types from Rust Structs
+
+`#[derive(ToProtoType)]` generates Protocol Buffers message definitions directly from Rust structs, with field tags specified via `#[proto(tag = N)]`:
+
+```rust
+use typeway_grpc::ToProtoType;
+
+#[derive(ToProtoType)]
+struct User {
+    #[proto(tag = 1)]
+    id: u32,
+    #[proto(tag = 2)]
+    name: String,
+}
+```
+
+No hand-written `.proto` message definitions needed — the Rust struct is the source of truth.
+
+### Generating `.proto` Files
 
 Generate a `.proto` file from your API type:
 
@@ -386,7 +408,9 @@ let proto = API::to_proto("UserService", "users.v1");
 std::fs::write("users.proto", proto)?;
 ```
 
-Serve gRPC and REST on the same port:
+### Serving gRPC and REST Together
+
+Serve gRPC alongside REST on the same port:
 
 ```rust
 Server::<API>::new(handlers)
@@ -396,6 +420,66 @@ Server::<API>::new(handlers)
 ```
 
 The gRPC layer uses Tonic under the hood, sharing the same Tower middleware stack and Tokio runtime as the REST server. Handlers are reused — a single handler implementation serves both REST and gRPC requests.
+
+### Server Reflection and Health Checks
+
+Server reflection is enabled automatically, so tools like `grpcurl` and `grpcui` can discover services at runtime without a `.proto` file on disk:
+
+```sh
+grpcurl -plaintext localhost:3000 list
+# users.v1.UserService
+```
+
+The health check service supports graceful shutdown — it reports `SERVING` while the server is running and transitions to `NOT_SERVING` during shutdown, giving load balancers time to drain connections.
+
+### Server-Streaming RPCs
+
+`ServerStream<E>` supports server-streaming RPCs where a single request produces a stream of responses:
+
+```rust
+type API = (
+    GetEndpoint<EventsPath, ServerStream<Event>>,
+);
+```
+
+### Type-Safe gRPC Client
+
+The `grpc_client!` macro generates a type-safe gRPC client from the same endpoint types used by the server:
+
+```rust
+use typeway_grpc::grpc_client;
+
+grpc_client! {
+    pub struct UserServiceClient;
+    service = "UserService";
+    package = "users.v1";
+
+    list_users => GetEndpoint<UsersPath, Json<Vec<User>>>;
+    get_user => GetEndpoint<UserByIdPath, Json<User>>;
+}
+
+let client = UserServiceClient::connect("http://localhost:3000").await?;
+let user = client.get_user(42u32).await?;
+```
+
+Both REST and gRPC clients are derived from the same API type — change the type, and both clients update.
+
+### Error Mapping
+
+The `IntoGrpcStatus` trait maps handler errors to gRPC status codes, so error types work consistently across REST and gRPC:
+
+```rust
+impl IntoGrpcStatus for MyError {
+    fn into_grpc_status(self) -> tonic::Status {
+        match self {
+            MyError::NotFound(msg) => Status::not_found(msg),
+            MyError::Internal(msg) => Status::internal(msg),
+        }
+    }
+}
+```
+
+### Importing Existing `.proto` Files
 
 For the reverse direction — importing an existing `.proto` file and generating Typeway API types — the `typeway-grpc` CLI provides:
 

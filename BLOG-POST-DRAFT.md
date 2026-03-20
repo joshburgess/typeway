@@ -589,23 +589,24 @@ Nothing like this exists in Servant. Haskell's type system is powerful enough to
 
 ### gRPC from the Same API Type
 
-The same type that drives the REST server, the type-safe client, and the OpenAPI spec now also generates Protocol Buffers service definitions and serves gRPC alongside REST on the same port. One API type, five projections: server, client, OpenAPI, `.proto` schema, and gRPC service.
+The same type that drives the REST server, the type-safe client, and the OpenAPI spec now also generates Protocol Buffers service definitions, serves gRPC alongside REST, provides a type-safe gRPC client, and exposes server reflection so tools like `grpcurl` work out of the box. One API type, seven projections: REST server, REST client, OpenAPI spec, gRPC server, gRPC client, `.proto` file, and server reflection.
 
-Generating a `.proto` file is a single method call:
+`#[derive(ToProtoType)]` eliminates hand-written message definitions — the Rust struct is the source of truth, with field tags declared inline:
+
+```rust
+#[derive(ToProtoType)]
+struct User {
+    #[proto(tag = 1)]
+    id: u32,
+    #[proto(tag = 2)]
+    name: String,
+}
+```
+
+Generating a `.proto` file is still a single method call:
 
 ```rust
 let proto = API::to_proto("UserService", "users.v1");
-// Outputs:
-//   syntax = "proto3";
-//   package users.v1;
-//
-//   service UserService {
-//     rpc ListUsers(Empty) returns (UserList);
-//     rpc GetUser(GetUserRequest) returns (User);
-//     rpc CreateUser(CreateUser) returns (User);
-//     rpc DeleteUser(DeleteUserRequest) returns (Empty);
-//   }
-//   ...
 ```
 
 Serving gRPC alongside REST is a one-liner on the server builder:
@@ -617,7 +618,22 @@ Server::<API>::new(handlers)
     .await?;
 ```
 
-The gRPC layer uses Tonic under the hood, sharing the same Tower middleware and Tokio runtime. Handlers are reused — a single handler implementation serves both REST and gRPC requests. The `typeway-grpc` CLI can also go the other direction, generating Typeway API types from an existing `.proto` file.
+The gRPC layer uses Tonic under the hood, sharing the same Tower middleware and Tokio runtime. Handlers are reused — a single handler implementation serves both REST and gRPC requests. `ServerStream<E>` supports server-streaming RPCs for cases where a request produces a stream of responses rather than a single reply.
+
+The `grpc_client!` macro means I get both REST and gRPC clients from the same API type:
+
+```rust
+grpc_client! {
+    pub struct UserServiceClient;
+    service = "UserService";
+    package = "users.v1";
+
+    list_users => GetEndpoint<UsersPath, Json<Vec<User>>>;
+    get_user => GetEndpoint<UserByIdPath, Json<User>>;
+}
+```
+
+Change the API type, and both the REST client and the gRPC client refuse to compile until they're updated. Server reflection means `grpcurl -plaintext localhost:3000 list` discovers services at runtime without needing a `.proto` file on disk. The health check service handles graceful shutdown, transitioning to `NOT_SERVING` during drain so load balancers route traffic away cleanly. The `IntoGrpcStatus` trait maps handler error types to gRPC status codes, so the same error types work consistently across both protocols.
 
 Servant has no gRPC story at all. The Haskell gRPC ecosystem (`grpc-haskell`, `proto-lens`) is completely separate from Servant — different type hierarchies, different code generation pipelines, different middleware stacks. If you want both REST and gRPC in a Haskell service, you maintain two independent API definitions with no shared types or handlers. Typeway unifies REST and gRPC under one type, one set of handlers, and one middleware stack. I'm not aware of any other web framework in any language that derives both REST and gRPC from a single type-level API definition.
 
