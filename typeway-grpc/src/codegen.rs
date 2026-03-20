@@ -92,7 +92,21 @@ fn generate_struct(msg: &ParsedMessage) -> String {
     s.push_str("#[derive(Debug, Clone, Serialize, Deserialize)]\n");
     s.push_str(&format!("pub struct {} {{\n", struct_name));
     for field in &msg.fields {
-        let rust_type = proto_type_to_rust(&field.proto_type, field.repeated, field.optional);
+        let rust_type = if field.is_map {
+            let key = proto_type_to_rust(
+                field.map_key_type.as_deref().unwrap_or("string"),
+                false,
+                false,
+            );
+            let value = proto_type_to_rust(
+                field.map_value_type.as_deref().unwrap_or("string"),
+                false,
+                false,
+            );
+            format!("std::collections::HashMap<{}, {}>", key, value)
+        } else {
+            proto_type_to_rust(&field.proto_type, field.repeated, field.optional)
+        };
         s.push_str(&format!("    pub {}: {},\n", field.name, rust_type));
     }
     s.push('}');
@@ -503,9 +517,35 @@ message ListUserResponse {
                 tag: 1,
                 repeated: false,
                 optional: false,
+                is_map: false,
+                map_key_type: None,
+                map_value_type: None,
             }],
         };
         let s = generate_struct(&msg);
         assert!(s.contains("pub struct Outer_Inner {"));
+    }
+
+    #[test]
+    fn map_field_generates_hashmap() {
+        let msg = ParsedMessage {
+            name: "Config".to_string(),
+            fields: vec![ParsedField {
+                name: "metadata".to_string(),
+                proto_type: "map<string, string>".to_string(),
+                tag: 1,
+                repeated: false,
+                optional: false,
+                is_map: true,
+                map_key_type: Some("string".to_string()),
+                map_value_type: Some("string".to_string()),
+            }],
+        };
+        let s = generate_struct(&msg);
+        assert!(
+            s.contains("std::collections::HashMap<String, String>"),
+            "Expected HashMap in generated struct: {}",
+            s
+        );
     }
 }

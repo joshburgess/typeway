@@ -141,6 +141,9 @@ macro_rules! impl_endpoint_to_rpc_with_body {
                             tag: body_tag,
                             repeated: Req::is_repeated(),
                             optional: false,
+                            is_map: false,
+                            map_key_type: None,
+                            map_value_type: None,
                             doc: None,
                         });
                     }
@@ -406,6 +409,9 @@ fn captures_from_pattern(pattern: &str) -> Vec<ProtoField> {
                 tag: (i + 1) as u32,
                 repeated: false,
                 optional: false,
+                is_map: false,
+                map_key_type: None,
+                map_value_type: None,
                 doc: None,
             }
         })
@@ -444,6 +450,9 @@ fn build_response_message<Res: ToProtoType>(rpc_name: &str) -> ProtoMessage {
                     tag: 1,
                     repeated: Res::is_repeated(),
                     optional: false,
+                    is_map: false,
+                    map_key_type: None,
+                    map_value_type: None,
                     doc: None,
                 }],
             ),

@@ -48,6 +48,20 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Compare two .proto files and report breaking changes.
+    ///
+    /// Exits with code 1 if any breaking changes are detected, making
+    /// it suitable for use in CI pipelines.
+    Diff {
+        /// The old (baseline) .proto file.
+        #[arg(long)]
+        old: PathBuf,
+
+        /// The new .proto file.
+        #[arg(long)]
+        new: PathBuf,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
@@ -103,6 +117,49 @@ fn main() -> anyhow::Result<()> {
                 }
                 std::fs::write(&output, &rust_code)?;
                 eprintln!("Generated {} from {}", output.display(), file.display());
+            }
+
+            Ok(())
+        }
+
+        Command::Diff { old, new } => {
+            let old_src = std::fs::read_to_string(&old)
+                .map_err(|e| anyhow::anyhow!("failed to read {}: {}", old.display(), e))?;
+            let new_src = std::fs::read_to_string(&new)
+                .map_err(|e| anyhow::anyhow!("failed to read {}: {}", new.display(), e))?;
+
+            let changes = typeway_grpc::diff::diff_protos(&old_src, &new_src)
+                .map_err(|e| anyhow::anyhow!("failed to diff protos: {}", e))?;
+
+            if changes.is_empty() {
+                println!("No changes detected.");
+                return Ok(());
+            }
+
+            let breaking: Vec<_> = changes
+                .iter()
+                .filter(|c| c.kind == typeway_grpc::ChangeKind::Breaking)
+                .collect();
+            let compatible: Vec<_> = changes
+                .iter()
+                .filter(|c| c.kind == typeway_grpc::ChangeKind::Compatible)
+                .collect();
+
+            if !breaking.is_empty() {
+                println!("BREAKING CHANGES ({}):", breaking.len());
+                for c in &breaking {
+                    println!("  x {}: {}", c.location, c.description);
+                }
+            }
+            if !compatible.is_empty() {
+                println!("Compatible changes ({}):", compatible.len());
+                for c in &compatible {
+                    println!("  + {}: {}", c.location, c.description);
+                }
+            }
+
+            if !breaking.is_empty() {
+                std::process::exit(1);
             }
 
             Ok(())

@@ -1,8 +1,9 @@
 //! Simple `.proto` file parser for proto3 syntax.
 //!
 //! Extracts syntax, package, service/rpc definitions, and message definitions.
-//! This is intentionally minimal — no support for imports, enums, oneof, maps,
-//! or options. Just the core proto3 subset needed for typeway interop.
+//! This is intentionally minimal — no support for imports, enums, oneof,
+//! or options. Just the core proto3 subset needed for typeway interop,
+//! including `map<K, V>` fields.
 
 /// A parsed `.proto` file.
 #[derive(Debug, Clone)]
@@ -54,6 +55,7 @@ pub struct ParsedField {
     /// Field name (snake_case).
     pub name: String,
     /// Protobuf type (e.g., `"string"`, `"uint32"`, `"User"`).
+    /// For map fields, this is the full `map<K, V>` representation.
     pub proto_type: String,
     /// Field tag number.
     pub tag: u32,
@@ -61,6 +63,12 @@ pub struct ParsedField {
     pub repeated: bool,
     /// Whether the field is `optional`.
     pub optional: bool,
+    /// Whether the field is a `map<K, V>` type.
+    pub is_map: bool,
+    /// The key type for map fields (e.g., `"string"`).
+    pub map_key_type: Option<String>,
+    /// The value type for map fields (e.g., `"uint32"`).
+    pub map_value_type: Option<String>,
 }
 
 /// Parse a `.proto` file string into a [`ProtoFile`].
@@ -315,7 +323,8 @@ fn parse_message_block(
     Err(format!("unclosed message block '{}'", raw_name))
 }
 
-/// Parse a field line like `string name = 1;` or `repeated uint32 ids = 2;`.
+/// Parse a field line like `string name = 1;`, `repeated uint32 ids = 2;`,
+/// or `map<string, uint32> metadata = 3;`.
 ///
 /// Returns `None` if the line doesn't look like a field.
 fn parse_field(line: &str) -> Option<ParsedField> {
@@ -323,6 +332,11 @@ fn parse_field(line: &str) -> Option<ParsedField> {
     let line = line.split("//").next().unwrap_or(line).trim();
     // Strip trailing semicolon.
     let line = line.trim_end_matches(';').trim();
+
+    // Check for map<K, V> syntax.
+    if line.starts_with("map<") || line.starts_with("map <") {
+        return parse_map_field(line);
+    }
 
     let tokens: Vec<&str> = line.split_whitespace().collect();
     if tokens.len() < 4 {
@@ -369,6 +383,50 @@ fn parse_field(line: &str) -> Option<ParsedField> {
         tag,
         repeated,
         optional,
+        is_map: false,
+        map_key_type: None,
+        map_value_type: None,
+    })
+}
+
+/// Parse a `map<K, V> name = tag;` field line.
+fn parse_map_field(line: &str) -> Option<ParsedField> {
+    // Find the angle bracket contents: map<K, V>
+    let open = line.find('<')?;
+    let close = line.find('>')?;
+    if close <= open + 1 {
+        return None;
+    }
+
+    let inner = &line[open + 1..close];
+    let comma = inner.find(',')?;
+    let key_type = inner[..comma].trim().to_string();
+    let value_type = inner[comma + 1..].trim().to_string();
+
+    // After the '>', parse: name = tag
+    let rest = line[close + 1..].trim();
+    let tokens: Vec<&str> = rest.split_whitespace().collect();
+    if tokens.len() < 3 {
+        return None;
+    }
+
+    let name = tokens[0].to_string();
+    if tokens[1] != "=" {
+        return None;
+    }
+    let tag: u32 = tokens[2].parse().ok()?;
+
+    let proto_type = format!("map<{}, {}>", key_type, value_type);
+
+    Some(ParsedField {
+        name,
+        proto_type,
+        tag,
+        repeated: false,
+        optional: false,
+        is_map: true,
+        map_key_type: Some(key_type),
+        map_value_type: Some(value_type),
     })
 }
 
@@ -586,5 +644,53 @@ message Broken {
         let result = parse_proto(source);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("unclosed message"));
+    }
+
+    #[test]
+    fn parses_map_fields() {
+        let source = r#"syntax = "proto3";
+package test.v1;
+message Config {
+  string name = 1;
+  map<string, string> metadata = 2;
+  map<string, uint32> counts = 3;
+}
+"#;
+        let proto = parse_proto(source).unwrap();
+        let config = &proto.messages[0];
+        assert_eq!(config.fields.len(), 3);
+
+        // Regular field.
+        assert_eq!(config.fields[0].name, "name");
+        assert!(!config.fields[0].is_map);
+
+        // Map fields.
+        assert_eq!(config.fields[1].name, "metadata");
+        assert!(config.fields[1].is_map);
+        assert_eq!(config.fields[1].map_key_type.as_deref(), Some("string"));
+        assert_eq!(config.fields[1].map_value_type.as_deref(), Some("string"));
+        assert_eq!(config.fields[1].tag, 2);
+        assert_eq!(config.fields[1].proto_type, "map<string, string>");
+
+        assert_eq!(config.fields[2].name, "counts");
+        assert!(config.fields[2].is_map);
+        assert_eq!(config.fields[2].map_key_type.as_deref(), Some("string"));
+        assert_eq!(config.fields[2].map_value_type.as_deref(), Some("uint32"));
+        assert_eq!(config.fields[2].tag, 3);
+    }
+
+    #[test]
+    fn map_fields_are_not_repeated_or_optional() {
+        let source = r#"syntax = "proto3";
+package test.v1;
+message Foo {
+  map<uint32, string> items = 1;
+}
+"#;
+        let proto = parse_proto(source).unwrap();
+        let field = &proto.messages[0].fields[0];
+        assert!(field.is_map);
+        assert!(!field.repeated);
+        assert!(!field.optional);
     }
 }

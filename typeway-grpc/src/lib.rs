@@ -55,6 +55,7 @@ pub mod client;
 #[cfg(feature = "client")]
 pub mod interceptors;
 pub mod codegen;
+pub mod diff;
 pub mod framing;
 pub mod health;
 pub mod mapping;
@@ -68,8 +69,10 @@ pub mod streaming;
 #[cfg(feature = "test-client")]
 pub mod test_client;
 pub mod validate;
+pub mod web;
 
 pub use codegen::generate_typeway_from_proto;
+pub use diff::{diff_protos, ChangeKind, ProtoChange};
 #[cfg(feature = "client")]
 pub use client::GrpcClientError;
 #[cfg(feature = "client")]
@@ -85,5 +88,9 @@ pub use service::{ApiToServiceDescriptor, GrpcMethodDescriptor, GrpcServiceDescr
 pub use status::{http_to_grpc_code, parse_grpc_timeout, GrpcCode, GrpcStatus, IntoGrpcStatus};
 pub use streaming::{BidirectionalStream, ClientStream, ServerStream};
 pub use validate::{validate_proto, ProtoValidationError};
+pub use web::{
+    encode_trailers_frame, is_grpc_web_request, GrpcWebLayer, GrpcWebService,
+    TRAILERS_FRAME_FLAG,
+};
 #[cfg(feature = "test-client")]
 pub use test_client::{GrpcTestClient, GrpcTestResponse};

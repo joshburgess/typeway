@@ -151,8 +151,9 @@ fn validate_message(msg: &ParsedMessage, errors: &mut Vec<ProtoValidationError>)
             });
         }
 
-        // Check valid proto type names.
-        if !VALID_SCALARS.contains(&field.proto_type.as_str())
+        // Check valid proto type names. Skip map fields — they use map<K, V> syntax.
+        if !field.is_map
+            && !VALID_SCALARS.contains(&field.proto_type.as_str())
             && !field.proto_type.starts_with(char::is_uppercase)
             && field.proto_type != "google.protobuf.Empty"
         {

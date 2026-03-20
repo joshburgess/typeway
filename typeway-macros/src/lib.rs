@@ -1497,33 +1497,63 @@ fn derive_to_proto_type_struct(
         let tag = extract_proto_tag(&field.attrs).unwrap_or((i as u32) + 1);
         let field_doc = extract_doc_string(&field.attrs);
 
-        // Detect Option<T> and Vec<T> to set optional/repeated and use the inner type.
-        let (proto_type_ty, optional, repeated) = if let Some(inner) = is_option_type(field_ty) {
-            (inner.clone(), true, false)
-        } else if is_vec_u8(field_ty) {
-            // Vec<u8> maps to bytes — use Vec<u8> directly, not repeated.
-            (field_ty.clone(), false, false)
-        } else if let Some(inner) = is_vec_type(field_ty) {
-            (inner.clone(), false, true)
-        } else {
-            (field_ty.clone(), false, false)
-        };
+        // Detect Option<T>, Vec<T>, and HashMap<K,V>/BTreeMap<K,V> to set
+        // optional/repeated/map and use the appropriate inner types.
+        let (proto_type_ty, optional, repeated, is_map_field) =
+            if let Some(inner) = is_option_type(field_ty) {
+                (inner.clone(), true, false, false)
+            } else if is_vec_u8(field_ty) {
+                // Vec<u8> maps to bytes — use Vec<u8> directly, not repeated.
+                (field_ty.clone(), false, false, false)
+            } else if let Some(inner) = is_vec_type(field_ty) {
+                (inner.clone(), false, true, false)
+            } else if is_map_type(field_ty).is_some() {
+                // Map types — use the original type so ToProtoType dispatches correctly.
+                (field_ty.clone(), false, false, true)
+            } else {
+                (field_ty.clone(), false, false, false)
+            };
 
         let doc_expr = match &field_doc {
             Some(doc) => quote! { ::core::option::Option::Some(#doc.to_string()) },
             None => quote! { ::core::option::Option::None },
         };
 
-        field_entries.push(quote! {
-            ::typeway_grpc::ProtoField {
-                name: #field_name_str.to_string(),
-                proto_type: <#proto_type_ty as ::typeway_grpc::ToProtoType>::proto_type_name().to_string(),
-                tag: #tag,
-                repeated: #repeated,
-                optional: #optional,
-                doc: #doc_expr,
+        let field_entry = if is_map_field {
+            let (key_ty, val_ty) = is_map_type(field_ty).unwrap();
+            quote! {
+                ::typeway_grpc::ProtoField {
+                    name: #field_name_str.to_string(),
+                    proto_type: "map".to_string(),
+                    tag: #tag,
+                    repeated: false,
+                    optional: false,
+                    is_map: true,
+                    map_key_type: ::core::option::Option::Some(
+                        <#key_ty as ::typeway_grpc::ToProtoType>::proto_type_name().to_string()
+                    ),
+                    map_value_type: ::core::option::Option::Some(
+                        <#val_ty as ::typeway_grpc::ToProtoType>::proto_type_name().to_string()
+                    ),
+                    doc: #doc_expr,
+                }
             }
-        });
+        } else {
+            quote! {
+                ::typeway_grpc::ProtoField {
+                    name: #field_name_str.to_string(),
+                    proto_type: <#proto_type_ty as ::typeway_grpc::ToProtoType>::proto_type_name().to_string(),
+                    tag: #tag,
+                    repeated: #repeated,
+                    optional: #optional,
+                    is_map: false,
+                    map_key_type: ::core::option::Option::None,
+                    map_value_type: ::core::option::Option::None,
+                    doc: #doc_expr,
+                }
+            }
+        };
+        field_entries.push(field_entry);
 
         collect_stmts.push(quote! {
             msgs.extend(<#proto_type_ty as ::typeway_grpc::ToProtoType>::collect_messages());
@@ -1770,6 +1800,29 @@ fn is_vec_u8(ty: &syn::Type) -> bool {
         }
     }
     false
+}
+
+/// If the type is `HashMap<K, V>` or `BTreeMap<K, V>`, return `Some((K, V))`.
+fn is_map_type(ty: &syn::Type) -> Option<(syn::Type, syn::Type)> {
+    if let syn::Type::Path(path) = ty {
+        if let Some(seg) = path.path.segments.last() {
+            if seg.ident == "HashMap" || seg.ident == "BTreeMap" {
+                if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
+                    let mut types = args.args.iter().filter_map(|a| {
+                        if let syn::GenericArgument::Type(t) = a {
+                            Some(t)
+                        } else {
+                            None
+                        }
+                    });
+                    if let (Some(k), Some(v)) = (types.next(), types.next()) {
+                        return Some((k.clone(), v.clone()));
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Apply a serde rename strategy to a snake_case field name.

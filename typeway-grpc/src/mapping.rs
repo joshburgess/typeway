@@ -38,6 +38,21 @@ pub trait ToProtoType {
         false
     }
 
+    /// Whether this is a map field (`map<K, V>` in proto).
+    fn is_map() -> bool {
+        false
+    }
+
+    /// The protobuf type name of the map key, if this is a map type.
+    fn map_key_type() -> Option<&'static str> {
+        None
+    }
+
+    /// The protobuf type name of the map value, if this is a map type.
+    fn map_value_type() -> Option<&'static str> {
+        None
+    }
+
     /// Generate the protobuf message definition, if this is a message type.
     ///
     /// Returns `None` for primitive types.
@@ -219,6 +234,54 @@ impl<T: ToProtoType> ToProtoType for std::sync::Arc<T> {
     }
 }
 
+impl<K: ToProtoType, V: ToProtoType> ToProtoType for std::collections::HashMap<K, V> {
+    fn proto_type_name() -> &'static str {
+        "map"
+    }
+
+    fn is_map() -> bool {
+        true
+    }
+
+    fn map_key_type() -> Option<&'static str> {
+        Some(K::proto_type_name())
+    }
+
+    fn map_value_type() -> Option<&'static str> {
+        Some(V::proto_type_name())
+    }
+
+    fn collect_messages() -> Vec<String> {
+        let mut msgs = K::collect_messages();
+        msgs.extend(V::collect_messages());
+        msgs
+    }
+}
+
+impl<K: ToProtoType, V: ToProtoType> ToProtoType for std::collections::BTreeMap<K, V> {
+    fn proto_type_name() -> &'static str {
+        "map"
+    }
+
+    fn is_map() -> bool {
+        true
+    }
+
+    fn map_key_type() -> Option<&'static str> {
+        Some(K::proto_type_name())
+    }
+
+    fn map_value_type() -> Option<&'static str> {
+        Some(V::proto_type_name())
+    }
+
+    fn collect_messages() -> Vec<String> {
+        let mut msgs = K::collect_messages();
+        msgs.extend(V::collect_messages());
+        msgs
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ProtoField and message building helpers
 // ---------------------------------------------------------------------------
@@ -236,6 +299,12 @@ pub struct ProtoField {
     pub repeated: bool,
     /// Whether this field is `optional` (proto3 explicit optional).
     pub optional: bool,
+    /// Whether this field is a `map<K, V>` type.
+    pub is_map: bool,
+    /// The protobuf key type for map fields (e.g., `"string"`, `"uint32"`).
+    pub map_key_type: Option<String>,
+    /// The protobuf value type for map fields (e.g., `"string"`, `"User"`).
+    pub map_value_type: Option<String>,
     /// Optional doc comment to emit above the field in the proto definition.
     pub doc: Option<String>,
 }
@@ -246,14 +315,20 @@ impl ProtoField {
     /// If a doc comment is present, it is emitted as a proto comment on the
     /// line(s) preceding the field definition.
     pub fn to_proto_line(&self) -> String {
-        let prefix = if self.repeated {
-            "repeated "
-        } else if self.optional {
-            "optional "
+        let field_line = if self.is_map {
+            let key = self.map_key_type.as_deref().unwrap_or("string");
+            let value = self.map_value_type.as_deref().unwrap_or("string");
+            format!("  map<{}, {}> {} = {};", key, value, self.name, self.tag)
         } else {
-            ""
+            let prefix = if self.repeated {
+                "repeated "
+            } else if self.optional {
+                "optional "
+            } else {
+                ""
+            };
+            format!("  {}{} {} = {};", prefix, self.proto_type, self.name, self.tag)
         };
-        let field_line = format!("  {}{} {} = {};", prefix, self.proto_type, self.name, self.tag);
         match &self.doc {
             Some(doc) if !doc.is_empty() => {
                 let comment_lines: Vec<String> = doc
@@ -278,7 +353,7 @@ impl ProtoField {
 /// use typeway_grpc::mapping::{ProtoField, build_message};
 ///
 /// let msg = build_message("GetUserRequest", &[
-///     ProtoField { name: "id".into(), proto_type: "uint32".into(), tag: 1, repeated: false, optional: false, doc: None },
+///     ProtoField { name: "id".into(), proto_type: "uint32".into(), tag: 1, repeated: false, optional: false, is_map: false, map_key_type: None, map_value_type: None, doc: None },
 /// ]);
 /// assert!(msg.contains("message GetUserRequest {"));
 /// assert!(msg.contains("uint32 id = 1;"));
@@ -333,6 +408,9 @@ mod tests {
                     tag: 1,
                     repeated: false,
                     optional: false,
+                    is_map: false,
+                    map_key_type: None,
+                    map_value_type: None,
                     doc: None,
                 },
                 ProtoField {
@@ -341,6 +419,9 @@ mod tests {
                     tag: 2,
                     repeated: true,
                     optional: false,
+                    is_map: false,
+                    map_key_type: None,
+                    map_value_type: None,
                     doc: None,
                 },
             ],
@@ -359,9 +440,110 @@ mod tests {
             tag: 1,
             repeated: false,
             optional: true,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
             doc: None,
         };
         assert_eq!(field.to_proto_line(), "  optional string email = 1;");
+    }
+
+    #[test]
+    fn hashmap_is_map() {
+        assert!(<std::collections::HashMap<String, u32>>::is_map());
+        assert_eq!(
+            <std::collections::HashMap<String, u32>>::map_key_type(),
+            Some("string")
+        );
+        assert_eq!(
+            <std::collections::HashMap<String, u32>>::map_value_type(),
+            Some("uint32")
+        );
+        assert_eq!(
+            <std::collections::HashMap<String, u32>>::proto_type_name(),
+            "map"
+        );
+    }
+
+    #[test]
+    fn btreemap_is_map() {
+        assert!(<std::collections::BTreeMap<String, u32>>::is_map());
+        assert_eq!(
+            <std::collections::BTreeMap<String, u32>>::map_key_type(),
+            Some("string")
+        );
+        assert_eq!(
+            <std::collections::BTreeMap<String, u32>>::map_value_type(),
+            Some("uint32")
+        );
+    }
+
+    #[test]
+    fn proto_field_map() {
+        let field = ProtoField {
+            name: "metadata".into(),
+            proto_type: "map".into(),
+            tag: 1,
+            repeated: false,
+            optional: false,
+            is_map: true,
+            map_key_type: Some("string".into()),
+            map_value_type: Some("uint32".into()),
+            doc: None,
+        };
+        assert_eq!(field.to_proto_line(), "  map<string, uint32> metadata = 1;");
+    }
+
+    #[test]
+    fn proto_field_map_with_doc() {
+        let field = ProtoField {
+            name: "labels".into(),
+            proto_type: "map".into(),
+            tag: 2,
+            repeated: false,
+            optional: false,
+            is_map: true,
+            map_key_type: Some("string".into()),
+            map_value_type: Some("string".into()),
+            doc: Some("Key-value labels".into()),
+        };
+        let line = field.to_proto_line();
+        assert!(line.contains("// Key-value labels"));
+        assert!(line.contains("map<string, string> labels = 2;"));
+    }
+
+    #[test]
+    fn build_message_with_map_field() {
+        let msg = build_message(
+            "Config",
+            &[
+                ProtoField {
+                    name: "name".into(),
+                    proto_type: "string".into(),
+                    tag: 1,
+                    repeated: false,
+                    optional: false,
+                    is_map: false,
+                    map_key_type: None,
+                    map_value_type: None,
+                    doc: None,
+                },
+                ProtoField {
+                    name: "metadata".into(),
+                    proto_type: "map".into(),
+                    tag: 2,
+                    repeated: false,
+                    optional: false,
+                    is_map: true,
+                    map_key_type: Some("string".into()),
+                    map_value_type: Some("string".into()),
+                    doc: None,
+                },
+            ],
+        );
+        assert!(msg.contains("message Config {"));
+        assert!(msg.contains("  string name = 1;"));
+        assert!(msg.contains("  map<string, string> metadata = 2;"));
     }
 
     #[test]

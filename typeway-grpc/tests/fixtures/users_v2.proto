@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package users.v1;
+
+service UserService {
+  // GET /users
+  rpc ListUser(google.protobuf.Empty) returns (ListUserResponse);
+  // GET /users/{}
+  rpc GetUser(GetUserRequest) returns (User);
+  // POST /users
+  rpc CreateUser(CreateUserRequest) returns (User);
+  // PUT /users/{}
+  rpc UpdateUser(UpdateUserRequest) returns (User);
+}
+
+message User {
+  uint32 id = 1;
+  string full_name = 2;
+  string email = 3;
+  string phone = 4;
+}
+
+message GetUserRequest {
+  string param1 = 1;
+}
+
+message CreateUserRequest {
+  string name = 1;
+  string email = 2;
+}
+
+message UpdateUserRequest {
+  string param1 = 1;
+  string name = 2;
+  string email = 3;
+}
+
+message ListUserResponse {
+  repeated User users = 1;
+}

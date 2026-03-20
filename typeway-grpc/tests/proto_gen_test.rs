@@ -171,6 +171,9 @@ impl ToProtoType for FlatCreateUser {
                 tag: 1,
                 repeated: false,
                 optional: false,
+                is_map: false,
+                map_key_type: None,
+                map_value_type: None,
                 doc: None,
             },
             ProtoField {
@@ -179,6 +182,9 @@ impl ToProtoType for FlatCreateUser {
                 tag: 2,
                 repeated: false,
                 optional: false,
+                is_map: false,
+                map_key_type: None,
+                map_value_type: None,
                 doc: None,
             },
         ]

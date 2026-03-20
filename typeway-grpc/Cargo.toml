@@ -18,7 +18,9 @@ typeway-client = { path = "../typeway-client", optional = true }
 http = "1"
 indexmap = "2"
 tower-service = "0.3"
+tower-layer = "0.3"
 hyper = { version = "1", features = ["full"] }
+http-body = "1"
 http-body-util = "0.1"
 bytes = "1"
 clap = { version = "4", features = ["derive"] }
