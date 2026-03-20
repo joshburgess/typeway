@@ -3007,6 +3007,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "typeway-grpc"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "indexmap",
+ "typeway-core",
+ "typeway-macros",
+]
+
+[[package]]
 name = "typeway-macros"
 version = "0.1.0"
 dependencies = [

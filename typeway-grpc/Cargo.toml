@@ -1,0 +1,15 @@
+[package]
+name = "typeway-grpc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+typeway-core = { path = "../typeway-core" }
+http = "1"
+indexmap = "2"
+
+[dev-dependencies]
+typeway-macros = { path = "../typeway-macros" }
+
+[lints]
+workspace = true
