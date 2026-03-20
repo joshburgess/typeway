@@ -3011,7 +3011,9 @@ dependencies = [
 name = "typeway-grpc"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "bytes",
+ "clap",
  "http",
  "http-body-util",
  "hyper",

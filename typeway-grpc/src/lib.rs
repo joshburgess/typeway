@@ -50,14 +50,18 @@
 //! providing custom message definitions.
 
 pub mod bridge;
+pub mod codegen;
 pub mod mapping;
 pub mod multiplex;
 pub mod proto_gen;
+pub mod proto_parse;
 pub mod service;
 pub mod status;
 
+pub use codegen::generate_typeway_from_proto;
 pub use mapping::{build_message, ProtoField, ToProtoType};
 pub use multiplex::{is_grpc_request, GrpcMultiplexer};
 pub use proto_gen::{ApiToProto, CollectRpcs, EndpointToRpc, ProtoMessage, RpcMethod};
+pub use proto_parse::{parse_proto, ParsedField, ParsedMessage, ProtoFile, ProtoRpcMethod, ProtoService};
 pub use service::{ApiToServiceDescriptor, GrpcMethodDescriptor, GrpcServiceDescriptor};
 pub use status::{http_to_grpc_code, GrpcCode};

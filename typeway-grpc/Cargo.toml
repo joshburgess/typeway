@@ -3,6 +3,10 @@ name = "typeway-grpc"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "typeway-grpc"
+path = "src/main.rs"
+
 [dependencies]
 typeway-core = { path = "../typeway-core" }
 http = "1"
@@ -11,6 +15,8 @@ tower-service = "0.3"
 hyper = { version = "1", features = ["full"] }
 http-body-util = "0.1"
 bytes = "1"
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
 
 [dev-dependencies]
 typeway-macros = { path = "../typeway-macros" }
