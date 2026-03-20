@@ -10,7 +10,7 @@ pub mod spec;
 pub use derive::from_schemars;
 pub use derive::{
     ApiToSpec, CollectOperations, EndpointDoc, EndpointToOperation, ErrorResponses, ExampleValue,
-    QueryParameters, ToSchema, auto_tag_operations, collect_security_schemes,
+    QueryParameters, ToSchema, apply_handler_docs, auto_tag_operations, collect_security_schemes,
 };
 pub use spec::{
     Components, OpenApiSpec, SecurityRequirement, SecurityScheme,

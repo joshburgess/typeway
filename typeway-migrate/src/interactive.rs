@@ -262,7 +262,7 @@ mod tests {
         let source = r#"
             async fn list_users() -> String { String::new() }
         "#;
-        let item: syn::Item = syn::parse_str(&format!("{}", source.trim())).unwrap();
+        let item: syn::Item = syn::parse_str(source.trim()).unwrap();
         let (name, return_type) = if let syn::Item::Fn(f) = &item {
             (
                 f.sig.ident.clone(),

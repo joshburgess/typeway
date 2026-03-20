@@ -21,3 +21,9 @@ fn api_description_fail() {
     let t = trybuild::TestCases::new();
     t.compile_fail("tests/api_description/fail_*.rs");
 }
+
+#[test]
+fn documented_handler_pass() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/documented_handler/pass_*.rs");
+}

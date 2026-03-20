@@ -139,6 +139,71 @@ impl<A: ApiSpec> Server<A> {
         self
     }
 
+    /// Enable OpenAPI spec serving with handler documentation applied.
+    ///
+    /// Like [`with_openapi`](Self::with_openapi), but patches the generated
+    /// spec with documentation metadata extracted from handler functions via
+    /// the `#[documented_handler]` attribute macro.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use typeway_macros::documented_handler;
+    ///
+    /// /// List all users.
+    /// ///
+    /// /// Returns a paginated list of users with optional filtering.
+    /// #[documented_handler(tags = "users")]
+    /// async fn list_users() -> Json<Vec<User>> { /* ... */ }
+    ///
+    /// /// Get a user by ID.
+    /// #[documented_handler(tags = "users")]
+    /// async fn get_user(id: Path<u32>) -> Json<User> { /* ... */ }
+    ///
+    /// Server::<API>::new(handlers)
+    ///     .with_openapi_docs("My API", "1.0.0", &[LIST_USERS_DOC, GET_USER_DOC])
+    ///     .serve(addr)
+    ///     .await?;
+    /// ```
+    #[cfg(feature = "openapi")]
+    pub fn with_openapi_docs(
+        self,
+        title: &str,
+        version: &str,
+        docs: &[typeway_core::HandlerDoc],
+    ) -> Self
+    where
+        A: typeway_openapi::ApiToSpec,
+    {
+        let mut spec = A::to_spec(title, version);
+        typeway_openapi::apply_handler_docs(&mut spec, docs);
+
+        let spec_json = std::sync::Arc::new(
+            serde_json::to_string_pretty(&spec).expect("OpenAPI spec serialization failed"),
+        );
+
+        let router = &self.router;
+
+        let spec_json_str =
+            serde_json::to_string(&spec).expect("OpenAPI spec serialization failed");
+
+        router.add_route(
+            http::Method::GET,
+            "/openapi.json".to_string(),
+            crate::openapi::exact_match(&["openapi.json"]),
+            crate::openapi::spec_handler(spec_json.clone()),
+        );
+
+        router.add_route(
+            http::Method::GET,
+            "/docs".to_string(),
+            crate::openapi::exact_match(&["docs"]),
+            crate::openapi::docs_handler(title, version, &spec_json_str),
+        );
+
+        self
+    }
+
     /// Serve static files from a directory at a given URL prefix.
     ///
     /// Requests to `{prefix}/{path}` will serve files from `{dir}/{path}`.

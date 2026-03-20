@@ -1046,3 +1046,169 @@ fn endpoint_impl(input: EndpointInput) -> syn::Result<TokenStream2> {
 
     Ok(result)
 }
+
+// ---------------------------------------------------------------------------
+// #[documented_handler] attribute macro
+// ---------------------------------------------------------------------------
+
+/// Extracts doc comments from a handler function and generates a companion
+/// `const` of type [`HandlerDoc`](typeway_core::HandlerDoc) containing the
+/// summary, description, operation ID, and tags.
+///
+/// The first line of the doc comment becomes the `summary`. All subsequent
+/// non-empty lines become the `description`. The function name becomes the
+/// `operation_id`. Tags can be specified via the attribute parameter.
+///
+/// # Generated output
+///
+/// For a function named `list_users`, the macro generates a constant named
+/// `LIST_USERS_DOC` of type `typeway_core::HandlerDoc`.
+///
+/// # Example
+///
+/// ```ignore
+/// /// List all users.
+/// ///
+/// /// Returns a paginated list of users with optional filtering.
+/// #[documented_handler(tags = "users")]
+/// async fn list_users(state: State<Db>) -> Json<Vec<User>> {
+///     // ...
+/// }
+///
+/// // Generated:
+/// // pub const LIST_USERS_DOC: typeway_core::HandlerDoc = typeway_core::HandlerDoc {
+/// //     summary: "List all users.",
+/// //     description: "Returns a paginated list of users with optional filtering.",
+/// //     operation_id: "list_users",
+/// //     tags: &["users"],
+/// // };
+/// ```
+///
+/// # Tags
+///
+/// Multiple tags can be comma-separated:
+///
+/// ```ignore
+/// #[documented_handler(tags = "users, admin")]
+/// ```
+#[proc_macro_attribute]
+pub fn documented_handler(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let func = match syn::parse::<syn::ItemFn>(item.clone()) {
+        Ok(f) => f,
+        Err(e) => return e.to_compile_error().into(),
+    };
+
+    let tags = parse_documented_handler_tags(attr.into());
+
+    // Extract doc comment lines from #[doc = "..."] attributes.
+    let doc_lines: Vec<String> = func
+        .attrs
+        .iter()
+        .filter_map(|attr| {
+            if !attr.path().is_ident("doc") {
+                return None;
+            }
+            if let syn::Meta::NameValue(nv) = &attr.meta {
+                if let syn::Expr::Lit(lit) = &nv.value {
+                    if let syn::Lit::Str(s) = &lit.lit {
+                        return Some(s.value());
+                    }
+                }
+            }
+            None
+        })
+        .collect();
+
+    // First non-empty trimmed line is summary, rest is description.
+    let trimmed: Vec<String> = doc_lines.iter().map(|l| l.trim().to_string()).collect();
+
+    let summary = trimmed
+        .iter()
+        .find(|l| !l.is_empty())
+        .cloned()
+        .unwrap_or_default();
+
+    // Description: everything after the first non-empty line, with leading
+    // blank lines stripped, then joined with newlines.
+    let description = {
+        let after_summary: Vec<&str> = trimmed
+            .iter()
+            .skip_while(|l| l.is_empty()) // skip leading blanks
+            .skip(1) // skip the summary line
+            .map(|s| s.as_str())
+            .collect();
+        // Trim leading and trailing empty lines from the description.
+        let start = after_summary.iter().position(|l| !l.is_empty());
+        let end = after_summary.iter().rposition(|l| !l.is_empty());
+        match (start, end) {
+            (Some(s), Some(e)) => after_summary[s..=e].join("\n"),
+            _ => String::new(),
+        }
+    };
+
+    let fn_name = &func.sig.ident;
+    let const_name = format_ident!("{}_DOC", to_screaming_snake(&fn_name.to_string()));
+    let operation_id = fn_name.to_string();
+
+    let tags_tokens: Vec<TokenStream2> = tags.iter().map(|t| quote! { #t }).collect();
+    let tags_array = if tags_tokens.is_empty() {
+        quote! { &[] }
+    } else {
+        quote! { &[#(#tags_tokens),*] }
+    };
+
+    let expanded = quote! {
+        #func
+
+        /// Auto-generated handler documentation metadata.
+        pub const #const_name: ::typeway_core::HandlerDoc = ::typeway_core::HandlerDoc {
+            summary: #summary,
+            description: #description,
+            operation_id: #operation_id,
+            tags: #tags_array,
+        };
+    };
+
+    expanded.into()
+}
+
+/// Parse `tags = "foo, bar"` from the attribute arguments.
+fn parse_documented_handler_tags(attr: TokenStream2) -> Vec<String> {
+    // Try to parse as `tags = "..."`.
+    struct TagsAttr {
+        tags: Vec<String>,
+    }
+
+    impl Parse for TagsAttr {
+        fn parse(input: ParseStream) -> syn::Result<Self> {
+            if input.is_empty() {
+                return Ok(TagsAttr { tags: Vec::new() });
+            }
+            let key: Ident = input.parse()?;
+            if key != "tags" {
+                return Err(syn::Error::new(
+                    key.span(),
+                    "expected `tags = \"...\"`",
+                ));
+            }
+            input.parse::<Token![=]>()?;
+            let value: LitStr = input.parse()?;
+            let tags = value
+                .value()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+            Ok(TagsAttr { tags })
+        }
+    }
+
+    syn::parse2::<TagsAttr>(attr)
+        .map(|t| t.tags)
+        .unwrap_or_default()
+}
+
+/// Convert snake_case to SCREAMING_SNAKE_CASE.
+fn to_screaming_snake(s: &str) -> String {
+    s.to_uppercase()
+}

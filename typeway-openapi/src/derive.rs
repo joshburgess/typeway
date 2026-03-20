@@ -769,3 +769,65 @@ impl_collect_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M);
 impl_collect_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N);
 impl_collect_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O);
 impl_collect_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
+
+// ---------------------------------------------------------------------------
+// Handler doc application
+// ---------------------------------------------------------------------------
+
+/// Patch an OpenAPI spec with handler documentation metadata.
+///
+/// For each [`HandlerDoc`](typeway_core::HandlerDoc) in the slice, finds the
+/// operation whose `operation_id` matches (or whose method+path combination
+/// can be matched) and sets its `summary`, `description`, `operation_id`, and
+/// `tags` fields. Existing values are overwritten.
+///
+/// Operations not matched by any doc entry are left unchanged.
+pub fn apply_handler_docs(spec: &mut OpenApiSpec, docs: &[typeway_core::HandlerDoc]) {
+    for doc in docs {
+        // First pass: try to match by existing operation_id.
+        let mut matched = false;
+        for (_path, item) in spec.paths.iter_mut() {
+            for op in item.all_operations_mut() {
+                if op.operation_id.as_deref() == Some(doc.operation_id) {
+                    apply_doc_to_operation(op, doc);
+                    matched = true;
+                    break;
+                }
+            }
+            if matched {
+                break;
+            }
+        }
+
+        // Second pass: if no operation_id match, assign to the first operation
+        // that has no summary and no operation_id. This handles the common case
+        // where operations don't yet have operation_ids set.
+        if !matched {
+            for (_path, item) in spec.paths.iter_mut() {
+                for op in item.all_operations_mut() {
+                    if op.operation_id.is_none() && op.summary.is_none() {
+                        apply_doc_to_operation(op, doc);
+                        matched = true;
+                        break;
+                    }
+                }
+                if matched {
+                    break;
+                }
+            }
+        }
+    }
+}
+
+fn apply_doc_to_operation(op: &mut Operation, doc: &typeway_core::HandlerDoc) {
+    if !doc.summary.is_empty() {
+        op.summary = Some(doc.summary.to_string());
+    }
+    if !doc.description.is_empty() {
+        op.description = Some(doc.description.to_string());
+    }
+    op.operation_id = Some(doc.operation_id.to_string());
+    if !doc.tags.is_empty() {
+        op.tags = doc.tags.iter().map(|s| s.to_string()).collect();
+    }
+}
