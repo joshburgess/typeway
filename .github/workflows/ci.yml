@@ -104,6 +104,89 @@ jobs:
       - name: Run cargo audit
         run: cargo audit
 
+  benchmarks:
+    name: Benchmark Regression Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # Restore criterion baseline saved from a previous main-branch run.
+      - name: Restore benchmark baseline
+        id: bench-cache
+        uses: actions/cache@v4
+        with:
+          path: target/criterion
+          key: criterion-baseline-${{ runner.os }}-main
+          restore-keys: |
+            criterion-baseline-${{ runner.os }}-
+
+      # On main: run benchmarks and save as the new baseline.
+      - name: Run benchmarks (main - save baseline)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          cargo bench --bench routing --bench dispatch --features "server,axum-interop" \
+            -- --save-baseline main 2>&1 | tee bench-output.txt
+
+      # On PRs: compare against the cached main baseline.
+      - name: Run benchmarks (PR - compare against baseline)
+        if: github.event_name == 'pull_request'
+        run: |
+          if [ -d target/criterion ]; then
+            cargo bench --bench routing --bench dispatch --features "server,axum-interop" \
+              -- --baseline main 2>&1 | tee bench-output.txt
+          else
+            echo "No cached baseline found — running without comparison."
+            cargo bench --bench routing --bench dispatch --features "server,axum-interop" \
+              2>&1 | tee bench-output.txt
+          fi
+
+      # Fail the job if any benchmark regressed by more than 15%.
+      # Criterion output lines look like:
+      #   ... time: ... change: [-3.1234% +1.2345% +5.6789%] (p = 0.01 < 0.05)
+      #   Performance has regressed.
+      # We extract the middle (point estimate) percentage from "change:" lines
+      # and fail if any exceeds +15%.
+      - name: Check for regressions (>15% threshold)
+        if: github.event_name == 'pull_request'
+        run: |
+          THRESHOLD=15
+          FAILED=0
+
+          # Extract point-estimate change percentages from criterion output.
+          # The middle value in the [low est high] bracket is the point estimate.
+          while IFS= read -r line; do
+            # Parse the point estimate (second percentage in the bracket)
+            pct=$(echo "$line" | sed -n 's/.*change: \[.*% \([-+]*[0-9.]*\)% .*/\1/p')
+            if [ -z "$pct" ]; then
+              continue
+            fi
+            # Check if the regression exceeds the threshold (using awk for float comparison)
+            is_regression=$(echo "$pct $THRESHOLD" | awk '{print ($1 > $2) ? 1 : 0}')
+            if [ "$is_regression" = "1" ]; then
+              echo "::error::Regression of ${pct}% exceeds ${THRESHOLD}% threshold: $line"
+              FAILED=1
+            fi
+          done < bench-output.txt
+
+          if [ "$FAILED" = "1" ]; then
+            echo ""
+            echo "=============================================="
+            echo "  BENCHMARK REGRESSION DETECTED (>${THRESHOLD}% threshold)"
+            echo "=============================================="
+            exit 1
+          fi
+          echo "No benchmark regressions exceeding ${THRESHOLD}% detected."
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.sha }}
+          path: bench-output.txt
+          retention-days: 30
+
   compile-time:
     name: Compile Time
     runs-on: ubuntu-latest
