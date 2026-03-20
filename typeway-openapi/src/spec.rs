@@ -337,4 +337,37 @@ impl Schema {
             description: None,
         }
     }
+
+    /// Construct an object schema from a list of named property schemas.
+    ///
+    /// This avoids requiring downstream crates to depend on `indexmap` directly.
+    ///
+    /// ```ignore
+    /// Schema::object_with_properties(
+    ///     vec![("id", u32_schema), ("name", string_schema)],
+    ///     Some("A user account."),
+    /// )
+    /// ```
+    pub fn object_with_properties(
+        properties: Vec<(&str, Schema)>,
+        description: Option<&str>,
+    ) -> Self {
+        let mut props = IndexMap::new();
+        for (name, schema) in properties {
+            props.insert(name.to_string(), schema);
+        }
+        Schema {
+            schema_type: Some("object".to_string()),
+            format: None,
+            items: None,
+            properties: Some(props),
+            description: description.map(|s| s.to_string()),
+        }
+    }
+
+    /// Return a copy of this schema with the description set.
+    pub fn with_description(mut self, desc: &str) -> Self {
+        self.description = Some(desc.to_string());
+        self
+    }
 }

@@ -1212,3 +1212,245 @@ fn parse_documented_handler_tags(attr: TokenStream2) -> Vec<String> {
 fn to_screaming_snake(s: &str) -> String {
     s.to_uppercase()
 }
+
+// ---------------------------------------------------------------------------
+// #[derive(TypewaySchema)] — OpenAPI schema derivation from struct definitions
+// ---------------------------------------------------------------------------
+
+/// Derives a `ToSchema` implementation for a struct with named fields.
+///
+/// Struct-level and field-level doc comments become `description` values in the
+/// generated OpenAPI schema. Supports `#[serde(rename_all = "...")]` on the
+/// struct and `#[serde(rename = "...")]` on individual fields.
+///
+/// # Example
+///
+/// ```ignore
+/// /// A user account.
+/// #[derive(TypewaySchema)]
+/// struct User {
+///     /// The unique user identifier.
+///     id: u32,
+///     /// The user's display name.
+///     name: String,
+/// }
+/// ```
+///
+/// Generates an `impl typeway_openapi::ToSchema for User` that returns an
+/// object schema with `id` and `name` properties, each carrying its doc
+/// comment as a description.
+///
+/// # Serde rename support
+///
+/// ```ignore
+/// #[derive(TypewaySchema)]
+/// #[serde(rename_all = "camelCase")]
+/// struct Article {
+///     article_title: String,
+///     tag_list: Vec<String>,
+/// }
+/// ```
+///
+/// The generated schema uses `articleTitle` and `tagList` as property names.
+/// Per-field `#[serde(rename = "...")]` overrides `rename_all`.
+///
+/// Supported rename strategies: `camelCase`, `snake_case`, `PascalCase`,
+/// `SCREAMING_SNAKE_CASE`, `kebab-case`.
+#[proc_macro_derive(TypewaySchema)]
+pub fn derive_typeway_schema(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    match derive_typeway_schema_impl(input) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+fn derive_typeway_schema_impl(input: syn::DeriveInput) -> syn::Result<TokenStream2> {
+    let name = &input.ident;
+    let name_str = name.to_string();
+
+    // Extract struct-level doc comment.
+    let struct_doc = extract_doc_string(&input.attrs);
+
+    // Check for #[serde(rename_all = "...")].
+    let rename_all = extract_serde_rename_all(&input.attrs);
+
+    // Get the struct fields.
+    let fields = match &input.data {
+        syn::Data::Struct(data) => match &data.fields {
+            syn::Fields::Named(named) => &named.named,
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    name,
+                    "TypewaySchema only supports structs with named fields",
+                ));
+            }
+        },
+        _ => {
+            return Err(syn::Error::new_spanned(
+                name,
+                "TypewaySchema only supports structs",
+            ));
+        }
+    };
+
+    // Generate property entries as (name_str, schema) pairs.
+    let property_entries: Vec<TokenStream2> = fields
+        .iter()
+        .map(|field| {
+            let field_ident = field.ident.as_ref().unwrap();
+            let field_type = &field.ty;
+
+            // Determine the serialized field name.
+            let field_name_str =
+                if let Some(rename) = extract_serde_field_rename(&field.attrs) {
+                    rename
+                } else if let Some(ref strategy) = rename_all {
+                    apply_rename_strategy(&field_ident.to_string(), strategy)
+                } else {
+                    field_ident.to_string()
+                };
+
+            let field_doc = extract_doc_string(&field.attrs);
+
+            match field_doc {
+                Some(doc) => quote! {
+                    (#field_name_str, <#field_type as ::typeway_openapi::ToSchema>::schema()
+                        .with_description(#doc))
+                },
+                None => quote! {
+                    (#field_name_str, <#field_type as ::typeway_openapi::ToSchema>::schema())
+                },
+            }
+        })
+        .collect();
+
+    let struct_description = match struct_doc {
+        Some(doc) => quote! { Some(#doc) },
+        None => quote! { None },
+    };
+
+    let expanded = quote! {
+        impl ::typeway_openapi::ToSchema for #name {
+            fn schema() -> ::typeway_openapi::spec::Schema {
+                use ::typeway_openapi::spec::Schema as __Schema;
+                __Schema::object_with_properties(
+                    vec![#(#property_entries),*],
+                    #struct_description,
+                )
+            }
+
+            fn type_name() -> &'static str {
+                #name_str
+            }
+        }
+    };
+
+    Ok(expanded)
+}
+
+/// Extract the combined doc comment string from `#[doc = "..."]` attributes.
+fn extract_doc_string(attrs: &[syn::Attribute]) -> Option<String> {
+    let doc_lines: Vec<String> = attrs
+        .iter()
+        .filter_map(|attr| {
+            if !attr.path().is_ident("doc") {
+                return None;
+            }
+            if let syn::Meta::NameValue(nv) = &attr.meta {
+                if let syn::Expr::Lit(lit) = &nv.value {
+                    if let syn::Lit::Str(s) = &lit.lit {
+                        return Some(s.value().trim().to_string());
+                    }
+                }
+            }
+            None
+        })
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if doc_lines.is_empty() {
+        None
+    } else {
+        Some(doc_lines.join("\n"))
+    }
+}
+
+/// Extract `rename_all` value from `#[serde(rename_all = "...")]`.
+fn extract_serde_rename_all(attrs: &[syn::Attribute]) -> Option<String> {
+    for attr in attrs {
+        if !attr.path().is_ident("serde") {
+            continue;
+        }
+        let mut result = None;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("rename_all") {
+                let value = meta.value()?;
+                let lit: LitStr = value.parse()?;
+                result = Some(lit.value());
+            }
+            Ok(())
+        });
+        if result.is_some() {
+            return result;
+        }
+    }
+    None
+}
+
+/// Extract `rename` value from `#[serde(rename = "...")]` on a field.
+fn extract_serde_field_rename(attrs: &[syn::Attribute]) -> Option<String> {
+    for attr in attrs {
+        if !attr.path().is_ident("serde") {
+            continue;
+        }
+        let mut result = None;
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("rename") {
+                let value = meta.value()?;
+                let lit: LitStr = value.parse()?;
+                result = Some(lit.value());
+            }
+            Ok(())
+        });
+        if result.is_some() {
+            return result;
+        }
+    }
+    None
+}
+
+/// Apply a serde rename strategy to a snake_case field name.
+fn apply_rename_strategy(name: &str, strategy: &str) -> String {
+    match strategy {
+        "camelCase" => {
+            let mut result = String::new();
+            let mut capitalize_next = false;
+            for c in name.chars() {
+                if c == '_' {
+                    capitalize_next = true;
+                } else if capitalize_next {
+                    result.extend(c.to_uppercase());
+                    capitalize_next = false;
+                } else {
+                    result.push(c);
+                }
+            }
+            result
+        }
+        "snake_case" => name.to_string(),
+        "PascalCase" => name
+            .split('_')
+            .map(|w| {
+                let mut c = w.chars();
+                match c.next() {
+                    Some(f) => f.to_uppercase().to_string() + &c.collect::<String>(),
+                    None => String::new(),
+                }
+            })
+            .collect(),
+        "SCREAMING_SNAKE_CASE" => name.to_uppercase(),
+        "kebab-case" => name.replace('_', "-"),
+        _ => name.to_string(),
+    }
+}

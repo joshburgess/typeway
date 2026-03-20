@@ -27,3 +27,9 @@ fn documented_handler_pass() {
     let t = trybuild::TestCases::new();
     t.pass("tests/documented_handler/pass_*.rs");
 }
+
+#[test]
+fn schema_derive_pass() {
+    let t = trybuild::TestCases::new();
+    t.pass("tests/schema_derive/pass_*.rs");
+}
