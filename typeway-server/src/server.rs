@@ -425,6 +425,32 @@ impl<A: ApiSpec> Server<A> {
         self
     }
 
+    /// Create a unified REST + gRPC server.
+    ///
+    /// Returns a [`GrpcServer`](crate::grpc::GrpcServer) that serves both REST
+    /// and gRPC on the same port. Incoming requests with
+    /// `content-type: application/grpc*` are translated to REST calls via the
+    /// gRPC bridge, while all other requests are routed normally.
+    ///
+    /// Requires `feature = "grpc"`.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Server::<API>::new(handlers)
+    ///     .with_state(state)
+    ///     .with_grpc("UserService", "users.v1")
+    ///     .serve("0.0.0.0:3000".parse()?)
+    ///     .await?;
+    /// ```
+    #[cfg(feature = "grpc")]
+    pub fn with_grpc(self, service_name: &str, package: &str) -> crate::grpc::GrpcServer<A>
+    where
+        A: typeway_grpc::CollectRpcs,
+    {
+        crate::grpc::make_grpc_server(self.router, service_name, package)
+    }
+
     /// Apply a Tower middleware layer to the server.
     ///
     /// The layer wraps the entire router service. This is the same API

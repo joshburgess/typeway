@@ -9,6 +9,8 @@ pub mod axum_interop;
 pub mod body;
 pub mod effects;
 pub mod error;
+#[cfg(feature = "grpc")]
+pub mod grpc;
 pub mod extract;
 pub mod handler;
 pub mod handler_for;
@@ -52,6 +54,9 @@ pub use secure_headers::SecureHeadersLayer;
 pub use effects::{EffectfulLayeredServer, EffectfulServer};
 pub use server::{serve, LayeredServer, Server};
 pub use serves::Serves;
+
+#[cfg(feature = "grpc")]
+pub use grpc::GrpcServer;
 
 /// Re-export tower-http for middleware layers.
 pub use tower_http;

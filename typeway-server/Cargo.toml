@@ -7,12 +7,14 @@ edition = "2021"
 default = []
 openapi = ["dep:typeway-openapi"]
 axum-interop = ["dep:axum"]
+grpc = ["dep:typeway-grpc"]
 ws = ["dep:tokio-tungstenite", "dep:sha1_smol", "dep:base64"]
 tls = ["dep:tokio-rustls", "dep:rustls-pemfile"]
 multipart = ["dep:multer"]
 
 [dependencies]
 typeway-core = { path = "../typeway-core" }
+typeway-grpc = { path = "../typeway-grpc", optional = true }
 typeway-openapi = { path = "../typeway-openapi", optional = true }
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "service", "http1", "http2", "server-auto"] }

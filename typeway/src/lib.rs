@@ -76,6 +76,15 @@ pub use typeway_server::tower_http;
 #[cfg(feature = "client")]
 pub use typeway_client::{CallEndpoint, Client, ClientError};
 
+// --- gRPC (feature = "grpc") ---
+#[cfg(feature = "grpc")]
+pub use typeway_grpc::{
+    ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcCode, GrpcMultiplexer,
+    GrpcServiceDescriptor, ToProtoType,
+};
+#[cfg(feature = "grpc")]
+pub use typeway_server::GrpcServer;
+
 // --- OpenAPI (feature = "openapi") ---
 #[cfg(feature = "openapi")]
 pub use typeway_openapi::{
@@ -100,6 +109,14 @@ pub mod prelude {
 
     #[cfg(feature = "client")]
     pub use typeway_client::{CallEndpoint, Client, ClientError};
+
+    #[cfg(feature = "grpc")]
+    pub use typeway_grpc::{
+        ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcCode, GrpcMultiplexer,
+        GrpcServiceDescriptor, ToProtoType,
+    };
+    #[cfg(feature = "grpc")]
+    pub use typeway_server::GrpcServer;
 
     #[cfg(feature = "openapi")]
     pub use typeway_openapi::{

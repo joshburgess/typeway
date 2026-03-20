@@ -51,11 +51,13 @@
 
 pub mod bridge;
 pub mod mapping;
+pub mod multiplex;
 pub mod proto_gen;
 pub mod service;
 pub mod status;
 
 pub use mapping::{build_message, ProtoField, ToProtoType};
+pub use multiplex::{is_grpc_request, GrpcMultiplexer};
 pub use proto_gen::{ApiToProto, CollectRpcs, EndpointToRpc, ProtoMessage, RpcMethod};
 pub use service::{ApiToServiceDescriptor, GrpcMethodDescriptor, GrpcServiceDescriptor};
 pub use status::{http_to_grpc_code, GrpcCode};

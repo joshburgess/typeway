@@ -10,13 +10,15 @@ server = ["dep:typeway-server"]
 client = ["dep:typeway-client"]
 openapi = ["dep:typeway-openapi", "typeway-server?/openapi"]
 axum-interop = ["server", "typeway-server/axum-interop"]
-full = ["server", "client", "openapi"]
+grpc = ["server", "typeway-server/grpc", "dep:typeway-grpc"]
+full = ["server", "client", "openapi", "grpc"]
 
 [dependencies]
 typeway-core = { path = "../typeway-core" }
 typeway-macros = { path = "../typeway-macros" }
 typeway-server = { path = "../typeway-server", optional = true }
 typeway-client = { path = "../typeway-client", optional = true }
+typeway-grpc = { path = "../typeway-grpc", optional = true }
 typeway-openapi = { path = "../typeway-openapi", optional = true }
 
 # Re-export common deps so users don't need to depend on them directly
