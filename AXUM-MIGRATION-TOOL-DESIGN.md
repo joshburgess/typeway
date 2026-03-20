@@ -15,15 +15,16 @@ The reverse direction matters equally. If a team tries Typeway and decides it's 
 ## Tool Overview
 
 ```
-typeway-migrate axum-to-typeway [--dir src/] [--dry-run] [--file api.rs]
-typeway-migrate typeway-to-axum [--dir src/] [--dry-run] [--file api.rs]
+typeway-migrate axum-to-typeway [--file api.rs] [--dir src/] [--dry-run] [--interactive] [--partial "/users,/articles"] [--update-cargo]
+typeway-migrate typeway-to-axum [--file api.rs] [--dir src/] [--dry-run] [--interactive] [--update-cargo]
+typeway-migrate check [--file api.rs] [--dir src/]
 ```
 
 **Crate:** `typeway-migrate` (standalone binary crate in the workspace, not a library dependency)
 
-**Core dependency:** `syn` (full features) + `quote` + `proc-macro2` for Rust parsing and code generation. Also `prettyplease` for formatting the output.
+**Dependencies:** `syn` (full features) + `quote` + `proc-macro2` for Rust parsing and code generation, `prettyplease` for formatting, `dialoguer` for interactive prompts, `console` for colored output, `toml_edit` for Cargo.toml management, `clap` for CLI, `walkdir` for directory scanning.
 
-**Mode of operation:** Reads `.rs` files, parses them into `syn::File` ASTs, applies transformations, and writes the result back (or to stdout with `--dry-run`). Not a proc macro — a standalone CLI tool.
+**Mode of operation:** Reads `.rs` files, parses them into `syn::File` ASTs, applies transformations, and writes the result back (or to stdout with `--dry-run`). The `check` command auto-detects whether files are Axum or Typeway source and reports all detected features (auth, effects, validation, extractors) with colored output and actionable summaries.
 
 ---
 
@@ -624,35 +625,55 @@ No dependency on `typeway` itself — the tool operates purely on syntax. It doe
 
 ---
 
-## Phasing
+## Implementation Status
 
-### Phase 1: Core pipeline (MVP)
+All phases are complete. **106 tests** across 11 test files.
+
+### Phase 1: Core pipeline — DONE
 
 - Parse single-file Axum router definitions
 - Extract routes, handlers, extractors
 - Generate `typeway_path!`, `type API`, `Server::new`, `bind!()`
 - Handle `Path`, `State`, `Json`, `Query` extractors
-- `--dry-run` mode only (no file writing)
-- Axum → Typeway direction only
+- `--dry-run` mode and file writing with `.bak` backups
 
-### Phase 2: Reverse direction + file writing
+### Phase 2: Reverse direction — DONE
 
-- Typeway → Axum conversion
-- File writing with `.bak` backups
+- Typeway → Axum conversion (full bidirectional)
 - Multi-file directory scanning
-- `check` command
+- `check` command with auto-detection of Axum vs Typeway sources
 
-### Phase 3: Advanced patterns
+### Phase 3: Advanced patterns — DONE
 
-- `.nest()` / router composition
+- `.nest()` / `Router::merge()` resolution (follows function calls within the same file)
 - `axum::middleware::from_fn` detection (with TODO comments)
-- Custom extractor passthrough
+- Custom extractor passthrough with warnings
 - `impl IntoResponse` detection and warning
-- Cargo.toml dependency update (add/remove typeway, axum)
+- Cargo.toml dependency update (`--update-cargo`)
+- Auth detection: recognizes `AuthUser`, `Claims`, `Token`, `Session` extractors
+  - Wraps in `Protected<Auth, E>`, emits `bind_auth!()`
+- Effects scaffolding: detects `CorsLayer`, `TraceLayer`, `RateLimitLayer`
+  - Wraps public endpoints in `Requires<E, Endpoint>`
+  - Emits `EffectfulServer` with `.provide::<E>().ready()`
+- Validation scaffolding: detects `.is_empty()`, `.len()` patterns
+  - Generates skeleton validator structs with `Validate<T>` impl
+  - Wraps in `Validated<V, E>`, emits `bind_validated!()`
+- OpenAPI auto-setup: adds `.with_openapi("API", "1.0.0")` to server
+- All common extractors: Cookie, CookieJar, Multipart, Form, Header, HeaderMap, WebSocketUpgrade
 
-### Phase 4: Polish
+### Phase 4: Polish — DONE
 
-- Interactive mode (`--interactive`) for ambiguous cases
-- VSCode extension integration (convert selected code)
-- `--partial` flag to convert only specific routes
-- Roundtrip test suite: convert Axum → Typeway → Axum and assert semantic equivalence
+- Interactive mode (`--interactive`): dialoguer prompts for auth/validation/effects/WebSocket decisions
+- `--partial` flag: convert only specific routes by path pattern
+- Roundtrip test suite: 14 roundtrip tests covering simple, auth, effects, and full-featured scenarios
+- Colored terminal output: methods bold, paths cyan, auth green, warnings yellow
+- Conversion summary: endpoint counts (protected/validated/public), effects, warnings
+- Client code generation: commented-out `client_api!` macro matching the API type
+
+### What the tool cannot do (by design)
+
+- `from_fn` middleware conversion: arbitrary closures can't be auto-converted
+- `impl IntoResponse` type inference: requires type checking, not just parsing
+- Content negotiation conversion: Axum has no equivalent to convert from
+- Cross-file `Router::merge()`: only resolves functions in the same file
+- API versioning scaffolding: user designs versions manually

@@ -25,7 +25,7 @@ Updated status of all planned work. Checked items are complete.
 
 ## Migration Tool (`typeway-migrate`)
 
-### What the tool handles (84 tests):
+### What the tool handles (106 tests):
 
 | Feature | Axum→Typeway | Typeway→Axum | Detection |
 |---|---|---|---|
@@ -52,20 +52,24 @@ Updated status of all planned work. Checked items are complete.
 | Cargo.toml dependencies | `--update-cargo` | `--update-cargo` | N/A |
 | Roundtrip fidelity | Tested | Tested | 14 roundtrip tests |
 
-### What the tool does NOT handle:
+| Client code generation | Commented-out `client_api!` | N/A | N/A |
+| `Router::merge()` resolution | Full (same-file) | N/A | Yes |
+| Interactive mode | `--interactive` | `--interactive` | N/A |
+| Partial migration | `--partial` | N/A | N/A |
+| Colored output | N/A | N/A | Yes |
+| Conversion summary | Printed to stderr | Printed to stderr | N/A |
 
-- [ ] **Content negotiation conversion** — Axum has no equivalent; typeway-specific opt-in
-- [ ] **API versioning scaffolding** — No `VersionedApi` generation (user designs versions manually)
-- [ ] **Client code generation** — No `client_api!` macro output from API type
-- [ ] **`from_fn` middleware conversion** — Warns but doesn't convert to Tower layer
-- [ ] **`impl IntoResponse` type inference** — Warns but can't resolve opaque types
+### What the tool cannot do (by design):
 
-### Polish remaining:
+- **Content negotiation conversion** — Axum has no equivalent; typeway-specific opt-in
+- **API versioning scaffolding** — No `VersionedApi` generation (user designs versions manually)
+- **`from_fn` middleware conversion** — Warns but can't auto-convert arbitrary closures
+- **`impl IntoResponse` type inference** — Warns but can't resolve opaque types without type checking
+- **Cross-file `Router::merge()`** — Only resolves functions defined in the same file
 
-- [ ] **Interactive mode** (`--interactive`) for ambiguous cases
-- [ ] **VSCode extension** integration
-- [ ] **`--partial` flag** to convert only specific routes
-- [ ] **`Router::merge()`** across functions
+### Potential future work:
+
+- [ ] **VSCode extension** — Convert selected code in-editor
 
 ---
 
