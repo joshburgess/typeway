@@ -17,6 +17,7 @@ anyhow = "1"
 toml_edit = "0.22"
 walkdir = "2"
 dialoguer = "0.11"
+console = "0.15"
 
 [dev-dependencies]
 insta = "1"

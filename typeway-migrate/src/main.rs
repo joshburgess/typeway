@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use console::style;
 
 #[derive(Parser)]
 #[command(name = "typeway-migrate")]
@@ -110,13 +111,14 @@ fn main() -> Result<()> {
 
                             eprintln!(
                                 "Converted {} (backup: {})",
-                                path.display(),
-                                backup.display()
+                                style(path.display()).bold(),
+                                style(backup.display()).bold(),
                             );
                         }
+                        print_conversion_summary(&source);
                     }
                     Err(e) => {
-                        eprintln!("Skipping {} — {}", path.display(), e);
+                        eprintln!("{} {} \u{2014} {}", style("Skipping").red(), style(path.display()).bold(), e);
                     }
                 }
             }
@@ -175,13 +177,14 @@ fn main() -> Result<()> {
 
                             eprintln!(
                                 "Converted {} (backup: {})",
-                                path.display(),
-                                backup.display()
+                                style(path.display()).bold(),
+                                style(backup.display()).bold(),
                             );
                         }
+                        print_conversion_summary(&source);
                     }
                     Err(e) => {
-                        eprintln!("Skipping {} — {}", path.display(), e);
+                        eprintln!("{} {} \u{2014} {}", style("Skipping").red(), style(path.display()).bold(), e);
                     }
                 }
             }
@@ -240,27 +243,27 @@ fn main() -> Result<()> {
                         }
 
                         let framework = if is_typeway { "Typeway" } else { "Axum" };
-                        println!("{} ({} source):", path.display(), framework);
+                        println!("{} ({} source):", style(path.display()).bold(), framework);
                         println!(
                             "  {} endpoints found:",
-                            model.endpoints.len()
+                            style(model.endpoints.len()).bold()
                         );
                         for ep in &model.endpoints {
                             println!(
-                                "    {:?} {} \u{2192} {}",
-                                ep.method,
-                                ep.path.raw_pattern,
-                                ep.handler.name
+                                "    {} {} \u{2192} {}",
+                                style(format!("{:?}", ep.method)).bold(),
+                                style(&ep.path.raw_pattern).cyan(),
+                                style(&ep.handler.name).dim(),
                             );
                         }
                         if !model.layers.is_empty() {
-                            println!("  {} layers", model.layers.len());
+                            println!("  {} layers", style(model.layers.len()).bold());
                         }
                         if model.state_type.is_some() {
                             println!("  State type detected");
                         }
                         if let Some(ref prefix) = model.prefix {
-                            println!("  Nest prefix: {}", prefix);
+                            println!("  Nest prefix: {}", style(prefix).cyan());
                         }
 
                         // Auth detection report.
@@ -278,7 +281,8 @@ fn main() -> Result<()> {
                                     .unwrap_or("unknown");
                                 println!(
                                     "    {}: Protected ({})",
-                                    ep.handler.name, auth_ty
+                                    style(&ep.handler.name).green(),
+                                    style(auth_ty).yellow(),
                                 );
                             }
                         }
@@ -295,7 +299,8 @@ fn main() -> Result<()> {
                                 };
                                 println!(
                                     "    {}{}",
-                                    effect.effect_name, source_hint
+                                    style(&effect.effect_name).green(),
+                                    source_hint,
                                 );
                             }
                         }
@@ -311,7 +316,7 @@ fn main() -> Result<()> {
                             for ep in &validation_endpoints {
                                 println!(
                                     "    {}: body validation patterns detected",
-                                    ep.handler.name
+                                    style(&ep.handler.name).green(),
                                 );
                             }
                         }
@@ -520,9 +525,9 @@ fn main() -> Result<()> {
                         }
 
                         if !model.warnings.is_empty() {
-                            println!("  Warnings:");
+                            println!("  {}:", style("Warnings").yellow());
                             for warning in &model.warnings {
-                                println!("    - {}", warning);
+                                println!("    - {}", style(warning).yellow());
                             }
                         }
 
@@ -536,26 +541,27 @@ fn main() -> Result<()> {
                         let mut summary_parts = Vec::new();
                         summary_parts.push(format!(
                             "{} endpoint{}",
-                            total,
+                            style(total).bold(),
                             if total == 1 { "" } else { "s" }
                         ));
                         if protected_count > 0 || public_count > 0 {
                             summary_parts.push(format!(
                                 "{} protected, {} public",
-                                protected_count, public_count
+                                style(protected_count).bold(),
+                                style(public_count).bold(),
                             ));
                         }
                         if effects_count > 0 {
                             summary_parts.push(format!(
                                 "{} effect{}",
-                                effects_count,
+                                style(effects_count).bold(),
                                 if effects_count == 1 { "" } else { "s" }
                             ));
                         }
                         if validation_count > 0 {
                             summary_parts.push(format!(
                                 "{} validation candidate{}",
-                                validation_count,
+                                style(validation_count).bold(),
                                 if validation_count == 1 { "" } else { "s" }
                             ));
                         }
@@ -564,19 +570,20 @@ fn main() -> Result<()> {
 
                         let warning_count = model.warnings.len();
                         if warning_count == 0 {
-                            println!("  Ready to convert.");
+                            println!("  {}", style("Ready to convert.").green());
                         } else {
                             println!(
-                                "  {} warning{} \u{2014} review before converting.",
-                                warning_count,
-                                if warning_count == 1 { "" } else { "s" }
+                                "  {} warning{} \u{2014} {}",
+                                style(warning_count).yellow().bold(),
+                                if warning_count == 1 { "" } else { "s" },
+                                style("review before converting.").yellow(),
                             );
                         }
 
                         println!();
                     }
                     Err(e) => {
-                        eprintln!("Skipping {} \u{2014} {}", path.display(), e);
+                        eprintln!("{} {} \u{2014} {}", style("Skipping").red(), style(path.display()).bold(), e);
                     }
                 }
             }
@@ -617,6 +624,62 @@ fn find_cargo_toml(file: Option<&std::path::Path>, dir: &std::path::Path) -> Res
                 );
             }
         }
+    }
+}
+
+/// Print a colored conversion summary to stderr.
+fn print_conversion_summary(source: &str) {
+    // Parse the source to get the model for summary stats.
+    // Try Typeway first, then Axum.
+    let is_typeway = source.contains("typeway_path!")
+        || source.contains("type API")
+            && (source.contains("GetEndpoint")
+                || source.contains("PostEndpoint")
+                || source.contains("DeleteEndpoint")
+                || source.contains("PutEndpoint")
+                || source.contains("PatchEndpoint"));
+
+    let model = if is_typeway {
+        typeway_migrate::parse::typeway::parse_typeway_file(source)
+    } else {
+        typeway_migrate::parse::axum::parse_axum_file(source)
+    };
+
+    let model = match model {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+
+    if model.endpoints.is_empty() {
+        return;
+    }
+
+    let auth_count = model.endpoints.iter().filter(|ep| ep.requires_auth).count();
+    let validated_count = model.endpoints.iter().filter(|ep| ep.has_validation).count();
+    let public_count = model.endpoints.len() - auth_count;
+
+    eprintln!("\n{}", style("Conversion summary:").bold());
+    eprintln!("  {} endpoints converted", style(model.endpoints.len()).green().bold());
+    eprintln!("    {} protected", style(auth_count).yellow());
+    eprintln!("    {} validated", style(validated_count).yellow());
+    eprintln!("    {} public", style(public_count).green());
+    if !model.detected_effects.is_empty() {
+        let effect_names: Vec<&str> = model
+            .detected_effects
+            .iter()
+            .map(|e| e.effect_name.as_str())
+            .collect();
+        eprintln!(
+            "  {} effects: {}",
+            style(model.detected_effects.len()).green().bold(),
+            effect_names.join(", "),
+        );
+    }
+    if !model.warnings.is_empty() {
+        eprintln!(
+            "  {} warnings (see TODO comments)",
+            style(model.warnings.len()).yellow().bold(),
+        );
     }
 }
 

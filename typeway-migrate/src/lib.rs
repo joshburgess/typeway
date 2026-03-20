@@ -12,16 +12,21 @@ pub fn axum_to_typeway(source: &str) -> Result<String> {
     let model = parse::axum::parse_axum_file(source)?;
     let tokens = transform::axum_to_typeway::emit_typeway(&model);
     let warning_lines = transform::axum_to_typeway::emit_warning_lines(&model);
+    let client_api = transform::axum_to_typeway::emit_client_api_string(&model);
     let formatted = emit::codegen::format_tokens(&tokens);
 
-    if warning_lines.is_empty() {
-        Ok(formatted)
-    } else {
-        let mut output = warning_lines.join("\n");
+    let mut output = String::new();
+    if !warning_lines.is_empty() {
+        output.push_str(&warning_lines.join("\n"));
         output.push_str("\n\n");
-        output.push_str(&formatted);
-        Ok(output)
     }
+    output.push_str(&formatted);
+    if !client_api.is_empty() {
+        output.push('\n');
+        output.push_str(&client_api);
+        output.push('\n');
+    }
+    Ok(output)
 }
 
 /// Convert Axum source code to Typeway source code with interactive and partial options.
@@ -48,16 +53,21 @@ pub fn axum_to_typeway_with_options(
 
     let tokens = transform::axum_to_typeway::emit_typeway(&model);
     let warning_lines = transform::axum_to_typeway::emit_warning_lines(&model);
+    let client_api = transform::axum_to_typeway::emit_client_api_string(&model);
     let formatted = emit::codegen::format_tokens(&tokens);
 
-    if warning_lines.is_empty() {
-        Ok(formatted)
-    } else {
-        let mut output = warning_lines.join("\n");
+    let mut output = String::new();
+    if !warning_lines.is_empty() {
+        output.push_str(&warning_lines.join("\n"));
         output.push_str("\n\n");
-        output.push_str(&formatted);
-        Ok(output)
     }
+    output.push_str(&formatted);
+    if !client_api.is_empty() {
+        output.push('\n');
+        output.push_str(&client_api);
+        output.push('\n');
+    }
+    Ok(output)
 }
 
 /// Convert Typeway source code to Axum source code.

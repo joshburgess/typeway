@@ -5,6 +5,63 @@ use quote::{format_ident, quote};
 
 use crate::model::*;
 
+/// Emit a `client_api!` invocation as a formatted string.
+///
+/// The output is returned as a comment block suitable for appending to the
+/// generated source. Protected endpoints have the `Protected<Auth, ...>`
+/// wrapper stripped because auth on the client side is typically handled by
+/// request interceptors / headers rather than type-level wrappers.
+pub fn emit_client_api_string(model: &ApiModel) -> String {
+    if model.endpoints.is_empty() {
+        return String::new();
+    }
+
+    let mut lines = vec![
+        "// --- Type-safe client (requires `client` feature) ---".to_string(),
+        "// Uncomment the following to generate a named client struct:".to_string(),
+        "//".to_string(),
+        "// client_api! {".to_string(),
+        "//     pub struct ApiClient;".to_string(),
+        "//".to_string(),
+    ];
+
+    for ep in &model.endpoints {
+        let method_name = &ep.handler.name;
+        let endpoint_type = build_client_endpoint_type(ep);
+        lines.push(format!("//     {} => {};", method_name, endpoint_type));
+    }
+
+    lines.push("// }".to_string());
+    lines.join("\n")
+}
+
+/// Build the endpoint type string for a single endpoint in client_api! context.
+///
+/// For auth-protected endpoints, the `Protected<Auth, E>` wrapper is stripped
+/// and only the inner endpoint type is used.
+fn build_client_endpoint_type(ep: &EndpointModel) -> String {
+    let path_type = &ep.path.typeway_type_name;
+    let res_type = quote! { #path_type };
+    let response_type = &ep.response_type;
+    let res_str = quote! { #response_type }.to_string();
+
+    match ep.method {
+        HttpMethod::Get | HttpMethod::Delete | HttpMethod::Head | HttpMethod::Options => {
+            let endpoint_name = ep.method.typeway_endpoint_name();
+            format!("{}<{}, {}>", endpoint_name, res_type, res_str)
+        }
+        HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch => {
+            let endpoint_name = ep.method.typeway_endpoint_name();
+            if let Some(ref req_type) = ep.request_body {
+                let req_str = quote! { #req_type }.to_string();
+                format!("{}<{}, {}, {}>", endpoint_name, res_type, req_str, res_str)
+            } else {
+                format!("{}<{}, (), {}>", endpoint_name, res_type, res_str)
+            }
+        }
+    }
+}
+
 /// Transform an `ApiModel` into a complete Typeway source file.
 pub fn emit_typeway(model: &ApiModel) -> TokenStream {
     let use_stmts = emit_use_statements(model);
