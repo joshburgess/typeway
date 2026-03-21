@@ -1,49 +1,38 @@
 //! `typeway-grpc` — gRPC / Protocol Buffers interop for the Typeway web framework.
 //!
-//! This crate provides two layers of gRPC support:
+//! This crate provides:
 //!
 //! 1. **Proto generation** — given an API type (a tuple of endpoints),
 //!    [`ApiToProto::to_proto`] produces a complete `.proto` file with service
 //!    and message definitions.
 //!
-//! 2. **gRPC bridge** — [`GrpcBridge`](bridge::GrpcBridge) is a Tower service
-//!    that translates incoming gRPC requests into REST requests and forwards
-//!    them to the typeway router, enabling dual-protocol serving from the same
-//!    handler logic.
+//! 2. **Native gRPC dispatch** — direct handler dispatch with real HTTP/2
+//!    trailers, real streaming via `tokio::sync::mpsc`, and codec abstraction
+//!    ([`JsonCodec`], [`BinaryCodec`], [`TypewayCodecAdapter`]).
+//!
+//! 3. **TypewayCodec** — compile-time specialized protobuf encode/decode via
+//!    `#[derive(TypewayCodec)]`, 3-8x faster than runtime codecs.
+//!
+//! 4. **Native client** — [`NativeGrpcClient`] with codec selection and
+//!    streaming support.
 //!
 //! ## Encoding
 //!
-//! The gRPC bridge supports two encoding modes:
+//! Two encoding modes are supported:
 //!
-//! - **JSON mode** (default) — `application/grpc+json`. Since the REST handlers
-//!   already use JSON, this avoids transcoding entirely. The `grpc_client!` macro
-//!   generates clients that use JSON encoding, so typeway-to-typeway
-//!   communication works seamlessly.
+//! - **JSON mode** (default) — `application/grpc+json`. Handlers use JSON
+//!   via REST extractors. The [`native_grpc_client!`] macro generates clients
+//!   that use JSON encoding for typeway-to-typeway communication.
 //!
-//! - **Binary protobuf mode** (`proto-binary` feature) — `application/grpc` and
-//!   `application/grpc+proto`. When enabled, standard gRPC clients (grpcurl,
-//!   tonic, Postman, etc.) can interop without configuring JSON mode. The bridge
-//!   transcodes binary protobuf to JSON for the REST handlers and JSON back to
-//!   binary protobuf for the response. See [`transcode::ProtoTranscoder`] for
-//!   details.
-//!
-//! Enable binary protobuf support by adding the feature and calling
-//! `.with_proto_binary()` on the gRPC server builder:
-//!
-//! ```ignore
-//! Server::<API>::new(handlers)
-//!     .with_grpc("UserService", "users.v1")
-//!     .with_proto_binary()
-//!     .serve(addr)
-//!     .await?;
-//! ```
+//! - **Binary protobuf mode** (`proto-binary` feature) — `application/grpc`.
+//!   Standard gRPC clients (grpcurl, tonic, Postman) interop without JSON mode.
+//!   Enable with `.with_proto_binary()` on the server builder.
 //!
 //! # Example
 //!
 //! ```ignore
 //! use typeway_grpc::ApiToProto;
 //!
-//! // Given a typeway API type:
 //! type MyAPI = (
 //!     GetEndpoint<UsersPath, Vec<User>>,
 //!     GetEndpoint<UserByIdPath, User>,
@@ -54,31 +43,14 @@
 //! std::fs::write("service.proto", proto).unwrap();
 //! ```
 //!
-//! # gRPC bridge
-//!
-//! ```ignore
-//! use typeway_grpc::bridge::GrpcBridge;
-//! use typeway_grpc::service::ApiToServiceDescriptor;
-//!
-//! let bridge = GrpcBridge::from_api::<MyAPI>(
-//!     router_service,
-//!     "UserService",
-//!     "users.v1",
-//! );
-//! ```
-//!
 //! # Type mapping
 //!
 //! Rust primitive types map to protobuf scalar types via [`ToProtoType`].
 //! User-defined struct types should implement `ToProtoType` with
 //! `is_message() -> true` and provide a `message_definition()`.
-//!
-//! Path captures default to `string` in the generated proto. Override by
-//! providing custom message definitions.
 
 #[cfg(feature = "prost-build")]
 pub mod build;
-pub mod bridge;
 #[cfg(feature = "client")]
 pub mod client;
 pub mod codec;

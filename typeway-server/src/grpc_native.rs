@@ -1,8 +1,7 @@
 //! Native gRPC server dispatch.
 //!
-//! Replaces the JSON bridge with direct handler dispatch for gRPC requests.
-//! Instead of rewriting gRPC requests as REST requests and routing through
-//! the REST router, the native path:
+//! Direct handler dispatch for gRPC requests. Instead of translating gRPC
+//! requests through REST, the native path:
 //!
 //! 1. Looks up the gRPC method in a HashMap (O(1))
 //! 2. Decodes the message from the gRPC frame
@@ -269,20 +268,16 @@ fn json_value_to_string(val: &serde_json::Value) -> String {
 // NativeMultiplexer
 // ---------------------------------------------------------------------------
 
-/// Enhanced multiplexer that routes gRPC to native handlers.
+/// Multiplexer that routes gRPC requests to native handlers and REST
+/// requests to the normal `RouterService`.
 ///
-/// Replaces the bridge-based `Multiplexer` in `grpc.rs`. gRPC requests
-/// are dispatched directly to handlers via the `GrpcRouter` with real
-/// HTTP/2 trailers. REST requests go through the normal `RouterService`.
-///
-/// Exposed as `pub` so Tower layers can be applied over the
-/// combined REST + gRPC service via [`NativeGrpcServer::layer`].
+/// gRPC requests are dispatched directly to handlers via the `GrpcRouter`
+/// with real HTTP/2 trailers. Exposed as `pub` so Tower layers can be
+/// applied via [`GrpcServer::layer`](crate::grpc::GrpcServer::layer).
 #[derive(Clone)]
 pub struct NativeMultiplexer {
     pub(crate) rest: RouterService,
     pub(crate) grpc_router: Arc<GrpcRouter>,
-    #[allow(dead_code)]
-    pub(crate) grpc_descriptor: Arc<GrpcServiceDescriptor>,
     pub(crate) reflection: Arc<ReflectionService>,
     pub(crate) health: HealthService,
     pub(crate) reflection_enabled: bool,

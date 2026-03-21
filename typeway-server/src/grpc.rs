@@ -245,7 +245,6 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
         crate::grpc_native::NativeMultiplexer {
             rest: RouterService::new(self.router),
             grpc_router: Arc::new(grpc_router),
-            grpc_descriptor: Arc::new(descriptor),
             reflection: Arc::new(self.reflection),
             health: self.health,
             reflection_enabled: self.reflection_enabled,

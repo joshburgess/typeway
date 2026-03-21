@@ -36,7 +36,7 @@ pub trait GrpcCodec: Send + Sync + 'static {
 /// JSON codec — the default for typeway-grpc.
 ///
 /// Encodes messages as JSON, matching the `application/grpc+json` content type.
-/// This is the same format used by the bridge mode and the `grpc_client!` macro.
+/// This is the default format used by the native dispatch and client macros.
 #[derive(Debug, Clone, Copy)]
 pub struct JsonCodec;
 
