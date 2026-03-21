@@ -3540,6 +3540,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "typeway-versioned-api"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "typeway-core",
+ "typeway-macros",
+ "typeway-server",
+]
+
+[[package]]
 name = "unarray"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

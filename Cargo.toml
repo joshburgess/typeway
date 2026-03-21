@@ -12,6 +12,7 @@ members = [
     "spike",
     "examples/realworld",
     "examples/chat",
+    "examples/versioned-api",
 ]
 resolver = "2"
 
