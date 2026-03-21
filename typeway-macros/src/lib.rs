@@ -2132,46 +2132,67 @@ fn derive_typeway_codec_struct(
     })
 }
 
+/// Precompute the tag+wiretype byte(s) at macro expansion time.
+fn precompute_tag_byte(field_number: u32, wire_type: u8) -> u8 {
+    ((field_number << 3) | (wire_type as u32)) as u8
+}
+
+/// Emit code to write a precomputed tag byte (fields 1-15).
+fn emit_tag_push(tag: u32, wt: u8) -> TokenStream2 {
+    let byte = precompute_tag_byte(tag, wt);
+    if tag < 16 {
+        // Single byte — just push the constant.
+        quote! { buf.push(#byte); }
+    } else {
+        // Multi-byte tag — use the varint encoder.
+        quote! { ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt); }
+    }
+}
+
 fn gen_encode_field(f: &CodecField) -> TokenStream2 {
     let ident = &f.ident;
     let tag = f.tag;
     let wt = wire_type_for_kind(&f.codec_kind);
+    let tag_push = emit_tag_push(tag, wt);
 
     match &f.codec_kind {
         CodecKind::Varint => quote! {
             if self.#ident != 0 {
-                ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+                #tag_push
                 ::typeway_protobuf::tw_encode_varint(buf, self.#ident as u64);
             }
         },
-        CodecKind::Bool => quote! {
-            if self.#ident {
-                ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
-                buf.push(1);
+        CodecKind::Bool => {
+            // Tag + value as two bytes pushed together.
+            let tag_byte = precompute_tag_byte(tag, wt);
+            quote! {
+                if self.#ident {
+                    buf.extend_from_slice(&[#tag_byte, 1]);
+                }
             }
         },
         CodecKind::Fixed32 => quote! {
             if self.#ident != 0.0 {
-                ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+                #tag_push
                 buf.extend_from_slice(&self.#ident.to_le_bytes());
             }
         },
         CodecKind::Fixed64 => quote! {
             if self.#ident != 0.0 {
-                ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+                #tag_push
                 buf.extend_from_slice(&self.#ident.to_le_bytes());
             }
         },
         CodecKind::LenString | CodecKind::LenBytesStr => quote! {
             if !self.#ident.is_empty() {
-                ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+                #tag_push
                 ::typeway_protobuf::tw_encode_varint(buf, self.#ident.len() as u64);
                 buf.extend_from_slice(self.#ident.as_bytes());
             }
         },
         CodecKind::LenBytes => quote! {
             if !self.#ident.is_empty() {
-                ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+                #tag_push
                 ::typeway_protobuf::tw_encode_varint(buf, self.#ident.len() as u64);
                 buf.extend_from_slice(&self.#ident);
             }
@@ -2180,7 +2201,7 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
             {
                 let nested = ::typeway_protobuf::TypewayEncode::encode_to_vec(&self.#ident);
                 if !nested.is_empty() {
-                    ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+                    #tag_push
                     ::typeway_protobuf::tw_encode_varint(buf, nested.len() as u64);
                     buf.extend_from_slice(&nested);
                 }
@@ -2197,7 +2218,7 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
         CodecKind::OptionalMessage => quote! {
             if let Some(ref val) = self.#ident {
                 let nested = ::typeway_protobuf::TypewayEncode::encode_to_vec(val);
-                ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+                #tag_push
                 ::typeway_protobuf::tw_encode_varint(buf, nested.len() as u64);
                 buf.extend_from_slice(&nested);
             }
@@ -2206,13 +2227,11 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
             if is_packable(inner) {
                 let item_write = gen_packed_item_write(inner);
                 let is_varint = matches!(inner.as_ref(), CodecKind::Varint);
+                let packed_tag_push = emit_tag_push(tag, 2);
                 if is_varint {
-                    // Single-pass batch write: one reserve + one set_len
-                    // for the entire packed field. Eliminates per-element
-                    // set_len calls and function call overhead.
                     quote! {
                         if !self.#ident.is_empty() {
-                            ::typeway_protobuf::tw_encode_tag(buf, #tag, 2u8);
+                            #packed_tag_push
                             let len_pos = buf.len();
                             buf.push(0); // placeholder for length
                             let data_start = buf.len();
@@ -2255,7 +2274,7 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
                     quote! {
                         if !self.#ident.is_empty() {
                             let packed_len = #packed_len_expr;
-                            ::typeway_protobuf::tw_encode_tag(buf, #tag, 2u8);
+                            #packed_tag_push
                             ::typeway_protobuf::tw_encode_varint(buf, packed_len as u64);
                             for item in &self.#ident {
                                 #item_write
@@ -2276,7 +2295,7 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
         CodecKind::RepeatedMessage => quote! {
             for item in &self.#ident {
                 let nested = ::typeway_protobuf::TypewayEncode::encode_to_vec(item);
-                ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+                #tag_push
                 ::typeway_protobuf::tw_encode_varint(buf, nested.len() as u64);
                 buf.extend_from_slice(&nested);
             }
@@ -2361,26 +2380,27 @@ fn gen_packed_item_read(ident: &Ident, kind: &CodecKind) -> TokenStream2 {
 }
 
 fn gen_encode_optional_inner(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2 {
+    let tp = emit_tag_push(tag, wt);
     match kind {
         CodecKind::Varint => quote! {
-            ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+            #tp
             ::typeway_protobuf::tw_encode_varint(buf, *val as u64);
         },
         CodecKind::Fixed32 => quote! {
-            ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+            #tp
             buf.extend_from_slice(&val.to_le_bytes());
         },
         CodecKind::Fixed64 => quote! {
-            ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+            #tp
             buf.extend_from_slice(&val.to_le_bytes());
         },
         CodecKind::LenString | CodecKind::LenBytesStr => quote! {
-            ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+            #tp
             ::typeway_protobuf::tw_encode_varint(buf, val.len() as u64);
             buf.extend_from_slice(val.as_bytes());
         },
         CodecKind::LenBytes => quote! {
-            ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+            #tp
             ::typeway_protobuf::tw_encode_varint(buf, val.len() as u64);
             buf.extend_from_slice(val);
         },
@@ -2389,21 +2409,22 @@ fn gen_encode_optional_inner(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2
 }
 
 fn gen_encode_repeated_item(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2 {
+    let tp = emit_tag_push(tag, wt);
     match kind {
         CodecKind::Varint => quote! {
-            ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+            #tp
             ::typeway_protobuf::tw_encode_varint(buf, *item as u64);
         },
         CodecKind::Fixed32 => quote! {
-            ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+            #tp
             buf.extend_from_slice(&item.to_le_bytes());
         },
         CodecKind::Fixed64 => quote! {
-            ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+            #tp
             buf.extend_from_slice(&item.to_le_bytes());
         },
         CodecKind::LenString | CodecKind::LenBytesStr => quote! {
-            ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
+            #tp
             ::typeway_protobuf::tw_encode_varint(buf, item.len() as u64);
             buf.extend_from_slice(item.as_bytes());
         },
