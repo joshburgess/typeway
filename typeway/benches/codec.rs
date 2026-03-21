@@ -95,6 +95,38 @@ struct MediumBytesStr {
     level: u32,
 }
 
+/// Small message with BytesStr fields (zero-copy decode target).
+#[derive(Debug, Clone, Default, PartialEq, TypewayCodec)]
+struct SmallBytesStr {
+    #[proto(tag = 1)]
+    id: u32,
+    #[proto(tag = 2)]
+    name: BytesStr,
+}
+
+/// Large message with BytesStr fields (zero-copy decode target).
+#[derive(Debug, Clone, Default, PartialEq, TypewayCodec)]
+struct LargeBytesStr {
+    #[proto(tag = 1)]
+    id: u64,
+    #[proto(tag = 2)]
+    title: BytesStr,
+    #[proto(tag = 3)]
+    body: BytesStr,
+    #[proto(tag = 4)]
+    author: BytesStr,
+    #[proto(tag = 5)]
+    tags: Vec<String>, // Vec<BytesStr> not yet supported in decode
+    #[proto(tag = 6)]
+    view_count: u64,
+    #[proto(tag = 7)]
+    favorited: bool,
+    #[proto(tag = 8)]
+    created_at: BytesStr,
+    #[proto(tag = 9)]
+    updated_at: BytesStr,
+}
+
 /// Message with repeated scalar fields (packed encoding target).
 #[derive(Debug, Clone, Default, PartialEq, TypewayCodec)]
 struct RepeatedMessage {
@@ -424,6 +456,12 @@ fn bench_decode(c: &mut Criterion) {
             black_box(SmallMessage::typeway_decode_bytes(input).unwrap())
         })
     });
+    group.bench_function("small/typeway_bytesstr_zerocopy", |b| {
+        b.iter(|| {
+            let input = small_bytes_b.clone();
+            black_box(SmallBytesStr::typeway_decode_bytes(input).unwrap())
+        })
+    });
     group.bench_function("small/prost", |b| {
         b.iter(|| black_box(ProstSmallMessage::decode(small_bytes.as_slice()).unwrap()))
     });
@@ -473,6 +511,12 @@ fn bench_decode(c: &mut Criterion) {
         b.iter(|| {
             let input = large_bytes_b.clone();
             black_box(LargeMessage::typeway_decode_bytes(input).unwrap())
+        })
+    });
+    group.bench_function("large/typeway_bytesstr_zerocopy", |b| {
+        b.iter(|| {
+            let input = large_bytes_b.clone();
+            black_box(LargeBytesStr::typeway_decode_bytes(input).unwrap())
         })
     });
     group.bench_function("large/prost", |b| {
