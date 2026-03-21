@@ -11,6 +11,7 @@ members = [
     "typeway-migrate",
     "spike",
     "examples/realworld",
+    "examples/chat",
 ]
 resolver = "2"
 

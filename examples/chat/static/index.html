@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Typeway Chat — Session-Typed WebSockets</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .container { width: 100%; max-width: 600px; padding: 20px; }
+    h1 { color: #58a6ff; margin-bottom: 4px; font-size: 1.5em; }
+    .subtitle { color: #8b949e; margin-bottom: 20px; font-size: 0.9em; }
+    .protocol { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-family: monospace; font-size: 0.85em; color: #8b949e; }
+    .protocol strong { color: #58a6ff; }
+    #login { display: flex; gap: 8px; margin-bottom: 16px; }
+    #login input { flex: 1; padding: 10px 14px; background: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 1em; outline: none; }
+    #login input:focus { border-color: #58a6ff; }
+    button { padding: 10px 20px; background: #238636; border: none; border-radius: 6px; color: white; font-size: 1em; cursor: pointer; }
+    button:hover { background: #2ea043; }
+    button:disabled { background: #30363d; cursor: not-allowed; }
+    #messages { background: #161b22; border: 1px solid #30363d; border-radius: 8px; height: 400px; overflow-y: auto; padding: 12px; margin-bottom: 12px; display: none; }
+    .msg { padding: 4px 0; word-wrap: break-word; }
+    .msg.system { color: #8b949e; font-style: italic; }
+    .msg.self { color: #58a6ff; }
+    .msg.welcome { color: #3fb950; }
+    #chatInput { display: none; gap: 8px; }
+    #chatInput input { flex: 1; padding: 10px 14px; background: #161b22; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 1em; outline: none; }
+    #chatInput input:focus { border-color: #58a6ff; }
+    .status { text-align: center; color: #8b949e; font-size: 0.85em; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Typeway Chat</h1>
+    <p class="subtitle">Session-typed WebSockets — protocol enforced at compile time</p>
+
+    <div class="protocol">
+      <strong>Protocol:</strong> Recv&lt;Auth&gt; &rarr; Send&lt;Welcome&gt; &rarr; Rec&lt;Recv&lt;Msg&gt; &rarr; Send&lt;Msg&gt; &rarr; Var&gt;
+    </div>
+
+    <div id="login">
+      <input type="text" id="username" placeholder="Enter username..." autofocus>
+      <button onclick="connect()">Join Chat</button>
+    </div>
+
+    <div id="messages"></div>
+
+    <div id="chatInput">
+      <input type="text" id="msgInput" placeholder="Type a message..." onkeypress="if(event.key==='Enter')sendMsg()">
+      <button onclick="sendMsg()">Send</button>
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    let ws;
+    let myUsername;
+
+    function addMessage(text, cls) {
+      const el = document.getElementById('messages');
+      const div = document.createElement('div');
+      div.className = 'msg ' + (cls || '');
+      div.textContent = text;
+      el.appendChild(div);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    function connect() {
+      myUsername = document.getElementById('username').value.trim();
+      if (!myUsername) return;
+
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${proto}//${location.host}/ws/chat`);
+
+      ws.onopen = () => {
+        // Step 1: Send authentication (protocol enforced on server).
+        ws.send(JSON.stringify({ username: myUsername }));
+        document.getElementById('login').style.display = 'none';
+        document.getElementById('messages').style.display = 'block';
+        document.getElementById('chatInput').style.display = 'flex';
+        document.getElementById('msgInput').focus();
+        addMessage('Connecting...', 'system');
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        if (data.online_users) {
+          // Step 2: Receive welcome message.
+          addMessage(data.message, 'welcome');
+          addMessage('Online: ' + data.online_users.join(', '), 'system');
+          document.getElementById('status').textContent = `Connected as ${myUsername}`;
+        } else if (data.message) {
+          // Step 3: Receive chat message.
+          const isSelf = data.message.startsWith(`[${myUsername}]`);
+          addMessage(data.message, isSelf ? 'self' : '');
+        }
+      };
+
+      ws.onclose = () => {
+        addMessage('Disconnected.', 'system');
+        document.getElementById('status').textContent = 'Disconnected';
+      };
+    }
+
+    function sendMsg() {
+      const input = document.getElementById('msgInput');
+      const msg = input.value.trim();
+      if (!msg || !ws) return;
+      ws.send(JSON.stringify({ message: msg }));
+      input.value = '';
+    }
+  </script>
+</body>
+</html>
