@@ -2271,14 +2271,59 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
                         CodecKind::Bool => quote! { self.#ident.len() },
                         _ => unreachable!(),
                     };
+                    // For Fixed32/Fixed64: bulk memcpy instead of per-element writes.
+                    let bulk_write = match inner.as_ref() {
+                        CodecKind::Fixed64 => quote! {
+                            // Safety: f64 is 8 bytes, same layout as [u8; 8] on LE.
+                            // On little-endian (most modern CPUs), IEEE 754 f64 is
+                            // already in protobuf wire order.
+                            #[cfg(target_endian = "little")]
+                            {
+                                let slice_bytes = unsafe {
+                                    ::core::slice::from_raw_parts(
+                                        self.#ident.as_ptr() as *const u8,
+                                        self.#ident.len() * 8,
+                                    )
+                                };
+                                buf.extend_from_slice(slice_bytes);
+                            }
+                            #[cfg(not(target_endian = "little"))]
+                            {
+                                for item in &self.#ident {
+                                    buf.extend_from_slice(&item.to_le_bytes());
+                                }
+                            }
+                        },
+                        CodecKind::Fixed32 => quote! {
+                            #[cfg(target_endian = "little")]
+                            {
+                                let slice_bytes = unsafe {
+                                    ::core::slice::from_raw_parts(
+                                        self.#ident.as_ptr() as *const u8,
+                                        self.#ident.len() * 4,
+                                    )
+                                };
+                                buf.extend_from_slice(slice_bytes);
+                            }
+                            #[cfg(not(target_endian = "little"))]
+                            {
+                                for item in &self.#ident {
+                                    buf.extend_from_slice(&item.to_le_bytes());
+                                }
+                            }
+                        },
+                        _ => quote! {
+                            for item in &self.#ident {
+                                #item_write
+                            }
+                        },
+                    };
                     quote! {
                         if !self.#ident.is_empty() {
                             let packed_len = #packed_len_expr;
                             #packed_tag_push
                             ::typeway_protobuf::tw_encode_varint(buf, packed_len as u64);
-                            for item in &self.#ident {
-                                #item_write
-                            }
+                            #bulk_write
                         }
                     }
                 }
