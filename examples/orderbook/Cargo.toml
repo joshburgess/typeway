@@ -1,0 +1,22 @@
+[package]
+name = "typeway-orderbook"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+typeway-core = { path = "../../typeway-core" }
+typeway-server = { path = "../../typeway-server", features = ["grpc", "protobuf"] }
+typeway-grpc = { path = "../../typeway-grpc", features = ["grpc-native"] }
+typeway-protobuf = { path = "../../typeway-protobuf" }
+typeway-macros = { path = "../../typeway-macros" }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+http = "1"
+bytes = "1"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[lints]
+workspace = true

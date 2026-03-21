@@ -3475,6 +3475,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "typeway-orderbook"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "http",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "typeway-core",
+ "typeway-grpc",
+ "typeway-macros",
+ "typeway-protobuf",
+ "typeway-server",
+]
+
+[[package]]
 name = "typeway-protobuf"
 version = "0.1.0"
 dependencies = [
