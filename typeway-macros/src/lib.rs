@@ -2435,7 +2435,11 @@ fn gen_encode_repeated_item(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2 
 fn gen_encoded_len_field(f: &CodecField) -> TokenStream2 {
     let ident = &f.ident;
     let tag = f.tag;
-    let tag_len_expr = quote! { ::typeway_protobuf::tw_tag_len(#tag) };
+    // Precompute tag length at macro expansion time.
+    let wt = wire_type_for_kind(&f.codec_kind);
+    let tag_byte_count = if tag < 16 { 1usize } else if tag < 2048 { 2 } else { 3 };
+    let tag_len_expr = quote! { #tag_byte_count };
+    let _ = wt; // used in computation above conceptually
 
     match &f.codec_kind {
         CodecKind::Varint => quote! {
@@ -2534,7 +2538,8 @@ fn gen_encoded_len_field(f: &CodecField) -> TokenStream2 {
 }
 
 fn gen_encoded_len_optional_inner(tag: u32, kind: &CodecKind) -> TokenStream2 {
-    let tag_len_expr = quote! { ::typeway_protobuf::tw_tag_len(#tag) };
+    let tl = if tag < 16 { 1usize } else if tag < 2048 { 2 } else { 3 };
+    let tag_len_expr = quote! { #tl };
     match kind {
         CodecKind::Varint => quote! {
             len += #tag_len_expr + ::typeway_protobuf::tw_varint_len(*val as u64);
@@ -2551,7 +2556,8 @@ fn gen_encoded_len_optional_inner(tag: u32, kind: &CodecKind) -> TokenStream2 {
 }
 
 fn gen_encoded_len_repeated_item(tag: u32, kind: &CodecKind) -> TokenStream2 {
-    let tag_len_expr = quote! { ::typeway_protobuf::tw_tag_len(#tag) };
+    let tl = if tag < 16 { 1usize } else if tag < 2048 { 2 } else { 3 };
+    let tag_len_expr = quote! { #tl };
     match kind {
         CodecKind::Varint => quote! {
             len += #tag_len_expr + ::typeway_protobuf::tw_varint_len(*item as u64);
