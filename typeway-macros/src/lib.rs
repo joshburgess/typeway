@@ -2718,7 +2718,7 @@ fn gen_decode_arm(f: &CodecField) -> TokenStream2 {
                                 if packed_end > bytes.len() {
                                     return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
                                 }
-                                // Estimate: at least 1 element per byte.
+                                // Reserve worst case: at least 1 element per byte.
                                 #ident.reserve(packed_len);
                                 while offset < packed_end {
                                     // Inline 1-byte fast path (most common for small u32).
