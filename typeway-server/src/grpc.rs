@@ -216,7 +216,7 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
     /// Apply a Tower middleware layer.
     pub fn layer<L>(self, layer: L) -> LayeredGrpcServer<A, L::Service>
     where
-        L: tower_layer::Layer<crate::grpc_native::NativeMultiplexer>,
+        L: tower_layer::Layer<crate::grpc_native::GrpcMultiplexer>,
         L::Service: tower_service::Service<
                 http::Request<hyper::body::Incoming>,
                 Response = http::Response<BoxBody>,
@@ -235,14 +235,14 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
     }
 
     /// Build the native multiplexer from the current configuration.
-    fn build_multiplexer(self) -> crate::grpc_native::NativeMultiplexer {
+    fn build_multiplexer(self) -> crate::grpc_native::GrpcMultiplexer {
         let descriptor = A::service_descriptor(&self.service_name, &self.package);
         let grpc_router = crate::grpc_native::GrpcRouter::from_router(
             &self.router,
             &descriptor,
         );
 
-        crate::grpc_native::NativeMultiplexer {
+        crate::grpc_native::GrpcMultiplexer {
             rest: RouterService::new(self.router),
             grpc_router: Arc::new(grpc_router),
             reflection: Arc::new(self.reflection),

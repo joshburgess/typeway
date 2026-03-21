@@ -1,16 +1,15 @@
-//! Native gRPC client with codec abstraction and real streaming.
+//! gRPC client with codec abstraction and streaming.
 //!
-//! [`NativeGrpcClient`] is a gRPC client that supports both JSON and
-//! binary protobuf encoding, real streaming via async iteration, and
-//! the same interceptor/config system as the bridge-based client.
+//! [`GrpcClient`] supports both JSON and binary protobuf encoding,
+//! streaming via async iteration, and request interceptors.
 //!
 //! # Example
 //!
 //! ```ignore
-//! use typeway_grpc::native_client::NativeGrpcClient;
+//! use typeway_grpc::native_client::GrpcClient;
 //! use typeway_grpc::codec::JsonCodec;
 //!
-//! let client = NativeGrpcClient::new("http://localhost:3000", "UserService", "users.v1")
+//! let client = GrpcClient::new("http://localhost:3000", "UserService", "users.v1")
 //!     .unwrap();
 //!
 //! // Unary call
@@ -32,37 +31,37 @@ use crate::codec::{CodecError, GrpcCodec, JsonCodec};
 use crate::framing;
 use crate::status::GrpcCode;
 
-/// A native gRPC client with codec abstraction.
+/// A gRPC client with codec abstraction.
 ///
 /// Supports both JSON (`application/grpc+json`) and binary protobuf
 /// (`application/grpc+proto`) encoding. The codec is selected at
 /// construction time.
-pub struct NativeGrpcClient {
+pub struct GrpcClient {
     inner: reqwest::Client,
     base_url: url::Url,
     service_path: String,
     codec: Arc<dyn GrpcCodec>,
-    config: NativeClientConfig,
+    config: GrpcClientConfig,
 }
 
 /// Configuration for a native gRPC client.
 #[derive(Clone)]
-pub struct NativeClientConfig {
+pub struct GrpcClientConfig {
     /// Default metadata (headers) sent with every request.
     pub default_metadata: Vec<(String, String)>,
     /// Per-request timeout. `None` means no timeout.
     pub timeout: Option<Duration>,
     /// Request interceptors applied in order before sending.
-    pub interceptors: Vec<NativeClientInterceptor>,
+    pub interceptors: Vec<GrpcRequestInterceptor>,
 }
 
 /// A function that modifies outgoing gRPC requests before they are sent.
-pub type NativeClientInterceptor =
+pub type GrpcRequestInterceptor =
     Arc<dyn Fn(reqwest::RequestBuilder) -> reqwest::RequestBuilder + Send + Sync>;
 
-impl Default for NativeClientConfig {
+impl Default for GrpcClientConfig {
     fn default() -> Self {
-        NativeClientConfig {
+        GrpcClientConfig {
             default_metadata: Vec::new(),
             timeout: Some(Duration::from_secs(30)),
             interceptors: Vec::new(),
@@ -70,7 +69,20 @@ impl Default for NativeClientConfig {
     }
 }
 
-impl NativeClientConfig {
+impl std::fmt::Debug for GrpcClientConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GrpcClientConfig")
+            .field("default_metadata", &self.default_metadata)
+            .field("timeout", &self.timeout)
+            .field(
+                "interceptors",
+                &format!("[{} interceptors]", self.interceptors.len()),
+            )
+            .finish()
+    }
+}
+
+impl GrpcClientConfig {
     /// Add a metadata key-value pair sent with every request.
     pub fn metadata(mut self, key: &str, value: &str) -> Self {
         self.default_metadata
@@ -107,7 +119,7 @@ impl NativeClientConfig {
 
 /// Errors from the native gRPC client.
 #[derive(Debug)]
-pub enum NativeClientError {
+pub enum GrpcClientError {
     /// The server returned a non-OK gRPC status.
     Status {
         code: GrpcCode,
@@ -123,7 +135,7 @@ pub enum NativeClientError {
     Framing(String),
 }
 
-impl std::fmt::Display for NativeClientError {
+impl std::fmt::Display for GrpcClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Status { code, message } => {
@@ -137,17 +149,17 @@ impl std::fmt::Display for NativeClientError {
     }
 }
 
-impl std::error::Error for NativeClientError {}
+impl std::error::Error for GrpcClientError {}
 
-impl From<CodecError> for NativeClientError {
+impl From<CodecError> for GrpcClientError {
     fn from(e: CodecError) -> Self {
-        NativeClientError::Codec(e)
+        GrpcClientError::Codec(e)
     }
 }
 
-impl From<reqwest::Error> for NativeClientError {
+impl From<reqwest::Error> for GrpcClientError {
     fn from(e: reqwest::Error) -> Self {
-        NativeClientError::Transport(e.to_string())
+        GrpcClientError::Transport(e.to_string())
     }
 }
 
@@ -159,7 +171,7 @@ pub struct ClientStream {
 
 impl ClientStream {
     /// Receive the next message from the stream.
-    pub async fn recv(&mut self) -> Option<Result<serde_json::Value, NativeClientError>> {
+    pub async fn recv(&mut self) -> Option<Result<serde_json::Value, GrpcClientError>> {
         if self.index < self.frames.len() {
             let val = self.frames[self.index].clone();
             self.index += 1;
@@ -170,7 +182,7 @@ impl ClientStream {
     }
 
     /// Collect all remaining messages into a `Vec`.
-    pub async fn collect(self) -> Result<Vec<serde_json::Value>, NativeClientError> {
+    pub async fn collect(self) -> Result<Vec<serde_json::Value>, GrpcClientError> {
         Ok(self.frames)
     }
 
@@ -185,13 +197,13 @@ impl ClientStream {
     }
 }
 
-impl NativeGrpcClient {
+impl GrpcClient {
     /// Create a new native gRPC client with the default JSON codec.
     pub fn new(
         base_url: &str,
         service_name: &str,
         package: &str,
-    ) -> Result<Self, NativeClientError> {
+    ) -> Result<Self, GrpcClientError> {
         Self::with_codec(base_url, service_name, package, Arc::new(JsonCodec))
     }
 
@@ -201,13 +213,13 @@ impl NativeGrpcClient {
         service_name: &str,
         package: &str,
         codec: Arc<dyn GrpcCodec>,
-    ) -> Result<Self, NativeClientError> {
+    ) -> Result<Self, GrpcClientError> {
         Self::with_codec_and_config(
             base_url,
             service_name,
             package,
             codec,
-            NativeClientConfig::default(),
+            GrpcClientConfig::default(),
         )
     }
 
@@ -217,19 +229,19 @@ impl NativeGrpcClient {
         service_name: &str,
         package: &str,
         codec: Arc<dyn GrpcCodec>,
-        config: NativeClientConfig,
-    ) -> Result<Self, NativeClientError> {
+        config: GrpcClientConfig,
+    ) -> Result<Self, GrpcClientError> {
         let base_url = url::Url::parse(base_url)
-            .map_err(|e| NativeClientError::InvalidUrl(e.to_string()))?;
+            .map_err(|e| GrpcClientError::InvalidUrl(e.to_string()))?;
 
         let http_client = reqwest::Client::builder()
             .http2_prior_knowledge()
             .build()
-            .map_err(|e| NativeClientError::Transport(e.to_string()))?;
+            .map_err(|e| GrpcClientError::Transport(e.to_string()))?;
 
         let service_path = format!("{package}.{service_name}");
 
-        Ok(NativeGrpcClient {
+        Ok(GrpcClient {
             inner: http_client,
             base_url,
             service_path,
@@ -244,17 +256,17 @@ impl NativeGrpcClient {
         service_name: &str,
         package: &str,
         client: reqwest::Client,
-    ) -> Result<Self, NativeClientError> {
+    ) -> Result<Self, GrpcClientError> {
         let base_url = url::Url::parse(base_url)
-            .map_err(|e| NativeClientError::InvalidUrl(e.to_string()))?;
+            .map_err(|e| GrpcClientError::InvalidUrl(e.to_string()))?;
         let service_path = format!("{package}.{service_name}");
 
-        Ok(NativeGrpcClient {
+        Ok(GrpcClient {
             inner: client,
             base_url,
             service_path,
             codec: Arc::new(JsonCodec),
-            config: NativeClientConfig::default(),
+            config: GrpcClientConfig::default(),
         })
     }
 
@@ -266,12 +278,12 @@ impl NativeGrpcClient {
         &self,
         method: &str,
         request: &serde_json::Value,
-    ) -> Result<serde_json::Value, NativeClientError> {
+    ) -> Result<serde_json::Value, GrpcClientError> {
         let response_bytes = self.send_request(method, request).await?;
 
         // Decode gRPC frame.
         let unframed = framing::decode_grpc_frame(&response_bytes)
-            .map_err(|e| NativeClientError::Framing(e.to_string()))?;
+            .map_err(|e| GrpcClientError::Framing(e.to_string()))?;
 
         // Decode response via codec.
         let value = self.codec.decode(unframed)?;
@@ -285,7 +297,7 @@ impl NativeGrpcClient {
         &self,
         method: &str,
         request: &serde_json::Value,
-    ) -> Result<ClientStream, NativeClientError> {
+    ) -> Result<ClientStream, GrpcClientError> {
         let response_bytes = self.send_request(method, request).await?;
 
         // Decode multiple gRPC frames.
@@ -308,12 +320,12 @@ impl NativeGrpcClient {
         &self,
         method: &str,
         request: &serde_json::Value,
-    ) -> Result<Bytes, NativeClientError> {
+    ) -> Result<Bytes, GrpcClientError> {
         let grpc_path = format!("/{}/{}", self.service_path, method);
         let url = self
             .base_url
             .join(&grpc_path)
-            .map_err(|e| NativeClientError::InvalidUrl(e.to_string()))?;
+            .map_err(|e| GrpcClientError::InvalidUrl(e.to_string()))?;
 
         // Encode request body.
         let encoded = self.codec.encode(request)?;
@@ -361,7 +373,7 @@ impl NativeGrpcClient {
             .to_string();
 
         if grpc_status != 0 {
-            return Err(NativeClientError::Status {
+            return Err(GrpcClientError::Status {
                 code: GrpcCode::from_i32(grpc_status),
                 message: grpc_message,
             });
@@ -373,7 +385,7 @@ impl NativeGrpcClient {
     }
 }
 
-/// A typed gRPC client generated by `native_grpc_client!`.
+/// A typed gRPC client generated by `grpc_client!`.
 ///
 /// This macro generates a client struct with typed methods for each
 /// gRPC endpoint, using the native client infrastructure.
@@ -381,7 +393,7 @@ impl NativeGrpcClient {
 /// # Example
 ///
 /// ```ignore
-/// native_grpc_client! {
+/// grpc_client! {
 ///     pub struct UserClient;
 ///     api = UserAPI;
 ///     service = "UserService";
@@ -392,7 +404,7 @@ impl NativeGrpcClient {
 /// let users = client.call("ListUser", &serde_json::json!({})).await?;
 /// ```
 #[macro_export]
-macro_rules! native_grpc_client {
+macro_rules! grpc_client {
     (
         $(#[$meta:meta])*
         $vis:vis struct $Name:ident;
@@ -402,14 +414,14 @@ macro_rules! native_grpc_client {
     ) => {
         $(#[$meta])*
         $vis struct $Name {
-            inner: $crate::native_client::NativeGrpcClient,
+            inner: $crate::native_client::GrpcClient,
         }
 
         impl $Name {
             /// Create a new client with the default JSON codec.
-            pub fn new(base_url: &str) -> Result<Self, $crate::native_client::NativeClientError> {
+            pub fn new(base_url: &str) -> Result<Self, $crate::native_client::GrpcClientError> {
                 Ok(Self {
-                    inner: $crate::native_client::NativeGrpcClient::new(
+                    inner: $crate::native_client::GrpcClient::new(
                         base_url, $service, $package,
                     )?,
                 })
@@ -419,9 +431,9 @@ macro_rules! native_grpc_client {
             pub fn with_codec(
                 base_url: &str,
                 codec: ::std::sync::Arc<dyn $crate::codec::GrpcCodec>,
-            ) -> Result<Self, $crate::native_client::NativeClientError> {
+            ) -> Result<Self, $crate::native_client::GrpcClientError> {
                 Ok(Self {
-                    inner: $crate::native_client::NativeGrpcClient::with_codec(
+                    inner: $crate::native_client::GrpcClient::with_codec(
                         base_url, $service, $package, codec,
                     )?,
                 })
@@ -431,10 +443,10 @@ macro_rules! native_grpc_client {
             pub fn with_config(
                 base_url: &str,
                 codec: ::std::sync::Arc<dyn $crate::codec::GrpcCodec>,
-                config: $crate::native_client::NativeClientConfig,
-            ) -> Result<Self, $crate::native_client::NativeClientError> {
+                config: $crate::native_client::GrpcClientConfig,
+            ) -> Result<Self, $crate::native_client::GrpcClientError> {
                 Ok(Self {
-                    inner: $crate::native_client::NativeGrpcClient::with_codec_and_config(
+                    inner: $crate::native_client::GrpcClient::with_codec_and_config(
                         base_url, $service, $package, codec, config,
                     )?,
                 })
@@ -445,7 +457,7 @@ macro_rules! native_grpc_client {
                 &self,
                 method: &str,
                 request: &serde_json::Value,
-            ) -> Result<serde_json::Value, $crate::native_client::NativeClientError> {
+            ) -> Result<serde_json::Value, $crate::native_client::GrpcClientError> {
                 self.inner.call(method, request).await
             }
 
@@ -454,7 +466,7 @@ macro_rules! native_grpc_client {
                 &self,
                 method: &str,
                 request: &serde_json::Value,
-            ) -> Result<$crate::native_client::ClientStream, $crate::native_client::NativeClientError>
+            ) -> Result<$crate::native_client::ClientStream, $crate::native_client::GrpcClientError>
             {
                 self.inner.call_server_stream(method, request).await
             }
@@ -482,23 +494,23 @@ mod tests {
 
     #[test]
     fn native_client_error_display() {
-        let err = NativeClientError::Status {
+        let err = GrpcClientError::Status {
             code: GrpcCode::NotFound,
             message: "user not found".into(),
         };
         assert!(err.to_string().contains("5"));
         assert!(err.to_string().contains("user not found"));
 
-        let err = NativeClientError::Transport("connection refused".into());
+        let err = GrpcClientError::Transport("connection refused".into());
         assert!(err.to_string().contains("connection refused"));
 
-        let err = NativeClientError::InvalidUrl("bad url".into());
+        let err = GrpcClientError::InvalidUrl("bad url".into());
         assert!(err.to_string().contains("bad url"));
     }
 
     #[test]
     fn native_client_config_builder() {
-        let config = NativeClientConfig::default()
+        let config = GrpcClientConfig::default()
             .bearer_auth("token123")
             .metadata("x-custom", "value")
             .timeout(Duration::from_secs(5));
@@ -509,7 +521,7 @@ mod tests {
 
     #[test]
     fn native_client_config_no_timeout() {
-        let config = NativeClientConfig::default().no_timeout();
+        let config = GrpcClientConfig::default().no_timeout();
         assert_eq!(config.timeout, None);
     }
 
@@ -525,7 +537,7 @@ mod tests {
 
     #[test]
     fn native_client_construction() {
-        let result = NativeGrpcClient::new(
+        let result = GrpcClient::new(
             "http://localhost:50051",
             "UserService",
             "users.v1",
@@ -535,7 +547,7 @@ mod tests {
 
     #[test]
     fn native_client_invalid_url() {
-        let result = NativeGrpcClient::new(
+        let result = GrpcClient::new(
             "not a url",
             "Svc",
             "pkg",

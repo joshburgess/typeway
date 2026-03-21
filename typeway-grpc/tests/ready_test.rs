@@ -170,19 +170,20 @@ fn mixed_api_with_streaming_is_grpc_ready() {
     assert_grpc_ready::<MixedAPI>();
 }
 
-// --- auto_grpc_client! compile-time check ---
+// --- grpc_client! compile-time check ---
 
-// The auto_grpc_client! macro includes a compile-time assertion that the
-// API type is GrpcReady. Verify the macro expands without error.
+// The grpc_client! macro generates a client struct from the API type.
+// Verify the macro expands without error.
+#[cfg(feature = "grpc-native")]
 #[test]
-fn auto_grpc_client_compiles() {
+fn grpc_client_compiles() {
     type TestAPI = (
         GetEndpoint<UsersPath, Vec<User>>,
         GetEndpoint<UserByIdPath, User>,
         PostEndpoint<UsersPath, CreateUser, User>,
     );
 
-    typeway_grpc::auto_grpc_client! {
+    typeway_grpc::grpc_client! {
         struct TestClient;
         api = TestAPI;
         service = "UserService";
@@ -190,17 +191,18 @@ fn auto_grpc_client_compiles() {
     }
 
     // Verify the struct was created and has the expected methods.
-    let _: fn(&str) -> Result<TestClient, typeway_grpc::client::GrpcClientError> = TestClient::new;
+    let _: fn(&str) -> Result<TestClient, typeway_grpc::GrpcClientError> = TestClient::new;
 }
 
+#[cfg(feature = "grpc-native")]
 #[test]
-fn auto_grpc_client_service_descriptor() {
+fn grpc_client_service_descriptor() {
     type TestAPI = (
         GetEndpoint<UsersPath, Vec<User>>,
         GetEndpoint<UserByIdPath, User>,
     );
 
-    typeway_grpc::auto_grpc_client! {
+    typeway_grpc::grpc_client! {
         struct DescClient;
         api = TestAPI;
         service = "TestService";
@@ -217,14 +219,15 @@ fn auto_grpc_client_service_descriptor() {
     assert_eq!(desc.methods[1].name, "GetUser");
 }
 
+#[cfg(feature = "grpc-native")]
 #[test]
-fn auto_grpc_client_proto_generation() {
+fn grpc_client_proto_generation() {
     type TestAPI = (
         GetEndpoint<UsersPath, Vec<User>>,
         PostEndpoint<UsersPath, CreateUser, User>,
     );
 
-    typeway_grpc::auto_grpc_client! {
+    typeway_grpc::grpc_client! {
         struct ProtoClient;
         api = TestAPI;
         service = "UserService";

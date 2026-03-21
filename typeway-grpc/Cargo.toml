@@ -10,7 +10,6 @@ required-features = ["cli"]
 
 [features]
 default = []
-client = ["dep:typeway-client", "dep:reqwest", "dep:url", "dep:thiserror"]
 test-client = ["dep:reqwest"]
 cli = ["dep:clap", "dep:anyhow"]
 chrono = ["dep:chrono"]

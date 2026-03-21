@@ -1,14 +1,14 @@
-//! Example: using auto_grpc_client! with the RealWorld API.
+//! Example: using grpc_client! with the RealWorld API.
 //!
 //! This file is not compiled as part of the binary -- it serves as a code
 //! example showing how to create a type-safe gRPC client that's automatically
 //! derived from the same API type as the server.
 //!
 //! ```ignore
-//! use typeway_grpc::auto_grpc_client;
+//! use typeway_grpc::grpc_client;
 //! use crate::api::RealWorldAPI;
 //!
-//! auto_grpc_client! {
+//! grpc_client! {
 //!     pub struct RealWorldGrpcClient;
 //!     api = RealWorldAPI;
 //!     service = "RealWorldService";
@@ -52,10 +52,10 @@
 //! and the same interceptor/config system:
 //!
 //! ```ignore
-//! use typeway_grpc::native_grpc_client;
+//! use typeway_grpc::grpc_client;
 //! use crate::api::RealWorldAPI;
 //!
-//! native_grpc_client! {
+//! grpc_client! {
 //!     pub struct RealWorldNativeClient;
 //!     api = RealWorldAPI;
 //!     service = "RealWorldService";

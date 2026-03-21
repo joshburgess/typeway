@@ -265,7 +265,7 @@ fn json_value_to_string(val: &serde_json::Value) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// NativeMultiplexer
+// GrpcMultiplexer
 // ---------------------------------------------------------------------------
 
 /// Multiplexer that routes gRPC requests to native handlers and REST
@@ -275,7 +275,7 @@ fn json_value_to_string(val: &serde_json::Value) -> String {
 /// with real HTTP/2 trailers. Exposed as `pub` so Tower layers can be
 /// applied via [`GrpcServer::layer`](crate::grpc::GrpcServer::layer).
 #[derive(Clone)]
-pub struct NativeMultiplexer {
+pub struct GrpcMultiplexer {
     pub(crate) rest: RouterService,
     pub(crate) grpc_router: Arc<GrpcRouter>,
     pub(crate) reflection: Arc<ReflectionService>,
@@ -478,7 +478,7 @@ fn grpc_error_response(status: GrpcStatus) -> http::Response<BoxBody> {
     res
 }
 
-impl tower_service::Service<http::Request<hyper::body::Incoming>> for NativeMultiplexer {
+impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultiplexer {
     type Response = http::Response<BoxBody>;
     type Error = Infallible;
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
