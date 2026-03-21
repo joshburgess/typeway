@@ -216,13 +216,15 @@ pub unsafe fn tw_encode_varint_unchecked(buf: &mut Vec<u8>, mut value: u64) {
 }
 
 /// Compute the encoded length of a varint.
+///
+/// Uses the same O(1) formula as prost: `(ilog2 * 9 + 73) / 64`.
+/// Division by 64 compiles to a bit shift (3 cycles) instead of
+/// `div_ceil(7)` which is a real integer division (20-40 cycles).
 #[inline]
 pub fn tw_varint_len(value: u64) -> usize {
-    if value == 0 {
-        return 1;
-    }
-    let bits = 64 - value.leading_zeros() as usize;
-    bits.div_ceil(7)
+    // Safety: value | 1 is always non-zero.
+    let log2 = unsafe { core::num::NonZeroU64::new_unchecked(value | 1) }.ilog2();
+    ((log2 * 9 + (64 + 9)) / 64) as usize
 }
 
 /// Encode a tag (field_number << 3 | wire_type) as a varint.
