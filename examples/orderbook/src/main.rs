@@ -340,7 +340,7 @@ async fn submit_order(state: State<Exchange>, body: Json<Order>) -> (http::Statu
 /// Cancel an order.
 async fn cancel_order(state: State<Exchange>, body: Json<CancelRequest>) -> Json<CancelAck> {
     let mut orders = state.0.orders.lock().await;
-    let status = if let Some(order) = orders.iter_mut().find(|o| &*o.order_id == &*body.0.order_id) {
+    let status = if let Some(order) = orders.iter_mut().find(|o| *o.order_id == *body.0.order_id) {
         order.status = BytesStr::from("cancelled");
         "cancelled"
     } else {
@@ -358,7 +358,7 @@ async fn get_order_book(state: State<Exchange>, body: Json<SymbolQuery>) -> Json
     let orders = state.0.orders.lock().await;
     let symbol_orders: Vec<_> = orders
         .iter()
-        .filter(|o| &*o.symbol == &*body.0.symbol && &*o.status == "accepted")
+        .filter(|o| *o.symbol == *body.0.symbol && *o.status == *"accepted")
         .collect();
 
     let mut bids: Vec<PriceLevel> = Vec::new();
