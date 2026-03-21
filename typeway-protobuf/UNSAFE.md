@@ -168,3 +168,54 @@ unsafe {
 | 10 | Packed f64/f32 memcpy | Bulk write via ptr cast | Low — LE-guarded, no padding |
 
 All unsafe usage follows the pattern: **validate or guarantee the invariant, then use unsafe to skip redundant re-validation or bounds checks**. No unsafe is used for correctness — only for performance.
+
+## API Surface: Safe from the Outside
+
+Every `unsafe` function and internal helper is hidden from the public API
+via `#[doc(hidden)]`. Users cannot accidentally call any unsafe code.
+
+### What users see (public, safe)
+
+| API | Purpose |
+|-----|---------|
+| `TypewayEncode::encode_to_vec()` | Encode struct to bytes |
+| `TypewayEncode::encode_to(buf)` | Encode into existing buffer |
+| `TypewayDecode::typeway_decode(&[u8])` | Decode from bytes |
+| `TypewayDecode::typeway_decode_bytes(Bytes)` | Decode with zero-copy strings |
+| `BytesStr::from_utf8(Bytes)` | Safe constructor (validates UTF-8) |
+| `BytesStr::from(String)` | Safe constructor (String is valid UTF-8) |
+| `BytesStr::from(&'static str)` | Safe constructor (str is valid UTF-8) |
+| `#[derive(TypewayCodec)]` | Generate encode/decode impls |
+| `Proto<T>` | Format-agnostic extractor |
+| `into_direct_handler(fn)` | Create direct gRPC handler |
+| `EncodeBuf::encode(msg)` | Reusable encode buffer |
+| `RepeatedField<T>` | Pooled repeated field |
+| `ProtoField<T, E>` | Phantom-typed wire format |
+
+### What is hidden (`#[doc(hidden)]`, not shown in docs)
+
+| Hidden API | Why it exists | Why hidden |
+|-----------|--------------|-----------|
+| `tw_encode_varint(buf, value)` | Varint encoding | Called by generated code, not users |
+| `tw_decode_varint(bytes)` | Varint decoding | Called by generated code, not users |
+| `tw_encode_varint_unchecked(buf, value)` | Unsafe no-reserve varint | Used in packed encode loops |
+| `tw_encode_varint_array(value)` | Stack-buffer varint | Used by tw_encode_varint internally |
+| `tw_encode_packed_u32(buf, values)` | Batch unsafe varint | Used by generated packed encode |
+| `tw_encode_tag(buf, field, wire)` | Tag encoding | Called by generated code, not users |
+| `tw_tag_len(field)` | Tag length | Called by generated code, not users |
+| `tw_varint_len(value)` | Varint length (O(1)) | Called by generated code, not users |
+| `tw_zigzag_encode(value)` | ZigZag for sint32/64 | Called by generated code, not users |
+| `tw_zigzag_decode(value)` | ZigZag for sint32/64 | Called by generated code, not users |
+| `tw_skip_wire_value(bytes, wt)` | Skip unknown fields | Called by generated code, not users |
+| `BytesStr::from_utf8_unchecked(bytes)` | Unsafe constructor | Used by generated zero-copy decode |
+
+### Design principle
+
+Users interact with safe, high-level APIs (`#[derive(TypewayCodec)]`,
+`encode_to_vec()`, `typeway_decode()`). The derive macro generates code
+that calls the hidden `tw_*` helpers internally. The unsafe is an
+implementation detail — the boundary between safe and unsafe is the
+derive macro, which guarantees all invariants (reserves capacity before
+unchecked writes, validates UTF-8 before unchecked construction, etc.).
+
+No user code ever needs `unsafe`. The crate is safe from the outside.
