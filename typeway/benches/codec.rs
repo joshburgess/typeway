@@ -10,7 +10,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use prost::Message;
 use typeway_grpc::proto_codec::{json_to_proto_binary, proto_binary_to_json, ProtoFieldDef};
-use typeway_protobuf::{TypewayDecode, TypewayEncode};
+use typeway_protobuf::{BytesStr, TypewayDecode, TypewayEncode};
 use typeway_macros::TypewayCodec;
 
 // ---------------------------------------------------------------------------
@@ -74,6 +74,25 @@ struct LargeMessage {
     created_at: String,
     #[proto(tag = 9)]
     updated_at: String,
+}
+
+/// Medium message with BytesStr fields (zero-copy decode target).
+#[derive(Debug, Clone, Default, PartialEq, TypewayCodec)]
+struct MediumBytesStr {
+    #[proto(tag = 1)]
+    id: u64,
+    #[proto(tag = 2)]
+    username: BytesStr,
+    #[proto(tag = 3)]
+    email: BytesStr,
+    #[proto(tag = 4)]
+    bio: BytesStr,
+    #[proto(tag = 5)]
+    active: bool,
+    #[proto(tag = 6)]
+    score: f64,
+    #[proto(tag = 7)]
+    level: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -403,6 +422,15 @@ fn bench_decode(c: &mut Criterion) {
         b.iter(|| {
             let input = medium_bytes_b.clone();
             black_box(MediumMessage::typeway_decode_bytes(input).unwrap())
+        })
+    });
+    group.bench_function("medium/typeway_bytesstr", |b| {
+        b.iter(|| black_box(MediumBytesStr::typeway_decode(&medium_bytes).unwrap()))
+    });
+    group.bench_function("medium/typeway_bytesstr_zerocopy", |b| {
+        b.iter(|| {
+            let input = medium_bytes_b.clone();
+            black_box(MediumBytesStr::typeway_decode_bytes(input).unwrap())
         })
     });
     group.bench_function("medium/prost", |b| {

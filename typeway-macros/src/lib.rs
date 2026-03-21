@@ -1948,8 +1948,10 @@ enum CodecKind {
     Fixed32,
     /// Fixed 64-bit (wire type 1): f64
     Fixed64,
-    /// Length-delimited string (wire type 2)
+    /// Length-delimited String (wire type 2)
     LenString,
+    /// Length-delimited BytesStr (wire type 2, zero-copy decode)
+    LenBytesStr,
     /// Length-delimited bytes (wire type 2)
     LenBytes,
     /// Optional wrapper around another kind
@@ -1991,7 +1993,8 @@ fn classify_scalar(ty: &syn::Type) -> CodecKind {
         "bool" => CodecKind::Bool,
         "f32" => CodecKind::Fixed32,
         "f64" => CodecKind::Fixed64,
-        "String" | "BytesStr" | "typeway_protobuf::BytesStr" => CodecKind::LenString,
+        "String" => CodecKind::LenString,
+        "BytesStr" | "typeway_protobuf::BytesStr" => CodecKind::LenBytesStr,
         _ => CodecKind::Message,
     }
 }
@@ -2000,7 +2003,7 @@ fn wire_type_for_kind(kind: &CodecKind) -> u8 {
     match kind {
         CodecKind::Varint | CodecKind::Bool => 0,
         CodecKind::Fixed64 => 1,
-        CodecKind::LenString | CodecKind::LenBytes | CodecKind::Message => 2,
+        CodecKind::LenString | CodecKind::LenBytesStr | CodecKind::LenBytes | CodecKind::Message => 2,
         CodecKind::Fixed32 => 5,
         CodecKind::Optional(inner) | CodecKind::Repeated(inner) => wire_type_for_kind(inner),
         CodecKind::OptionalMessage | CodecKind::RepeatedMessage => 2,
@@ -2050,6 +2053,11 @@ fn derive_typeway_codec_struct(
     let decode_arms: Vec<TokenStream2> = codec_fields
         .iter()
         .map(gen_decode_arm)
+        .collect();
+
+    let decode_bytes_arms: Vec<TokenStream2> = codec_fields
+        .iter()
+        .map(gen_decode_bytes_arm)
         .collect();
 
     let field_names: Vec<&Ident> = codec_fields.iter().map(|f| &f.ident).collect();
@@ -2109,7 +2117,7 @@ fn derive_typeway_codec_struct(
                     let wire_type = (tag_wire & 0x07) as u8;
 
                     match field_number {
-                        #(#decode_arms)*
+                        #(#decode_bytes_arms)*
                         _ => {
                             let skipped =
                                 ::typeway_protobuf::tw_skip_wire_value(&bytes[offset..], wire_type)?;
@@ -2154,7 +2162,7 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
                 buf.extend_from_slice(&self.#ident.to_le_bytes());
             }
         },
-        CodecKind::LenString => quote! {
+        CodecKind::LenString | CodecKind::LenBytesStr => quote! {
             if !self.#ident.is_empty() {
                 ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
                 ::typeway_protobuf::tw_encode_varint(buf, self.#ident.len() as u64);
@@ -2227,7 +2235,7 @@ fn gen_encode_optional_inner(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2
             ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
             buf.extend_from_slice(&val.to_le_bytes());
         },
-        CodecKind::LenString => quote! {
+        CodecKind::LenString | CodecKind::LenBytesStr => quote! {
             ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
             ::typeway_protobuf::tw_encode_varint(buf, val.len() as u64);
             buf.extend_from_slice(val.as_bytes());
@@ -2255,7 +2263,7 @@ fn gen_encode_repeated_item(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2 
             ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
             buf.extend_from_slice(&item.to_le_bytes());
         },
-        CodecKind::LenString => quote! {
+        CodecKind::LenString | CodecKind::LenBytesStr => quote! {
             ::typeway_protobuf::tw_encode_tag(buf, #tag, #wt);
             ::typeway_protobuf::tw_encode_varint(buf, item.len() as u64);
             buf.extend_from_slice(item.as_bytes());
@@ -2290,7 +2298,7 @@ fn gen_encoded_len_field(f: &CodecField) -> TokenStream2 {
                 len += #tag_len_expr + 8;
             }
         },
-        CodecKind::LenString => quote! {
+        CodecKind::LenString | CodecKind::LenBytesStr => quote! {
             if !self.#ident.is_empty() {
                 len += #tag_len_expr
                     + ::typeway_protobuf::tw_varint_len(self.#ident.len() as u64)
@@ -2357,7 +2365,7 @@ fn gen_encoded_len_optional_inner(tag: u32, kind: &CodecKind) -> TokenStream2 {
         },
         CodecKind::Fixed32 => quote! { len += #tag_len_expr + 4; },
         CodecKind::Fixed64 => quote! { len += #tag_len_expr + 8; },
-        CodecKind::LenString => quote! {
+        CodecKind::LenString | CodecKind::LenBytesStr => quote! {
             len += #tag_len_expr
                 + ::typeway_protobuf::tw_varint_len(val.len() as u64)
                 + val.len();
@@ -2374,13 +2382,47 @@ fn gen_encoded_len_repeated_item(tag: u32, kind: &CodecKind) -> TokenStream2 {
         },
         CodecKind::Fixed32 => quote! { len += #tag_len_expr + 4; },
         CodecKind::Fixed64 => quote! { len += #tag_len_expr + 8; },
-        CodecKind::LenString => quote! {
+        CodecKind::LenString | CodecKind::LenBytesStr => quote! {
             len += #tag_len_expr
                 + ::typeway_protobuf::tw_varint_len(item.len() as u64)
                 + item.len();
         },
         _ => quote! {},
     }
+}
+
+/// Generate a decode arm for `typeway_decode_bytes` — uses `Bytes::slice()`
+/// for `BytesStr` fields (zero-copy), delegates to `gen_decode_arm` for others.
+fn gen_decode_bytes_arm(f: &CodecField) -> TokenStream2 {
+    let ident = &f.ident;
+    let tag = f.tag;
+    let ident_str = ident.to_string();
+
+    // For BytesStr fields, use Bytes::slice() — zero-copy.
+    if matches!(&f.codec_kind, CodecKind::LenBytesStr) {
+        return quote! {
+            #tag => {
+                let (str_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                offset += consumed;
+                let str_len = str_len as usize;
+                if offset + str_len > bytes.len() {
+                    return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
+                }
+                // Zero-copy: validate UTF-8, then slice the Bytes (refcount increment, no copy).
+                ::core::str::from_utf8(&bytes[offset..offset + str_len])
+                    .map_err(|_| ::typeway_protobuf::TypewayDecodeError::InvalidUtf8(#ident_str))?;
+                #ident = unsafe {
+                    ::typeway_protobuf::BytesStr::from_utf8_unchecked(
+                        input.slice(offset..offset + str_len)
+                    )
+                };
+                offset += str_len;
+            }
+        };
+    }
+
+    // For all other field types, use the same logic as typeway_decode.
+    gen_decode_arm(f)
 }
 
 fn gen_decode_arm(f: &CodecField) -> TokenStream2 {
@@ -2437,12 +2479,27 @@ fn gen_decode_arm(f: &CodecField) -> TokenStream2 {
                 if offset + str_len > bytes.len() {
                     return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
                 }
-                // Validate UTF-8 on borrowed slice, then construct String
-                // without re-validation (saves one O(n) scan).
                 let slice = &bytes[offset..offset + str_len];
                 ::core::str::from_utf8(slice)
                     .map_err(|_| ::typeway_protobuf::TypewayDecodeError::InvalidUtf8(#ident_str))?;
                 #ident = unsafe { String::from_utf8_unchecked(slice.to_vec()) };
+                offset += str_len;
+            }
+        },
+        CodecKind::LenBytesStr => quote! {
+            #tag => {
+                let (str_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                offset += consumed;
+                let str_len = str_len as usize;
+                if offset + str_len > bytes.len() {
+                    return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
+                }
+                let slice = &bytes[offset..offset + str_len];
+                ::core::str::from_utf8(slice)
+                    .map_err(|_| ::typeway_protobuf::TypewayDecodeError::InvalidUtf8(#ident_str))?;
+                #ident = ::typeway_protobuf::BytesStr::from(
+                    unsafe { String::from_utf8_unchecked(slice.to_vec()) }
+                );
                 offset += str_len;
             }
         },
@@ -2540,7 +2597,7 @@ fn gen_decode_optional_inner(ident: &Ident, ident_str: &str, kind: &CodecKind) -
             ]));
             offset += 8;
         },
-        CodecKind::LenString => quote! {
+        CodecKind::LenString | CodecKind::LenBytesStr => quote! {
             let (str_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
             offset += consumed;
             let str_len = str_len as usize;
@@ -2591,7 +2648,7 @@ fn gen_decode_repeated_item(ident: &Ident, ident_str: &str, kind: &CodecKind) ->
             ]));
             offset += 8;
         },
-        CodecKind::LenString => quote! {
+        CodecKind::LenString | CodecKind::LenBytesStr => quote! {
             let (str_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
             offset += consumed;
             let str_len = str_len as usize;
