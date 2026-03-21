@@ -204,12 +204,8 @@ pub fn tw_encode_packed_u32(buf: &mut Vec<u8>, values: &[u32]) {
 pub unsafe fn tw_encode_varint_unchecked(buf: &mut Vec<u8>, mut value: u64) {
     let mut pos = buf.len();
     let base = buf.as_mut_ptr();
-    // Single-byte fast path (no branch for the common case).
-    if value < 0x80 {
-        *base.add(pos) = value as u8;
-        buf.set_len(pos + 1);
-        return;
-    }
+    // Branchless loop — the while condition handles the single-byte case
+    // (value < 0x80 skips the loop, writes one byte, done).
     while value >= 0x80 {
         *base.add(pos) = (value as u8 & 0x7F) | 0x80;
         value >>= 7;
