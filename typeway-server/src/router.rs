@@ -179,6 +179,33 @@ impl Router {
         self.inner.write().unwrap().fallback = Some(fallback);
     }
 
+    /// Look up a handler by HTTP method and route pattern string.
+    ///
+    /// Returns a clone of the handler if found. Since `BoxedHandler` is
+    /// `Arc`-wrapped, this clone is cheap (reference count increment).
+    ///
+    /// Used by the native gRPC server to build its own dispatch table
+    /// from the already-registered REST handlers.
+    pub(crate) fn find_handler_by_pattern(
+        &self,
+        method: &http::Method,
+        pattern: &str,
+    ) -> Option<BoxedHandler> {
+        let inner = self.inner.read().unwrap();
+        let indices = inner.method_index.get_indices(method);
+        for &i in indices {
+            if inner.routes[i].pattern == pattern {
+                return Some(inner.routes[i].handler.clone());
+            }
+        }
+        None
+    }
+
+    /// Get a clone of the state injector, if one is set.
+    pub(crate) fn state_injector(&self) -> Option<StateInjector> {
+        self.inner.read().unwrap().state_injector.clone()
+    }
+
     /// Route a request to the appropriate handler.
     ///
     /// Must be called on `Arc<Router>` so the router outlives the returned future.

@@ -76,12 +76,23 @@
 //! Path captures default to `string` in the generated proto. Override by
 //! providing custom message definitions.
 
+#[cfg(feature = "prost-build")]
+pub mod build;
 pub mod bridge;
 #[cfg(feature = "client")]
 pub mod client;
+pub mod codec;
+#[cfg(feature = "compression")]
+pub mod compression;
 #[cfg(feature = "client")]
 pub mod interceptors;
 pub mod codegen;
+#[cfg(feature = "grpc-native")]
+pub mod native_client;
+#[cfg(feature = "grpc-native")]
+pub mod native_streaming;
+#[cfg(feature = "grpc-native")]
+pub mod trailer_body;
 pub mod diff;
 pub mod error_details;
 pub mod framing;
@@ -102,6 +113,8 @@ pub mod streaming;
 pub mod test_client;
 #[cfg(feature = "tonic-compat")]
 pub mod tonic_compat;
+pub mod typeway_codec;
+pub mod typeway_codec_adapter;
 #[cfg(feature = "proto-binary")]
 pub mod transcode;
 pub mod validate;
@@ -140,7 +153,32 @@ pub use spec::{ApiToGrpcSpec, GrpcServiceSpec};
 pub use docs_page::generate_docs_html;
 pub use status::{http_to_grpc_code, parse_grpc_timeout, GrpcCode, GrpcStatus, IntoGrpcStatus};
 pub use streaming::{BidirectionalStream, ClientStream, ServerStream};
+pub use typeway_codec::{
+    tw_decode_varint, tw_encode_tag, tw_encode_varint, tw_skip_wire_value, tw_tag_len,
+    tw_varint_len, tw_zigzag_decode, tw_zigzag_encode, TypewayDecode, TypewayDecodeError,
+    TypewayEncode,
+};
+pub use typeway_codec_adapter::TypewayCodecAdapter;
 pub use validate::{validate_proto, ProtoValidationError};
+pub use codec::{CodecError as GrpcCodecError, CodecErrorKind, GrpcCodec, JsonCodec};
+#[cfg(feature = "proto-binary")]
+pub use codec::{BinaryCodec, CodecDirection};
+#[cfg(feature = "compression")]
+pub use compression::{
+    compress, decode_frame_with_decompression, decompress, encode_compressed_frame,
+    incoming_compression, negotiate_compression, Compression, CompressionError,
+};
+#[cfg(feature = "grpc-native")]
+pub use native_client::{
+    ClientStream as NativeClientStream, NativeClientConfig, NativeClientError, NativeGrpcClient,
+};
+#[cfg(feature = "grpc-native")]
+pub use native_streaming::{
+    grpc_bidi_channel, grpc_channel, grpc_channel_default, GrpcBiStream, GrpcReceiver, GrpcSender,
+    StreamSendError, DEFAULT_STREAM_BUFFER,
+};
+#[cfg(feature = "grpc-native")]
+pub use trailer_body::{GrpcBody, GrpcStreamBody};
 pub use web::{
     encode_trailers_frame, is_grpc_web_request, GrpcWebLayer, GrpcWebService,
     TRAILERS_FRAME_FLAG,

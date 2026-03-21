@@ -853,6 +853,201 @@ pub(crate) fn make_grpc_server<A: ApiSpec + CollectRpcs>(
 }
 
 // ---------------------------------------------------------------------------
+// Native gRPC server (behind grpc-native feature)
+// ---------------------------------------------------------------------------
+
+/// A server that serves both REST and native gRPC on the same port.
+///
+/// Created by [`GrpcServer::with_native`]. Unlike the bridge-based
+/// [`GrpcServer`], this dispatches gRPC requests directly to handlers
+/// via a HashMap lookup, and uses real HTTP/2 trailers for gRPC status.
+#[cfg(feature = "grpc-native")]
+pub struct NativeGrpcServer<A: ApiSpec> {
+    multiplexer: crate::grpc_native::NativeMultiplexer,
+    _api: PhantomData<A>,
+}
+
+#[cfg(feature = "grpc-native")]
+impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
+    /// Enable native gRPC dispatch (bypasses the REST bridge).
+    ///
+    /// Builds a native gRPC dispatch table from the already-registered
+    /// REST handlers. gRPC requests are dispatched directly to handlers
+    /// via HashMap lookup with real HTTP/2 trailers. The REST bridge is
+    /// replaced entirely.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Server::<API>::new(handlers)
+    ///     .with_state(state)
+    ///     .with_grpc("UserService", "users.v1")
+    ///     .with_native()
+    ///     .serve(addr)
+    ///     .await?;
+    /// ```
+    pub fn with_native(self) -> NativeGrpcServer<A> {
+        let descriptor = A::service_descriptor(&self.service_name, &self.package);
+        let grpc_router = crate::grpc_native::GrpcRouter::from_router(
+            &self.router,
+            &descriptor,
+        );
+
+        let multiplexer = crate::grpc_native::NativeMultiplexer {
+            rest: RouterService::new(self.router),
+            grpc_router: Arc::new(grpc_router),
+            grpc_descriptor: Arc::new(descriptor),
+            reflection: Arc::new(self.reflection),
+            health: self.health,
+            reflection_enabled: self.reflection_enabled,
+            grpc_spec_json: self.grpc_spec_json,
+            grpc_docs_html: self.grpc_docs_html,
+            #[cfg(feature = "grpc-proto-binary")]
+            transcoder: self.transcoder,
+        };
+
+        NativeGrpcServer {
+            multiplexer,
+            _api: PhantomData,
+        }
+    }
+}
+
+#[cfg(feature = "grpc-native")]
+impl<A: ApiSpec + CollectRpcs> NativeGrpcServer<A> {
+    /// Start serving both REST and native gRPC.
+    pub async fn serve(
+        self,
+        addr: SocketAddr,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let listener = TcpListener::bind(addr).await?;
+        tracing::info!("Listening on http://{addr} (REST + native gRPC)");
+        self.serve_with_shutdown(listener, std::future::pending())
+            .await
+    }
+
+    /// Start serving with graceful shutdown.
+    pub async fn serve_with_shutdown(
+        self,
+        listener: TcpListener,
+        shutdown: impl Future<Output = ()> + Send,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let svc = self.multiplexer;
+        tokio::pin!(shutdown);
+
+        loop {
+            tokio::select! {
+                result = listener.accept() => {
+                    let (stream, _) = result?;
+                    let io = TokioIo::new(stream);
+                    let svc = svc.clone();
+                    let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
+
+                    tokio::task::spawn(async move {
+                        if let Err(e) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+                            .serve_connection(io, hyper_svc)
+                            .await
+                        {
+                            tracing::debug!("Connection closed: {e}");
+                        }
+                    });
+                }
+                () = &mut shutdown => {
+                    tracing::info!("Shutting down gracefully...");
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    /// Apply a Tower middleware layer.
+    pub fn layer<L>(self, layer: L) -> LayeredNativeGrpcServer<A, L::Service>
+    where
+        L: tower_layer::Layer<crate::grpc_native::NativeMultiplexer>,
+        L::Service: tower_service::Service<
+                http::Request<hyper::body::Incoming>,
+                Response = http::Response<BoxBody>,
+                Error = Infallible,
+            > + Clone
+            + Send
+            + 'static,
+        <L::Service as tower_service::Service<http::Request<hyper::body::Incoming>>>::Future:
+            Send + 'static,
+    {
+        LayeredNativeGrpcServer {
+            service: layer.layer(self.multiplexer),
+            _api: PhantomData,
+        }
+    }
+}
+
+/// A native gRPC+REST server with Tower middleware layers applied.
+#[cfg(feature = "grpc-native")]
+pub struct LayeredNativeGrpcServer<A: ApiSpec, S> {
+    service: S,
+    _api: PhantomData<A>,
+}
+
+#[cfg(feature = "grpc-native")]
+impl<A, S> LayeredNativeGrpcServer<A, S>
+where
+    A: ApiSpec + CollectRpcs,
+    S: tower_service::Service<
+            http::Request<hyper::body::Incoming>,
+            Response = http::Response<BoxBody>,
+            Error = Infallible,
+        > + Clone
+        + Send
+        + 'static,
+    S::Future: Send + 'static,
+{
+    /// Start serving both REST and native gRPC.
+    pub async fn serve(
+        self,
+        addr: SocketAddr,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let listener = TcpListener::bind(addr).await?;
+        tracing::info!("Listening on http://{addr} (REST + native gRPC, layered)");
+        self.serve_with_shutdown(listener, std::future::pending())
+            .await
+    }
+
+    /// Start serving with graceful shutdown.
+    pub async fn serve_with_shutdown(
+        self,
+        listener: TcpListener,
+        shutdown: impl Future<Output = ()> + Send,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let svc = self.service;
+        tokio::pin!(shutdown);
+
+        loop {
+            tokio::select! {
+                result = listener.accept() => {
+                    let (stream, _) = result?;
+                    let io = TokioIo::new(stream);
+                    let svc = svc.clone();
+                    let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
+
+                    tokio::task::spawn(async move {
+                        if let Err(e) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+                            .serve_connection(io, hyper_svc)
+                            .await
+                        {
+                            tracing::debug!("Connection closed: {e}");
+                        }
+                    });
+                }
+                () = &mut shutdown => {
+                    tracing::info!("Shutting down gracefully...");
+                    return Ok(());
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // EndpointToRpc / CollectRpcs delegation for wrapper types
 // ---------------------------------------------------------------------------
 

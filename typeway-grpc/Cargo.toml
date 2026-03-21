@@ -16,6 +16,9 @@ cli = ["dep:clap", "dep:anyhow"]
 chrono = ["dep:chrono"]
 uuid = ["dep:uuid"]
 proto-binary = []
+grpc-native = ["dep:tokio", "dep:pin-project-lite", "dep:reqwest", "dep:url", "dep:thiserror"]
+compression = ["dep:flate2"]
+prost-build = ["dep:prost", "dep:prost-build"]
 tonic-compat = ["dep:prost", "dep:tonic"]
 
 [dependencies]
@@ -38,7 +41,11 @@ url = { version = "2", optional = true }
 thiserror = { version = "2", optional = true }
 chrono = { version = "0.4", optional = true }
 uuid = { version = "1", optional = true }
+tokio = { version = "1", features = ["sync"], optional = true }
+pin-project-lite = { version = "0.2", optional = true }
+flate2 = { version = "1", optional = true }
 prost = { version = "0.13", optional = true }
+prost-build = { version = "0.13", optional = true }
 tonic = { version = "0.12", optional = true, default-features = false }
 
 [dev-dependencies]
@@ -47,6 +54,8 @@ typeway-client = { path = "../typeway-client" }
 reqwest = { version = "0.12", features = ["json"] }
 url = "2"
 thiserror = "2"
+tokio = { version = "1", features = ["full", "test-util"] }
+futures = "0.3"
 
 [lints]
 workspace = true

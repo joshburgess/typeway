@@ -248,7 +248,7 @@ impl<A: ApiSpec> Server<A> {
             },
             {
                 let dir = dir.clone();
-                Box::new(move |parts: http::request::Parts, _body: bytes::Bytes| {
+                std::sync::Arc::new(move |parts: http::request::Parts, _body: bytes::Bytes| {
                     let dir = dir.clone();
                     Box::pin(async move {
                         let path = parts.uri.path();
@@ -300,7 +300,7 @@ impl<A: ApiSpec> Server<A> {
                                 res
                             }
                         }
-                    })
+                    }) as crate::handler::ResponseFuture
                 })
             },
         );
@@ -647,7 +647,7 @@ impl<S> LayeredServer<S> {
             },
             {
                 let dir = dir.clone();
-                Box::new(move |parts: http::request::Parts, _body: bytes::Bytes| {
+                std::sync::Arc::new(move |parts: http::request::Parts, _body: bytes::Bytes| {
                     let dir = dir.clone();
                     Box::pin(async move {
                         let path = parts.uri.path();
@@ -692,7 +692,7 @@ impl<S> LayeredServer<S> {
                                 res
                             }
                         }
-                    })
+                    }) as crate::handler::ResponseFuture
                 })
             },
         );

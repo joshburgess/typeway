@@ -32,7 +32,7 @@ where
 
     // Wrap the handler with validation.
     let inner = into_boxed_handler(handler);
-    let boxed: BoxedHandler = Box::new(move |parts, body| {
+    let boxed: BoxedHandler = std::sync::Arc::new(move |parts, body| {
         // Try to deserialize and validate the body.
         let validation_result: Result<(), String> = serde_json::from_slice::<E::Req>(&body)
             .map_err(|e| format!("invalid request body: {e}"))
@@ -82,7 +82,7 @@ where
 
     let inner = into_boxed_handler(handler);
     let expected = C::CONTENT_TYPE;
-    let boxed: BoxedHandler = Box::new(move |parts, body| {
+    let boxed: BoxedHandler = std::sync::Arc::new(move |parts: http::request::Parts, body: bytes::Bytes| {
         let ct = parts
             .headers
             .get(http::header::CONTENT_TYPE)

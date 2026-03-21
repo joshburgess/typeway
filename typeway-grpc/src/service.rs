@@ -40,6 +40,11 @@ impl GrpcServiceDescriptor {
     pub fn find_method(&self, full_path: &str) -> Option<&GrpcMethodDescriptor> {
         self.methods.iter().find(|m| m.full_path == full_path)
     }
+
+    /// Look up a method descriptor by its RPC name (e.g., `"GetUser"`).
+    pub fn find_method_by_rpc_name(&self, name: &str) -> Option<&GrpcMethodDescriptor> {
+        self.methods.iter().find(|m| m.name == name)
+    }
 }
 
 /// Build a [`GrpcServiceDescriptor`] from an API type.

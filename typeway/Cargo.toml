@@ -50,6 +50,11 @@ name = "dispatch"
 harness = false
 required-features = ["server"]
 
+[[bench]]
+name = "codec"
+harness = false
+required-features = ["grpc"]
+
 [[example]]
 name = "hello_world"
 required-features = ["server"]

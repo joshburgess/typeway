@@ -182,8 +182,11 @@ pub type ResponseFuture = Pin<Box<dyn Future<Output = http::Response<BoxBody>> +
 /// Handlers receive pre-collected body bytes. This enables both Hyper
 /// and Axum body types to be collected at the router boundary before
 /// dispatch, avoiding body-type coupling in the handler infrastructure.
+///
+/// Uses `Arc` (rather than `Box`) so handlers can be cloned for dual
+/// registration (e.g., both REST and native gRPC dispatch).
 pub type BoxedHandler =
-    Box<dyn Fn(http::request::Parts, bytes::Bytes) -> ResponseFuture + Send + Sync>;
+    std::sync::Arc<dyn Fn(http::request::Parts, bytes::Bytes) -> ResponseFuture + Send + Sync>;
 
 /// Erase a handler's type for storage in the router.
 pub fn into_boxed_handler<H, Args>(handler: H) -> BoxedHandler
@@ -191,7 +194,7 @@ where
     H: Handler<Args>,
     Args: 'static,
 {
-    Box::new(move |parts, body| {
+    std::sync::Arc::new(move |parts, body| {
         let h = handler.clone();
         h.call(parts, body)
     })

@@ -259,7 +259,7 @@ where
     let match_fn = P::Inner::match_fn();
 
     // Type-erase via AuthHandler::call
-    let boxed: BoxedHandler = Box::new(move |parts, body| {
+    let boxed: BoxedHandler = std::sync::Arc::new(move |parts, body| {
         let h = handler.clone();
         h.call(parts, body)
     });

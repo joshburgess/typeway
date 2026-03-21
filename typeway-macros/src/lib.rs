@@ -1859,3 +1859,717 @@ fn apply_rename_strategy(name: &str, strategy: &str) -> String {
         _ => name.to_string(),
     }
 }
+
+// ---------------------------------------------------------------------------
+// #[derive(TypewayCodec)] — compile-time specialized protobuf encode/decode
+// ---------------------------------------------------------------------------
+
+/// Derive `TypewayEncode` and `TypewayDecode` for a struct.
+///
+/// Generates specialized encode/decode functions with no runtime dispatch.
+/// Each field is encoded/decoded directly based on its Rust type and proto
+/// tag number.
+///
+/// # Attributes
+///
+/// - `#[proto(tag = N)]` — Set the protobuf field tag number (default: 1-indexed position)
+///
+/// # Supported field types
+///
+/// | Rust type | Proto type | Wire type |
+/// |-----------|-----------|-----------|
+/// | `u32` | uint32 | varint (0) |
+/// | `u64` | uint64 | varint (0) |
+/// | `i32` | int32 | varint (0) |
+/// | `i64` | int64 | varint (0) |
+/// | `bool` | bool | varint (0) |
+/// | `f32` | float | 32-bit (5) |
+/// | `f64` | double | 64-bit (1) |
+/// | `String` | string | len-delimited (2) |
+/// | `Vec<u8>` | bytes | len-delimited (2) |
+/// | `Vec<T>` | repeated T | (varies) |
+/// | `Option<T>` | optional T | (varies) |
+///
+/// # Example
+///
+/// ```ignore
+/// #[derive(TypewayCodec)]
+/// struct User {
+///     #[proto(tag = 1)]
+///     id: u32,
+///     #[proto(tag = 2)]
+///     name: String,
+///     #[proto(tag = 3)]
+///     active: bool,
+/// }
+/// ```
+#[proc_macro_derive(TypewayCodec, attributes(proto))]
+pub fn derive_typeway_codec(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    match derive_typeway_codec_impl(input) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+fn derive_typeway_codec_impl(input: syn::DeriveInput) -> syn::Result<TokenStream2> {
+    let name = &input.ident;
+
+    match &input.data {
+        syn::Data::Struct(data) => match &data.fields {
+            syn::Fields::Named(named) => derive_typeway_codec_struct(name, &named.named),
+            _ => Err(syn::Error::new_spanned(
+                name,
+                "TypewayCodec only supports structs with named fields",
+            )),
+        },
+        _ => Err(syn::Error::new_spanned(
+            name,
+            "TypewayCodec only supports structs (not enums or unions)",
+        )),
+    }
+}
+
+/// Information about a single field for codec generation.
+struct CodecField {
+    ident: Ident,
+    ty: syn::Type,
+    tag: u32,
+    codec_kind: CodecKind,
+}
+
+/// What kind of encoding a field needs.
+enum CodecKind {
+    /// Varint (wire type 0): u32, u64, i32, i64
+    Varint,
+    /// Bool (wire type 0, but needs special encode/decode)
+    Bool,
+    /// Fixed 32-bit (wire type 5): f32
+    Fixed32,
+    /// Fixed 64-bit (wire type 1): f64
+    Fixed64,
+    /// Length-delimited string (wire type 2)
+    LenString,
+    /// Length-delimited bytes (wire type 2)
+    LenBytes,
+    /// Optional wrapper around another kind
+    Optional(Box<CodecKind>),
+    /// Repeated (Vec<T>) wrapper — element kind + element type for iteration
+    Repeated(Box<CodecKind>),
+    /// Nested message that also implements TypewayEncode/TypewayDecode
+    Message,
+    /// Optional nested message
+    OptionalMessage,
+    /// Repeated nested message
+    RepeatedMessage,
+}
+
+fn classify_type(ty: &syn::Type) -> CodecKind {
+    if let Some(inner) = is_option_type(ty) {
+        let inner_kind = classify_type(inner);
+        match inner_kind {
+            CodecKind::Message => CodecKind::OptionalMessage,
+            other => CodecKind::Optional(Box::new(other)),
+        }
+    } else if is_vec_u8(ty) {
+        CodecKind::LenBytes
+    } else if let Some(inner) = is_vec_type(ty) {
+        let inner_kind = classify_type(inner);
+        match inner_kind {
+            CodecKind::Message => CodecKind::RepeatedMessage,
+            other => CodecKind::Repeated(Box::new(other)),
+        }
+    } else {
+        classify_scalar(ty)
+    }
+}
+
+fn classify_scalar(ty: &syn::Type) -> CodecKind {
+    let ty_str = quote!(#ty).to_string().replace(' ', "");
+    match ty_str.as_str() {
+        "u32" | "u64" | "i32" | "i64" => CodecKind::Varint,
+        "bool" => CodecKind::Bool,
+        "f32" => CodecKind::Fixed32,
+        "f64" => CodecKind::Fixed64,
+        "String" => CodecKind::LenString,
+        _ => CodecKind::Message,
+    }
+}
+
+fn wire_type_for_kind(kind: &CodecKind) -> u8 {
+    match kind {
+        CodecKind::Varint | CodecKind::Bool => 0,
+        CodecKind::Fixed64 => 1,
+        CodecKind::LenString | CodecKind::LenBytes | CodecKind::Message => 2,
+        CodecKind::Fixed32 => 5,
+        CodecKind::Optional(inner) | CodecKind::Repeated(inner) => wire_type_for_kind(inner),
+        CodecKind::OptionalMessage | CodecKind::RepeatedMessage => 2,
+    }
+}
+
+fn derive_typeway_codec_struct(
+    name: &Ident,
+    fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
+) -> syn::Result<TokenStream2> {
+    // Parse fields.
+    let mut codec_fields = Vec::new();
+    for (i, field) in fields.iter().enumerate() {
+        let ident = field.ident.clone().unwrap();
+        let tag = extract_proto_tag(&field.attrs).unwrap_or((i as u32) + 1);
+        let codec_kind = classify_type(&field.ty);
+        codec_fields.push(CodecField {
+            ident,
+            ty: field.ty.clone(),
+            tag,
+            codec_kind,
+        });
+    }
+
+    // Generate encode_to body.
+    let encode_stmts: Vec<TokenStream2> = codec_fields
+        .iter()
+        .map(|f| gen_encode_field(f))
+        .collect();
+
+    // Generate encoded_len body.
+    let len_stmts: Vec<TokenStream2> = codec_fields
+        .iter()
+        .map(|f| gen_encoded_len_field(f))
+        .collect();
+
+    // Generate decode body.
+    let field_defaults: Vec<TokenStream2> = codec_fields
+        .iter()
+        .map(|f| {
+            let ident = &f.ident;
+            let ty = &f.ty;
+            quote! { let mut #ident: #ty = ::core::default::Default::default(); }
+        })
+        .collect();
+
+    let decode_arms: Vec<TokenStream2> = codec_fields
+        .iter()
+        .map(|f| gen_decode_arm(f))
+        .collect();
+
+    let field_names: Vec<&Ident> = codec_fields.iter().map(|f| &f.ident).collect();
+
+    Ok(quote! {
+        impl ::typeway_grpc::TypewayEncode for #name {
+            fn encoded_len(&self) -> usize {
+                let mut len: usize = 0;
+                #(#len_stmts)*
+                len
+            }
+
+            fn encode_to(&self, buf: &mut ::std::vec::Vec<u8>) {
+                #(#encode_stmts)*
+            }
+        }
+
+        impl ::typeway_grpc::TypewayDecode for #name {
+            fn typeway_decode(
+                bytes: &[u8],
+            ) -> ::core::result::Result<Self, ::typeway_grpc::TypewayDecodeError> {
+                #(#field_defaults)*
+                let mut offset: usize = 0;
+
+                while offset < bytes.len() {
+                    let (tag_wire, consumed) =
+                        ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                    offset += consumed;
+                    let field_number = (tag_wire >> 3) as u32;
+                    let wire_type = (tag_wire & 0x07) as u8;
+
+                    match field_number {
+                        #(#decode_arms)*
+                        _ => {
+                            let skipped =
+                                ::typeway_grpc::tw_skip_wire_value(&bytes[offset..], wire_type)?;
+                            offset += skipped;
+                        }
+                    }
+                }
+
+                Ok(#name { #(#field_names),* })
+            }
+        }
+    })
+}
+
+fn gen_encode_field(f: &CodecField) -> TokenStream2 {
+    let ident = &f.ident;
+    let tag = f.tag;
+    let wt = wire_type_for_kind(&f.codec_kind);
+
+    match &f.codec_kind {
+        CodecKind::Varint => quote! {
+            if self.#ident != 0 {
+                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                ::typeway_grpc::tw_encode_varint(buf, self.#ident as u64);
+            }
+        },
+        CodecKind::Bool => quote! {
+            if self.#ident {
+                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                buf.push(1);
+            }
+        },
+        CodecKind::Fixed32 => quote! {
+            if self.#ident != 0.0 {
+                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                buf.extend_from_slice(&self.#ident.to_le_bytes());
+            }
+        },
+        CodecKind::Fixed64 => quote! {
+            if self.#ident != 0.0 {
+                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                buf.extend_from_slice(&self.#ident.to_le_bytes());
+            }
+        },
+        CodecKind::LenString => quote! {
+            if !self.#ident.is_empty() {
+                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                ::typeway_grpc::tw_encode_varint(buf, self.#ident.len() as u64);
+                buf.extend_from_slice(self.#ident.as_bytes());
+            }
+        },
+        CodecKind::LenBytes => quote! {
+            if !self.#ident.is_empty() {
+                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                ::typeway_grpc::tw_encode_varint(buf, self.#ident.len() as u64);
+                buf.extend_from_slice(&self.#ident);
+            }
+        },
+        CodecKind::Message => quote! {
+            {
+                let nested = ::typeway_grpc::TypewayEncode::encode_to_vec(&self.#ident);
+                if !nested.is_empty() {
+                    ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                    ::typeway_grpc::tw_encode_varint(buf, nested.len() as u64);
+                    buf.extend_from_slice(&nested);
+                }
+            }
+        },
+        CodecKind::Optional(inner) => {
+            let inner_encode = gen_encode_optional_inner(tag, wt, inner);
+            quote! {
+                if let Some(ref val) = self.#ident {
+                    #inner_encode
+                }
+            }
+        }
+        CodecKind::OptionalMessage => quote! {
+            if let Some(ref val) = self.#ident {
+                let nested = ::typeway_grpc::TypewayEncode::encode_to_vec(val);
+                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                ::typeway_grpc::tw_encode_varint(buf, nested.len() as u64);
+                buf.extend_from_slice(&nested);
+            }
+        },
+        CodecKind::Repeated(inner) => {
+            let item_encode = gen_encode_repeated_item(tag, wt, inner);
+            quote! {
+                for item in &self.#ident {
+                    #item_encode
+                }
+            }
+        }
+        CodecKind::RepeatedMessage => quote! {
+            for item in &self.#ident {
+                let nested = ::typeway_grpc::TypewayEncode::encode_to_vec(item);
+                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                ::typeway_grpc::tw_encode_varint(buf, nested.len() as u64);
+                buf.extend_from_slice(&nested);
+            }
+        },
+    }
+}
+
+fn gen_encode_optional_inner(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2 {
+    match kind {
+        CodecKind::Varint => quote! {
+            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            ::typeway_grpc::tw_encode_varint(buf, *val as u64);
+        },
+        CodecKind::Fixed32 => quote! {
+            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            buf.extend_from_slice(&val.to_le_bytes());
+        },
+        CodecKind::Fixed64 => quote! {
+            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            buf.extend_from_slice(&val.to_le_bytes());
+        },
+        CodecKind::LenString => quote! {
+            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            ::typeway_grpc::tw_encode_varint(buf, val.len() as u64);
+            buf.extend_from_slice(val.as_bytes());
+        },
+        CodecKind::LenBytes => quote! {
+            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            ::typeway_grpc::tw_encode_varint(buf, val.len() as u64);
+            buf.extend_from_slice(val);
+        },
+        _ => quote! {},
+    }
+}
+
+fn gen_encode_repeated_item(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2 {
+    match kind {
+        CodecKind::Varint => quote! {
+            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            ::typeway_grpc::tw_encode_varint(buf, *item as u64);
+        },
+        CodecKind::Fixed32 => quote! {
+            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            buf.extend_from_slice(&item.to_le_bytes());
+        },
+        CodecKind::Fixed64 => quote! {
+            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            buf.extend_from_slice(&item.to_le_bytes());
+        },
+        CodecKind::LenString => quote! {
+            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            ::typeway_grpc::tw_encode_varint(buf, item.len() as u64);
+            buf.extend_from_slice(item.as_bytes());
+        },
+        _ => quote! {},
+    }
+}
+
+fn gen_encoded_len_field(f: &CodecField) -> TokenStream2 {
+    let ident = &f.ident;
+    let tag = f.tag;
+    let tag_len_expr = quote! { ::typeway_grpc::tw_tag_len(#tag) };
+
+    match &f.codec_kind {
+        CodecKind::Varint => quote! {
+            if self.#ident != 0 {
+                len += #tag_len_expr + ::typeway_grpc::tw_varint_len(self.#ident as u64);
+            }
+        },
+        CodecKind::Bool => quote! {
+            if self.#ident {
+                len += #tag_len_expr + 1;
+            }
+        },
+        CodecKind::Fixed32 => quote! {
+            if self.#ident != 0.0 {
+                len += #tag_len_expr + 4;
+            }
+        },
+        CodecKind::Fixed64 => quote! {
+            if self.#ident != 0.0 {
+                len += #tag_len_expr + 8;
+            }
+        },
+        CodecKind::LenString => quote! {
+            if !self.#ident.is_empty() {
+                len += #tag_len_expr
+                    + ::typeway_grpc::tw_varint_len(self.#ident.len() as u64)
+                    + self.#ident.len();
+            }
+        },
+        CodecKind::LenBytes => quote! {
+            if !self.#ident.is_empty() {
+                len += #tag_len_expr
+                    + ::typeway_grpc::tw_varint_len(self.#ident.len() as u64)
+                    + self.#ident.len();
+            }
+        },
+        CodecKind::Message => quote! {
+            {
+                let nested_len = ::typeway_grpc::TypewayEncode::encoded_len(&self.#ident);
+                if nested_len > 0 {
+                    len += #tag_len_expr
+                        + ::typeway_grpc::tw_varint_len(nested_len as u64)
+                        + nested_len;
+                }
+            }
+        },
+        CodecKind::Optional(inner) => {
+            let inner_len = gen_encoded_len_optional_inner(tag, inner);
+            quote! {
+                if let Some(ref val) = self.#ident {
+                    #inner_len
+                }
+            }
+        }
+        CodecKind::OptionalMessage => quote! {
+            if let Some(ref val) = self.#ident {
+                let nested_len = ::typeway_grpc::TypewayEncode::encoded_len(val);
+                len += #tag_len_expr
+                    + ::typeway_grpc::tw_varint_len(nested_len as u64)
+                    + nested_len;
+            }
+        },
+        CodecKind::Repeated(inner) => {
+            let item_len = gen_encoded_len_repeated_item(tag, inner);
+            quote! {
+                for item in &self.#ident {
+                    #item_len
+                }
+            }
+        }
+        CodecKind::RepeatedMessage => quote! {
+            for item in &self.#ident {
+                let nested_len = ::typeway_grpc::TypewayEncode::encoded_len(item);
+                len += #tag_len_expr
+                    + ::typeway_grpc::tw_varint_len(nested_len as u64)
+                    + nested_len;
+            }
+        },
+    }
+}
+
+fn gen_encoded_len_optional_inner(tag: u32, kind: &CodecKind) -> TokenStream2 {
+    let tag_len_expr = quote! { ::typeway_grpc::tw_tag_len(#tag) };
+    match kind {
+        CodecKind::Varint => quote! {
+            len += #tag_len_expr + ::typeway_grpc::tw_varint_len(*val as u64);
+        },
+        CodecKind::Fixed32 => quote! { len += #tag_len_expr + 4; },
+        CodecKind::Fixed64 => quote! { len += #tag_len_expr + 8; },
+        CodecKind::LenString => quote! {
+            len += #tag_len_expr
+                + ::typeway_grpc::tw_varint_len(val.len() as u64)
+                + val.len();
+        },
+        _ => quote! {},
+    }
+}
+
+fn gen_encoded_len_repeated_item(tag: u32, kind: &CodecKind) -> TokenStream2 {
+    let tag_len_expr = quote! { ::typeway_grpc::tw_tag_len(#tag) };
+    match kind {
+        CodecKind::Varint => quote! {
+            len += #tag_len_expr + ::typeway_grpc::tw_varint_len(*item as u64);
+        },
+        CodecKind::Fixed32 => quote! { len += #tag_len_expr + 4; },
+        CodecKind::Fixed64 => quote! { len += #tag_len_expr + 8; },
+        CodecKind::LenString => quote! {
+            len += #tag_len_expr
+                + ::typeway_grpc::tw_varint_len(item.len() as u64)
+                + item.len();
+        },
+        _ => quote! {},
+    }
+}
+
+fn gen_decode_arm(f: &CodecField) -> TokenStream2 {
+    let ident = &f.ident;
+    let tag = f.tag;
+    let ident_str = ident.to_string();
+
+    match &f.codec_kind {
+        CodecKind::Varint => quote! {
+            #tag => {
+                let (val, consumed) = ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                offset += consumed;
+                #ident = val as _;
+            }
+        },
+        CodecKind::Bool => quote! {
+            #tag => {
+                let (val, consumed) = ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                offset += consumed;
+                #ident = val != 0;
+            }
+        },
+        CodecKind::Fixed32 => quote! {
+            #tag => {
+                if offset + 4 > bytes.len() {
+                    return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+                }
+                #ident = f32::from_le_bytes([
+                    bytes[offset], bytes[offset + 1],
+                    bytes[offset + 2], bytes[offset + 3],
+                ]);
+                offset += 4;
+            }
+        },
+        CodecKind::Fixed64 => quote! {
+            #tag => {
+                if offset + 8 > bytes.len() {
+                    return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+                }
+                #ident = f64::from_le_bytes([
+                    bytes[offset], bytes[offset + 1],
+                    bytes[offset + 2], bytes[offset + 3],
+                    bytes[offset + 4], bytes[offset + 5],
+                    bytes[offset + 6], bytes[offset + 7],
+                ]);
+                offset += 8;
+            }
+        },
+        CodecKind::LenString => quote! {
+            #tag => {
+                let (str_len, consumed) = ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                offset += consumed;
+                let str_len = str_len as usize;
+                if offset + str_len > bytes.len() {
+                    return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+                }
+                #ident = String::from_utf8(bytes[offset..offset + str_len].to_vec())
+                    .map_err(|_| ::typeway_grpc::TypewayDecodeError::InvalidUtf8(#ident_str))?;
+                offset += str_len;
+            }
+        },
+        CodecKind::LenBytes => quote! {
+            #tag => {
+                let (byte_len, consumed) = ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                offset += consumed;
+                let byte_len = byte_len as usize;
+                if offset + byte_len > bytes.len() {
+                    return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+                }
+                #ident = bytes[offset..offset + byte_len].to_vec();
+                offset += byte_len;
+            }
+        },
+        CodecKind::Message => quote! {
+            #tag => {
+                let (msg_len, consumed) = ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                offset += consumed;
+                let msg_len = msg_len as usize;
+                if offset + msg_len > bytes.len() {
+                    return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+                }
+                #ident = ::typeway_grpc::TypewayDecode::typeway_decode(
+                    &bytes[offset..offset + msg_len]
+                )?;
+                offset += msg_len;
+            }
+        },
+        CodecKind::Optional(inner) => {
+            let inner_decode = gen_decode_optional_inner(ident, &ident_str, inner);
+            quote! { #tag => { #inner_decode } }
+        }
+        CodecKind::OptionalMessage => quote! {
+            #tag => {
+                let (msg_len, consumed) = ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                offset += consumed;
+                let msg_len = msg_len as usize;
+                if offset + msg_len > bytes.len() {
+                    return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+                }
+                #ident = Some(::typeway_grpc::TypewayDecode::typeway_decode(
+                    &bytes[offset..offset + msg_len]
+                )?);
+                offset += msg_len;
+            }
+        },
+        CodecKind::Repeated(inner) => {
+            let item_decode = gen_decode_repeated_item(ident, &ident_str, inner);
+            quote! { #tag => { #item_decode } }
+        }
+        CodecKind::RepeatedMessage => quote! {
+            #tag => {
+                let (msg_len, consumed) = ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                offset += consumed;
+                let msg_len = msg_len as usize;
+                if offset + msg_len > bytes.len() {
+                    return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+                }
+                #ident.push(::typeway_grpc::TypewayDecode::typeway_decode(
+                    &bytes[offset..offset + msg_len]
+                )?);
+                offset += msg_len;
+            }
+        },
+    }
+}
+
+fn gen_decode_optional_inner(ident: &Ident, ident_str: &str, kind: &CodecKind) -> TokenStream2 {
+    match kind {
+        CodecKind::Varint => quote! {
+            let (val, consumed) = ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+            offset += consumed;
+            #ident = Some(val as _);
+        },
+        CodecKind::Fixed32 => quote! {
+            if offset + 4 > bytes.len() {
+                return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+            }
+            #ident = Some(f32::from_le_bytes([
+                bytes[offset], bytes[offset + 1],
+                bytes[offset + 2], bytes[offset + 3],
+            ]));
+            offset += 4;
+        },
+        CodecKind::Fixed64 => quote! {
+            if offset + 8 > bytes.len() {
+                return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+            }
+            #ident = Some(f64::from_le_bytes([
+                bytes[offset], bytes[offset + 1],
+                bytes[offset + 2], bytes[offset + 3],
+                bytes[offset + 4], bytes[offset + 5],
+                bytes[offset + 6], bytes[offset + 7],
+            ]));
+            offset += 8;
+        },
+        CodecKind::LenString => quote! {
+            let (str_len, consumed) = ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+            offset += consumed;
+            let str_len = str_len as usize;
+            if offset + str_len > bytes.len() {
+                return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+            }
+            #ident = Some(String::from_utf8(bytes[offset..offset + str_len].to_vec())
+                .map_err(|_| ::typeway_grpc::TypewayDecodeError::InvalidUtf8(#ident_str))?);
+            offset += str_len;
+        },
+        _ => quote! {
+            let skipped = ::typeway_grpc::tw_skip_wire_value(&bytes[offset..], wire_type)?;
+            offset += skipped;
+        },
+    }
+}
+
+fn gen_decode_repeated_item(ident: &Ident, ident_str: &str, kind: &CodecKind) -> TokenStream2 {
+    match kind {
+        CodecKind::Varint => quote! {
+            let (val, consumed) = ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+            offset += consumed;
+            #ident.push(val as _);
+        },
+        CodecKind::Fixed32 => quote! {
+            if offset + 4 > bytes.len() {
+                return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+            }
+            #ident.push(f32::from_le_bytes([
+                bytes[offset], bytes[offset + 1],
+                bytes[offset + 2], bytes[offset + 3],
+            ]));
+            offset += 4;
+        },
+        CodecKind::Fixed64 => quote! {
+            if offset + 8 > bytes.len() {
+                return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+            }
+            #ident.push(f64::from_le_bytes([
+                bytes[offset], bytes[offset + 1],
+                bytes[offset + 2], bytes[offset + 3],
+                bytes[offset + 4], bytes[offset + 5],
+                bytes[offset + 6], bytes[offset + 7],
+            ]));
+            offset += 8;
+        },
+        CodecKind::LenString => quote! {
+            let (str_len, consumed) = ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+            offset += consumed;
+            let str_len = str_len as usize;
+            if offset + str_len > bytes.len() {
+                return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
+            }
+            #ident.push(String::from_utf8(bytes[offset..offset + str_len].to_vec())
+                .map_err(|_| ::typeway_grpc::TypewayDecodeError::InvalidUtf8(#ident_str))?);
+            offset += str_len;
+        },
+        _ => quote! {
+            let skipped = ::typeway_grpc::tw_skip_wire_value(&bytes[offset..], wire_type)?;
+            offset += skipped;
+        },
+    }
+}

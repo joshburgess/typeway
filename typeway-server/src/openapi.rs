@@ -110,7 +110,7 @@ Object.entries(spec.paths || {}).forEach(([path, item]) => {
 
 /// Create a boxed handler that returns a fixed JSON response.
 pub(crate) fn spec_handler(spec_json: Arc<String>) -> BoxedHandler {
-    Box::new(move |_parts, _body| -> ResponseFuture {
+    std::sync::Arc::new(move |_parts, _body| -> ResponseFuture {
         let json = spec_json.clone();
         Box::pin(async move {
             let body = body_from_bytes(Bytes::from(json.as_bytes().to_vec()));
@@ -131,7 +131,7 @@ pub(crate) fn docs_handler(title: &str, version: &str, spec_json: &str) -> Boxed
         .replace("{{VERSION}}", version)
         .replace("{{SPEC_JSON}}", spec_json);
     let html = Arc::new(html);
-    Box::new(move |_parts, _body| -> ResponseFuture {
+    std::sync::Arc::new(move |_parts, _body| -> ResponseFuture {
         let html = html.clone();
         Box::pin(async move {
             let body = body_from_string(html.to_string());

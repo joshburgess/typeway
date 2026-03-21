@@ -222,7 +222,7 @@ where
     let pattern = S::Inner::pattern();
     let match_fn = S::Inner::match_fn();
 
-    let boxed: BoxedHandler = Box::new(move |parts, body| {
+    let boxed: BoxedHandler = std::sync::Arc::new(move |parts, body| {
         let h = handler.clone();
         h.call(parts, body)
     });
