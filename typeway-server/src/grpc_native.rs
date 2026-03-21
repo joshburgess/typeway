@@ -440,7 +440,47 @@ async fn wrap_response_as_grpc(
         "content-type",
         response_content_type.parse().expect("valid content-type"),
     );
+    // Also set grpc-status in headers (in addition to trailers) so that
+    // simple clients (reqwest, GrpcTestClient) that can't read HTTP/2
+    // trailers still see the status code.
+    response.headers_mut().insert(
+        "grpc-status",
+        grpc_code
+            .as_i32()
+            .to_string()
+            .parse()
+            .expect("valid grpc-status"),
+    );
     response
+}
+
+/// Build an error response with GrpcBody trailers AND grpc-status in headers.
+fn grpc_error_response(status: GrpcStatus) -> http::Response<BoxBody> {
+    let code = status.code;
+    let message = status.message.clone();
+    let grpc_body = GrpcBody::error(status);
+    let boxed_body: BoxBody = http_body_util::BodyExt::boxed_unsync(
+        http_body_util::BodyExt::map_err(grpc_body, |e| match e {}),
+    );
+    let mut res = http::Response::new(boxed_body);
+    *res.status_mut() = http::StatusCode::OK;
+    res.headers_mut().insert(
+        "content-type",
+        http::HeaderValue::from_static("application/grpc"),
+    );
+    res.headers_mut().insert(
+        "grpc-status",
+        code.as_i32()
+            .to_string()
+            .parse()
+            .expect("valid grpc-status"),
+    );
+    if !message.is_empty() {
+        if let Ok(val) = message.parse() {
+            res.headers_mut().insert("grpc-message", val);
+        }
+    }
+    res
 }
 
 impl tower_service::Service<http::Request<hyper::body::Incoming>> for NativeMultiplexer {
@@ -524,17 +564,7 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for NativeMult
                         let status = GrpcStatus::unimplemented(
                             &format!("method '{}' not found in service", grpc_path),
                         );
-                        let grpc_body = GrpcBody::error(status);
-                        let boxed_body: BoxBody = http_body_util::BodyExt::boxed_unsync(
-                            http_body_util::BodyExt::map_err(grpc_body, |e| match e {}),
-                        );
-                        let mut res = http::Response::new(boxed_body);
-                        *res.status_mut() = http::StatusCode::OK;
-                        res.headers_mut().insert(
-                            "content-type",
-                            http::HeaderValue::from_static("application/grpc"),
-                        );
-                        return Ok(res);
+                        return Ok(grpc_error_response(status));
                     }
                 };
 
@@ -586,17 +616,7 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for NativeMult
                                 code: GrpcCode::InvalidArgument,
                                 message: format!("failed to decode request: {e}"),
                             };
-                            let grpc_body = GrpcBody::error(status);
-                            let boxed_body: BoxBody = http_body_util::BodyExt::boxed_unsync(
-                                http_body_util::BodyExt::map_err(grpc_body, |e| match e {}),
-                            );
-                            let mut res = http::Response::new(boxed_body);
-                            *res.status_mut() = http::StatusCode::OK;
-                            res.headers_mut().insert(
-                                "content-type",
-                                http::HeaderValue::from_static("application/grpc+json"),
-                            );
-                            return Ok(res);
+                            return Ok(grpc_error_response(status));
                         }
                     }
                 };
@@ -609,17 +629,7 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for NativeMult
                             code: GrpcCode::InvalidArgument,
                             message: format!("failed to decode request: {e}"),
                         };
-                        let grpc_body = GrpcBody::error(status);
-                        let boxed_body: BoxBody = http_body_util::BodyExt::boxed_unsync(
-                            http_body_util::BodyExt::map_err(grpc_body, |e| match e {}),
-                        );
-                        let mut res = http::Response::new(boxed_body);
-                        *res.status_mut() = http::StatusCode::OK;
-                        res.headers_mut().insert(
-                            "content-type",
-                            http::HeaderValue::from_static("application/grpc+json"),
-                        );
-                        return Ok(res);
+                        return Ok(grpc_error_response(status));
                     }
                 };
 
@@ -645,17 +655,7 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for NativeMult
                                 code: GrpcCode::DeadlineExceeded,
                                 message: "deadline exceeded".to_string(),
                             };
-                            let grpc_body = GrpcBody::error(status);
-                            let boxed_body: BoxBody = http_body_util::BodyExt::boxed_unsync(
-                                http_body_util::BodyExt::map_err(grpc_body, |e| match e {}),
-                            );
-                            let mut res = http::Response::new(boxed_body);
-                            *res.status_mut() = http::StatusCode::OK;
-                            res.headers_mut().insert(
-                                "content-type",
-                                http::HeaderValue::from_static("application/grpc+json"),
-                            );
-                            return Ok(res);
+                            return Ok(grpc_error_response(status));
                         }
                     }
                 } else {
