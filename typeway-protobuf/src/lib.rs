@@ -17,7 +17,7 @@ use bytes::Bytes;
 // Export the codec traits and helpers from this crate (the canonical location).
 pub use codec::{
     tw_decode_varint, tw_encode_tag, tw_encode_varint, tw_encode_varint_array,
-    tw_skip_wire_value, tw_tag_len,
+    tw_encode_varint_unchecked, tw_skip_wire_value, tw_tag_len,
     tw_varint_len, tw_zigzag_decode, tw_zigzag_encode, TypewayDecode, TypewayDecodeError,
     TypewayEncode,
 };

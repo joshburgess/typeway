@@ -139,31 +139,25 @@ pub fn tw_encode_varint_array(value: u64) -> ([u8; 10], usize) {
 
 /// Encode a varint to a buffer.
 ///
-/// Uses unsafe spare capacity writes to avoid per-byte bounds checks
-/// when the buffer has enough room (common after reserve).
+/// Writes directly to the Vec's spare capacity with a single `set_len`
+/// at the end — zero bounds checks per byte. Matches prost's approach.
 #[inline]
-pub fn tw_encode_varint(buf: &mut Vec<u8>, value: u64) {
-    // Fast path: single byte (< 128). Most tags and small values.
-    if value < 0x80 {
-        buf.push(value as u8);
-        return;
-    }
-    // Two-byte fast path.
-    if value < 0x4000 {
-        buf.reserve(2);
-        let len = buf.len();
-        // Safety: we just reserved 2 bytes.
-        unsafe {
-            let ptr = buf.as_mut_ptr().add(len);
-            *ptr = (value as u8 & 0x7F) | 0x80;
-            *ptr.add(1) = (value >> 7) as u8;
-            buf.set_len(len + 2);
+pub fn tw_encode_varint(buf: &mut Vec<u8>, mut value: u64) {
+    // Ensure we have room for the worst case (10 bytes for u64).
+    buf.reserve(10);
+    let mut pos = buf.len();
+    // Safety: we reserved 10 bytes of spare capacity.
+    unsafe {
+        let base = buf.as_mut_ptr();
+        while value >= 0x80 {
+            *base.add(pos) = (value as u8 & 0x7F) | 0x80;
+            value >>= 7;
+            pos += 1;
         }
-        return;
+        *base.add(pos) = value as u8;
+        pos += 1;
+        buf.set_len(pos);
     }
-    // General case via stack buffer.
-    let (arr, n) = tw_encode_varint_array(value);
-    buf.extend_from_slice(&arr[..n]);
 }
 
 /// Encode a batch of u32 values as packed varints using direct unsafe writes.
@@ -193,6 +187,23 @@ pub fn tw_encode_packed_u32(buf: &mut Vec<u8>, values: &[u32]) {
         }
         buf.set_len(pos);
     }
+}
+
+/// Encode a varint to a buffer that is known to have enough spare capacity.
+///
+/// # Safety
+/// The caller must ensure `buf` has at least 10 bytes of spare capacity.
+#[inline]
+pub unsafe fn tw_encode_varint_unchecked(buf: &mut Vec<u8>, mut value: u64) {
+    let mut pos = buf.len();
+    let base = buf.as_mut_ptr();
+    while value >= 0x80 {
+        *base.add(pos) = (value as u8 & 0x7F) | 0x80;
+        value >>= 7;
+        pos += 1;
+    }
+    *base.add(pos) = value as u8;
+    buf.set_len(pos + 1);
 }
 
 /// Compute the encoded length of a varint.

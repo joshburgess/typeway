@@ -2205,33 +2205,48 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
         CodecKind::Repeated(inner) => {
             if is_packable(inner) {
                 let item_write = gen_packed_item_write(inner);
-                // For fixed-size types, compute packed_len without iterating.
-                let packed_len_expr = match inner.as_ref() {
-                    CodecKind::Fixed32 => quote! { self.#ident.len() * 4 },
-                    CodecKind::Fixed64 => quote! { self.#ident.len() * 8 },
-                    CodecKind::Bool => quote! { self.#ident.len() },
-                    _ => {
-                        let item_len = gen_packed_item_len(inner);
-                        quote! { {
-                            let mut packed_len: usize = 0;
-                            for item in &self.#ident { packed_len += #item_len; }
-                            packed_len
-                        } }
+                let is_varint = matches!(inner.as_ref(), CodecKind::Varint);
+                if is_varint {
+                    // Single-pass approach for varints: write data first, backfill length.
+                    // Avoids iterating twice (once for length, once for data).
+                    quote! {
+                        if !self.#ident.is_empty() {
+                            ::typeway_protobuf::tw_encode_tag(buf, #tag, 2u8);
+                            let len_pos = buf.len();
+                            buf.push(0); // placeholder for length
+                            let data_start = buf.len();
+                            buf.reserve(self.#ident.len() * 5);
+                            for item in &self.#ident {
+                                #item_write
+                            }
+                            let packed_len = buf.len() - data_start;
+                            if packed_len < 0x80 {
+                                buf[len_pos] = packed_len as u8;
+                            } else {
+                                // Shift data to make room for multi-byte length.
+                                let data = buf[data_start..].to_vec();
+                                buf.truncate(len_pos);
+                                ::typeway_protobuf::tw_encode_varint(buf, packed_len as u64);
+                                buf.extend_from_slice(&data);
+                            }
+                        }
                     }
-                };
-                // Pre-reserve capacity estimate for varints (5 bytes per u32 max).
-                let reserve_expr = match inner.as_ref() {
-                    CodecKind::Varint => quote! { buf.reserve(packed_len + 16); },
-                    _ => quote! {},
-                };
-                quote! {
-                    if !self.#ident.is_empty() {
-                        let packed_len = #packed_len_expr;
-                        ::typeway_protobuf::tw_encode_tag(buf, #tag, 2u8);
-                        ::typeway_protobuf::tw_encode_varint(buf, packed_len as u64);
-                        #reserve_expr
-                        for item in &self.#ident {
-                            #item_write
+                } else {
+                    // Fixed-size types: length is known without iterating.
+                    let packed_len_expr = match inner.as_ref() {
+                        CodecKind::Fixed32 => quote! { self.#ident.len() * 4 },
+                        CodecKind::Fixed64 => quote! { self.#ident.len() * 8 },
+                        CodecKind::Bool => quote! { self.#ident.len() },
+                        _ => unreachable!(),
+                    };
+                    quote! {
+                        if !self.#ident.is_empty() {
+                            let packed_len = #packed_len_expr;
+                            ::typeway_protobuf::tw_encode_tag(buf, #tag, 2u8);
+                            ::typeway_protobuf::tw_encode_varint(buf, packed_len as u64);
+                            for item in &self.#ident {
+                                #item_write
+                            }
                         }
                     }
                 }
@@ -2262,21 +2277,11 @@ fn is_packable(kind: &CodecKind) -> bool {
 }
 
 /// Generate the per-item write for packed encoding (no tag per item).
+/// For varints, uses the unchecked variant (caller pre-reserves capacity).
 fn gen_packed_item_write(kind: &CodecKind) -> TokenStream2 {
     match kind {
         CodecKind::Varint => quote! {
-            // Inline varint write using pre-reserved spare capacity.
-            {
-                let v = *item as u64;
-                if v < 0x80 {
-                    unsafe {
-                        *buf.as_mut_ptr().add(buf.len()) = v as u8;
-                        buf.set_len(buf.len() + 1);
-                    }
-                } else {
-                    ::typeway_protobuf::tw_encode_varint(buf, v);
-                }
-            }
+            unsafe { ::typeway_protobuf::tw_encode_varint_unchecked(buf, *item as u64); }
         },
         CodecKind::Bool => quote! {
             buf.push(if *item { 1 } else { 0 });
