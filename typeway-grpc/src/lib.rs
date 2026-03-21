@@ -50,6 +50,7 @@
 
 #[cfg(feature = "prost-build")]
 pub mod build;
+#[doc(hidden)]
 pub mod codec;
 pub mod codegen;
 #[cfg(feature = "compression")]
@@ -65,6 +66,7 @@ pub mod multiplex;
 pub mod client;
 #[cfg(feature = "grpc-native")]
 pub mod native_streaming;
+#[doc(hidden)]
 pub mod proto_codec;
 pub mod proto_gen;
 pub mod proto_parse;
@@ -82,6 +84,7 @@ pub mod tonic_compat;
 pub mod trailer_body;
 #[cfg(feature = "proto-binary")]
 pub mod transcode;
+#[doc(hidden)]
 pub mod typeway_codec_adapter;
 pub mod validate;
 pub mod web;

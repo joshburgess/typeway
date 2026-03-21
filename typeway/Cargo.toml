@@ -82,5 +82,9 @@ required-features = ["server"]
 name = "client_server"
 required-features = ["full"]
 
+[[example]]
+name = "grpc"
+required-features = ["grpc"]
+
 [lints]
 workspace = true
