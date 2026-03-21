@@ -13,6 +13,7 @@ members = [
     "examples/realworld",
     "examples/chat",
     "examples/versioned-api",
+    "examples/iot-gateway",
 ]
 resolver = "2"
 

@@ -3410,6 +3410,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "typeway-iot-gateway"
+version = "0.1.0"
+dependencies = [
+ "http",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "typeway-core",
+ "typeway-grpc",
+ "typeway-macros",
+ "typeway-server",
+]
+
+[[package]]
 name = "typeway-macros"
 version = "0.1.0"
 dependencies = [
