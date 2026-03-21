@@ -117,32 +117,81 @@ impl std::error::Error for TypewayDecodeError {}
 // Encoding helpers (used by generated code)
 // ---------------------------------------------------------------------------
 
+/// Encode a varint to a stack buffer.
+///
+/// Returns `(bytes, length)`. Use with `buf.extend_from_slice(&bytes[..len])`.
+/// This avoids per-byte `push` calls on the output Vec.
+#[inline]
+pub fn tw_encode_varint_array(value: u64) -> ([u8; 10], usize) {
+    let mut arr = [0u8; 10];
+    let mut i = 0;
+    let mut v = value;
+    loop {
+        if v < 0x80 {
+            arr[i] = v as u8;
+            return (arr, i + 1);
+        }
+        arr[i] = (v as u8 & 0x7F) | 0x80;
+        v >>= 7;
+        i += 1;
+    }
+}
+
 /// Encode a varint to a buffer.
 ///
-/// Optimized for the common case of small values (< 128) which
-/// encode to a single byte. Values up to 2^14 (16384) take two bytes.
+/// Uses unsafe spare capacity writes to avoid per-byte bounds checks
+/// when the buffer has enough room (common after reserve).
 #[inline]
 pub fn tw_encode_varint(buf: &mut Vec<u8>, value: u64) {
-    // Fast path: single byte (very common for field values and small lengths).
+    // Fast path: single byte (< 128). Most tags and small values.
     if value < 0x80 {
         buf.push(value as u8);
         return;
     }
-    // Two bytes: covers values up to 16383 (common for lengths, small IDs).
+    // Two-byte fast path.
     if value < 0x4000 {
-        buf.push((value as u8 & 0x7F) | 0x80);
-        buf.push((value >> 7) as u8);
+        buf.reserve(2);
+        let len = buf.len();
+        // Safety: we just reserved 2 bytes.
+        unsafe {
+            let ptr = buf.as_mut_ptr().add(len);
+            *ptr = (value as u8 & 0x7F) | 0x80;
+            *ptr.add(1) = (value >> 7) as u8;
+            buf.set_len(len + 2);
+        }
         return;
     }
-    // General case: loop for larger values.
-    let mut v = value;
-    loop {
-        if v < 0x80 {
-            buf.push(v as u8);
-            return;
+    // General case via stack buffer.
+    let (arr, n) = tw_encode_varint_array(value);
+    buf.extend_from_slice(&arr[..n]);
+}
+
+/// Encode a batch of u32 values as packed varints using direct unsafe writes.
+///
+/// Reserves worst-case capacity (5 bytes per value), then writes all varints
+/// without per-byte bounds checks. This is the hot path for packed repeated
+/// uint32/int32 fields.
+#[inline]
+pub fn tw_encode_packed_u32(buf: &mut Vec<u8>, values: &[u32]) {
+    buf.reserve(values.len() * 5);
+    let mut pos = buf.len();
+    // Safety: we reserved enough capacity for the worst case.
+    unsafe {
+        let base = buf.as_mut_ptr();
+        for &val in values {
+            let mut v = val as u64;
+            loop {
+                if v < 0x80 {
+                    *base.add(pos) = v as u8;
+                    pos += 1;
+                    break;
+                }
+                *base.add(pos) = (v as u8 & 0x7F) | 0x80;
+                pos += 1;
+                v >>= 7;
+            }
         }
-        buf.push((v as u8 & 0x7F) | 0x80);
-        v >>= 7;
+        buf.set_len(pos);
     }
 }
 

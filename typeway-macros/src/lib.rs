@@ -2219,11 +2219,17 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
                         } }
                     }
                 };
+                // Pre-reserve capacity estimate for varints (5 bytes per u32 max).
+                let reserve_expr = match inner.as_ref() {
+                    CodecKind::Varint => quote! { buf.reserve(packed_len + 16); },
+                    _ => quote! {},
+                };
                 quote! {
                     if !self.#ident.is_empty() {
                         let packed_len = #packed_len_expr;
                         ::typeway_protobuf::tw_encode_tag(buf, #tag, 2u8);
                         ::typeway_protobuf::tw_encode_varint(buf, packed_len as u64);
+                        #reserve_expr
                         for item in &self.#ident {
                             #item_write
                         }
@@ -2259,7 +2265,18 @@ fn is_packable(kind: &CodecKind) -> bool {
 fn gen_packed_item_write(kind: &CodecKind) -> TokenStream2 {
     match kind {
         CodecKind::Varint => quote! {
-            ::typeway_protobuf::tw_encode_varint(buf, *item as u64);
+            // Inline varint write using pre-reserved spare capacity.
+            {
+                let v = *item as u64;
+                if v < 0x80 {
+                    unsafe {
+                        *buf.as_mut_ptr().add(buf.len()) = v as u8;
+                        buf.set_len(buf.len() + 1);
+                    }
+                } else {
+                    ::typeway_protobuf::tw_encode_varint(buf, v);
+                }
+            }
         },
         CodecKind::Bool => quote! {
             buf.push(if *item { 1 } else { 0 });
