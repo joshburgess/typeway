@@ -11,9 +11,9 @@ pub mod effects;
 pub mod error;
 #[cfg(feature = "grpc")]
 pub mod grpc;
-#[cfg(feature = "grpc-native")]
+#[cfg(feature = "grpc")]
 pub mod grpc_native;
-#[cfg(feature = "grpc-native")]
+#[cfg(feature = "grpc")]
 pub mod grpc_stream;
 pub mod extract;
 pub mod handler;
@@ -61,9 +61,7 @@ pub use serves::Serves;
 
 #[cfg(feature = "grpc")]
 pub use grpc::{GrpcServer, LayeredGrpcServer};
-#[cfg(feature = "grpc-native")]
-pub use grpc::{NativeGrpcServer, LayeredNativeGrpcServer};
-#[cfg(feature = "grpc-native")]
+#[cfg(feature = "grpc")]
 pub use grpc_stream::{GrpcStream, GrpcStreamSender};
 
 /// Re-export tower-http for middleware layers.

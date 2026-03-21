@@ -4,12 +4,12 @@
 //! [`GrpcServer`] that serves both REST and gRPC on the same port. Incoming
 //! requests are routed based on the `content-type` header:
 //!
-//! - `application/grpc*` requests are handled by the gRPC bridge, which
-//!   translates them into REST requests and forwards them to the same handlers.
+//! - `application/grpc*` requests are dispatched directly to handlers via
+//!   the native gRPC dispatch (HashMap lookup, real HTTP/2 trailers).
 //! - All other requests are handled by the normal REST router.
 //!
 //! Built-in gRPC services (reflection and health check) are handled directly
-//! by the multiplexer without going through the REST bridge.
+//! by the multiplexer.
 //!
 //! # Example
 //!
@@ -25,9 +25,7 @@ use std::convert::Infallible;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 
 use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpListener;
@@ -36,17 +34,16 @@ use typeway_core::ApiSpec;
 use typeway_grpc::health::HealthService;
 use typeway_grpc::reflection::ReflectionService;
 use typeway_grpc::service::{ApiToServiceDescriptor, GrpcServiceDescriptor};
-use typeway_grpc::status::http_to_grpc_code;
 use typeway_grpc::CollectRpcs;
 
-use crate::body::{body_from_bytes, empty_body, BoxBody};
+use crate::body::BoxBody;
 use crate::router::{Router, RouterService};
 
 /// A server that serves both REST and gRPC on the same port.
 ///
 /// Created by [`Server::with_grpc`](crate::server::Server::with_grpc).
-/// The gRPC bridge translates incoming gRPC calls into REST requests,
-/// routing them through the same handler logic.
+/// gRPC requests are dispatched directly to handlers via HashMap lookup
+/// with real HTTP/2 trailers. REST requests go through the normal router.
 ///
 /// Includes built-in support for:
 /// - **Server reflection** (`grpc.reflection.v1alpha`) — enabled by default,
@@ -102,26 +99,12 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
     }
 
     /// Enable or disable gRPC server reflection.
-    ///
-    /// Reflection is enabled by default. When enabled, gRPC clients can
-    /// discover available services at runtime (e.g., `grpcurl -plaintext
-    /// localhost:3000 list`).
     pub fn with_reflection(mut self, enabled: bool) -> Self {
         self.reflection_enabled = enabled;
         self
     }
 
     /// Get a handle to the health service.
-    ///
-    /// Use this to toggle the serving status during graceful shutdown:
-    ///
-    /// ```ignore
-    /// let grpc = server.with_grpc("Svc", "pkg.v1");
-    /// let health = grpc.health_service();
-    ///
-    /// // In a shutdown hook:
-    /// health.set_not_serving();
-    /// ```
     pub fn health_service(&self) -> HealthService {
         self.health.clone()
     }
@@ -140,20 +123,6 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
 
     /// Serve a gRPC service specification at `GET /grpc-spec` (JSON) and an
     /// HTML documentation page at `GET /grpc-docs`.
-    ///
-    /// These are regular REST endpoints (not gRPC), so they can be accessed
-    /// from any browser or HTTP client.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// Server::<API>::new(handlers)
-    ///     .with_state(state)
-    ///     .with_grpc("UserService", "users.v1")
-    ///     .with_grpc_docs()
-    ///     .serve(addr)
-    ///     .await?;
-    /// ```
     pub fn with_grpc_docs(mut self) -> Self {
         use typeway_grpc::spec::ApiToGrpcSpec;
         let spec = A::grpc_spec(&self.service_name, &self.package);
@@ -165,20 +134,6 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
     }
 
     /// Serve a gRPC service specification with handler documentation applied.
-    ///
-    /// Handler docs (from the `#[documented_handler]` macro) are matched to
-    /// RPC methods to populate summaries, descriptions, and tags.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// Server::<API>::new(handlers)
-    ///     .with_state(state)
-    ///     .with_grpc("UserService", "users.v1")
-    ///     .with_grpc_docs_with_handler_docs(&[LIST_USERS_DOC, GET_USER_DOC])
-    ///     .serve(addr)
-    ///     .await?;
-    /// ```
     pub fn with_grpc_docs_with_handler_docs(mut self, docs: &[typeway_core::HandlerDoc]) -> Self {
         use typeway_grpc::spec::ApiToGrpcSpec;
         let spec = A::grpc_spec_with_docs(&self.service_name, &self.package, docs);
@@ -190,24 +145,6 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
     }
 
     /// Enable binary protobuf support for standard gRPC client interop.
-    ///
-    /// When enabled, the bridge accepts both `application/grpc` (binary
-    /// protobuf) and `application/grpc+json` (JSON) requests. Incoming
-    /// binary protobuf is transcoded to JSON for the REST handlers, and
-    /// JSON responses are transcoded back to binary protobuf.
-    ///
-    /// Requires the `grpc-proto-binary` feature.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// Server::<API>::new(handlers)
-    ///     .with_state(state)
-    ///     .with_grpc("UserService", "users.v1")
-    ///     .with_proto_binary()
-    ///     .serve(addr)
-    ///     .await?;
-    /// ```
     #[cfg(feature = "grpc-proto-binary")]
     pub fn with_proto_binary(mut self) -> Self {
         use typeway_grpc::spec::ApiToGrpcSpec;
@@ -217,10 +154,6 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
     }
 
     /// Start serving both REST and gRPC.
-    ///
-    /// Binds to the given address and accepts connections. REST requests are
-    /// routed to the typeway router directly; gRPC requests are translated
-    /// through the bridge and then routed to the same handlers.
     pub async fn serve(
         self,
         addr: SocketAddr,
@@ -241,28 +174,12 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
     }
 
     /// Start serving with graceful shutdown.
-    ///
-    /// Both REST and gRPC are served. When the `shutdown` future completes,
-    /// the server stops accepting new connections.
     pub async fn serve_with_shutdown(
         self,
         listener: TcpListener,
         shutdown: impl Future<Output = ()> + Send,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let descriptor = Arc::new(A::service_descriptor(&self.service_name, &self.package));
-
-        let multiplexer = Multiplexer {
-            rest: RouterService::new(self.router.clone()),
-            grpc_descriptor: descriptor,
-            router: self.router,
-            reflection: Arc::new(self.reflection),
-            health: self.health,
-            reflection_enabled: self.reflection_enabled,
-            grpc_spec_json: self.grpc_spec_json,
-            grpc_docs_html: self.grpc_docs_html,
-            #[cfg(feature = "grpc-proto-binary")]
-            transcoder: self.transcoder,
-        };
+        let multiplexer = self.build_multiplexer();
 
         tokio::pin!(shutdown);
 
@@ -291,31 +208,15 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
         }
     }
 
-    /// Get a reference to the service descriptor that would be used for gRPC.
-    ///
-    /// Useful for inspecting the generated gRPC method mappings.
+    /// Get a reference to the service descriptor.
     pub fn service_descriptor(&self) -> GrpcServiceDescriptor {
         A::service_descriptor(&self.service_name, &self.package)
     }
 
     /// Apply a Tower middleware layer.
-    ///
-    /// The layer wraps the entire multiplexer service (both REST and gRPC).
-    /// This is the equivalent of [`Server::layer`](crate::server::Server::layer)
-    /// for the gRPC server.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// server
-    ///     .with_grpc("Svc", "pkg.v1")
-    ///     .layer(CorsLayer::permissive())
-    ///     .serve(addr)
-    ///     .await?;
-    /// ```
     pub fn layer<L>(self, layer: L) -> LayeredGrpcServer<A, L::Service>
     where
-        L: tower_layer::Layer<Multiplexer>,
+        L: tower_layer::Layer<crate::grpc_native::NativeMultiplexer>,
         L::Service: tower_service::Service<
                 http::Request<hyper::body::Incoming>,
                 Response = http::Response<BoxBody>,
@@ -326,11 +227,25 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
         <L::Service as tower_service::Service<http::Request<hyper::body::Incoming>>>::Future:
             Send + 'static,
     {
-        let descriptor = Arc::new(A::service_descriptor(&self.service_name, &self.package));
-        let multiplexer = Multiplexer {
-            rest: RouterService::new(self.router.clone()),
-            grpc_descriptor: descriptor,
-            router: self.router,
+        let multiplexer = self.build_multiplexer();
+        LayeredGrpcServer {
+            service: layer.layer(multiplexer),
+            _api: PhantomData,
+        }
+    }
+
+    /// Build the native multiplexer from the current configuration.
+    fn build_multiplexer(self) -> crate::grpc_native::NativeMultiplexer {
+        let descriptor = A::service_descriptor(&self.service_name, &self.package);
+        let grpc_router = crate::grpc_native::GrpcRouter::from_router(
+            &self.router,
+            &descriptor,
+        );
+
+        crate::grpc_native::NativeMultiplexer {
+            rest: RouterService::new(self.router),
+            grpc_router: Arc::new(grpc_router),
+            grpc_descriptor: Arc::new(descriptor),
             reflection: Arc::new(self.reflection),
             health: self.health,
             reflection_enabled: self.reflection_enabled,
@@ -338,17 +253,11 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
             grpc_docs_html: self.grpc_docs_html,
             #[cfg(feature = "grpc-proto-binary")]
             transcoder: self.transcoder,
-        };
-        LayeredGrpcServer {
-            service: layer.layer(multiplexer),
-            _api: PhantomData,
         }
     }
 }
 
 /// A gRPC+REST server with Tower middleware layers applied.
-///
-/// Created by [`GrpcServer::layer`]. Supports `.serve()` for starting the server.
 pub struct LayeredGrpcServer<A: ApiSpec, S> {
     service: S,
     _api: PhantomData<A>,
@@ -432,619 +341,13 @@ where
     }
 }
 
-// ---------------------------------------------------------------------------
-// Internal multiplexer
-// ---------------------------------------------------------------------------
-
-/// Routes requests to either the REST router or the gRPC bridge based on
-/// the `content-type` header.
-///
-/// For gRPC requests, built-in services (reflection and health check) are
-/// handled directly before falling through to the REST bridge for
-/// application-defined methods.
-///
-/// When the `grpc-proto-binary` feature is enabled, the multiplexer also
-/// handles `application/grpc` (binary protobuf) requests by transcoding
-/// them to JSON for the REST handlers and transcoding the JSON responses
-/// back to binary protobuf. This enables standard gRPC clients to interop
-/// without requiring JSON mode.
-///
-/// This type is exposed so that Tower layers can be applied over the
-/// combined REST + gRPC service via [`GrpcServer::layer`].
-#[derive(Clone)]
-pub struct Multiplexer {
-    pub(crate) rest: RouterService,
-    pub(crate) grpc_descriptor: Arc<GrpcServiceDescriptor>,
-    pub(crate) router: Arc<Router>,
-    pub(crate) reflection: Arc<ReflectionService>,
-    pub(crate) health: HealthService,
-    pub(crate) reflection_enabled: bool,
-    pub(crate) grpc_spec_json: Option<Arc<String>>,
-    pub(crate) grpc_docs_html: Option<Arc<String>>,
-    #[cfg(feature = "grpc-proto-binary")]
-    pub(crate) transcoder: Option<Arc<typeway_grpc::ProtoTranscoder>>,
-}
-
-/// Build a gRPC JSON response with the given body and status code 0 (OK).
-///
-/// The response body is wrapped in gRPC length-prefix framing.
-fn grpc_json_response(json_body: &str) -> http::Response<BoxBody> {
-    let framed = typeway_grpc::framing::encode_grpc_frame(json_body.as_bytes());
-    let mut res = http::Response::new(body_from_bytes(bytes::Bytes::from(framed)));
-    *res.status_mut() = http::StatusCode::OK;
-    res.headers_mut().insert(
-        "grpc-status",
-        http::HeaderValue::from_static("0"),
-    );
-    res.headers_mut().insert(
-        "content-type",
-        http::HeaderValue::from_static("application/grpc+json"),
-    );
-    res
-}
-
-impl tower_service::Service<http::Request<hyper::body::Incoming>> for Multiplexer {
-    type Response = http::Response<BoxBody>;
-    type Error = Infallible;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
-
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, req: http::Request<hyper::body::Incoming>) -> Self::Future {
-        // Serve gRPC spec and docs as REST endpoints before any other routing.
-        let path = req.uri().path();
-        if req.method() == http::Method::GET && path == "/grpc-spec" {
-            if let Some(spec_json) = self.grpc_spec_json.clone() {
-                return Box::pin(async move {
-                    let mut res = http::Response::new(body_from_bytes(
-                        bytes::Bytes::from(spec_json.as_bytes().to_vec()),
-                    ));
-                    res.headers_mut().insert(
-                        http::header::CONTENT_TYPE,
-                        http::HeaderValue::from_static("application/json; charset=utf-8"),
-                    );
-                    Ok(res)
-                });
-            }
-        }
-        if req.method() == http::Method::GET && path == "/grpc-docs" {
-            if let Some(docs_html) = self.grpc_docs_html.clone() {
-                return Box::pin(async move {
-                    let mut res = http::Response::new(body_from_bytes(
-                        bytes::Bytes::from(docs_html.as_bytes().to_vec()),
-                    ));
-                    res.headers_mut().insert(
-                        http::header::CONTENT_TYPE,
-                        http::HeaderValue::from_static("text/html; charset=utf-8"),
-                    );
-                    Ok(res)
-                });
-            }
-        }
-
-        if typeway_grpc::is_grpc_request(&req) {
-            let descriptor = self.grpc_descriptor.clone();
-            let router = self.router.clone();
-            let reflection = self.reflection.clone();
-            let health = self.health.clone();
-            let reflection_enabled = self.reflection_enabled;
-            #[cfg(feature = "grpc-proto-binary")]
-            let transcoder = self.transcoder.clone();
-
-            Box::pin(async move {
-                let grpc_path = req.uri().path().to_string();
-
-                // Handle built-in gRPC services before method lookup.
-
-                // 1. Health check service.
-                if HealthService::is_health_path(&grpc_path) {
-                    let response_json = health.handle_request();
-                    return Ok(grpc_json_response(&response_json));
-                }
-
-                // 2. Server reflection service.
-                if reflection_enabled && ReflectionService::is_reflection_path(&grpc_path) {
-                    // Read the request body to determine the query type.
-                    let (parts, body) = req.into_parts();
-                    let body_bytes = match http_body_util::BodyExt::collect(body).await {
-                        Ok(collected) => collected.to_bytes(),
-                        Err(_) => bytes::Bytes::new(),
-                    };
-                    // Strip gRPC framing if present.
-                    let unframed = typeway_grpc::framing::decode_grpc_frame(&body_bytes)
-                        .unwrap_or(&body_bytes);
-                    let body_str = String::from_utf8_lossy(unframed);
-                    let _ = parts; // consumed
-                    let response_json = reflection.handle_request(&body_str);
-                    return Ok(grpc_json_response(&response_json));
-                }
-
-                // 3. Application-defined gRPC methods (REST bridge).
-                let method = descriptor.find_method(&grpc_path);
-
-                let method = match method {
-                    Some(m) => m,
-                    None => {
-                        // UNIMPLEMENTED (12) with a descriptive grpc-message.
-                        let status = typeway_grpc::GrpcStatus::unimplemented(
-                            &format!("method '{}' not found in service", grpc_path),
-                        );
-                        let mut res = http::Response::new(empty_body());
-                        *res.status_mut() = http::StatusCode::OK;
-                        for (name, value) in status.to_headers() {
-                            if let (Ok(name), Ok(value)) = (
-                                name.parse::<http::header::HeaderName>(),
-                                value.parse::<http::HeaderValue>(),
-                            ) {
-                                res.headers_mut().insert(name, value);
-                            }
-                        }
-                        res.headers_mut().insert(
-                            "content-type",
-                            http::HeaderValue::from_static("application/grpc"),
-                        );
-                        return Ok(res);
-                    }
-                };
-
-                // Parse the grpc-timeout header for deadline propagation.
-                let grpc_timeout = req
-                    .headers()
-                    .get("grpc-timeout")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(typeway_grpc::parse_grpc_timeout);
-
-                // Detect whether the client sent binary protobuf or JSON.
-                #[cfg(feature = "grpc-proto-binary")]
-                let incoming_content_type = typeway_grpc::grpc_content_type(req.headers()).to_string();
-                #[cfg(feature = "grpc-proto-binary")]
-                let use_proto_binary = transcoder.is_some()
-                    && typeway_grpc::is_proto_binary_content_type(&incoming_content_type);
-
-                // Collect the body and strip gRPC framing.
-                let (mut parts, body) = req.into_parts();
-                let body_bytes = match http_body_util::BodyExt::collect(body).await {
-                    Ok(collected) => collected.to_bytes(),
-                    Err(_) => bytes::Bytes::new(),
-                };
-
-                // Strip gRPC length-prefix framing if present.
-                let unframed = typeway_grpc::framing::decode_grpc_frame(&body_bytes)
-                    .map(bytes::Bytes::copy_from_slice)
-                    .unwrap_or(body_bytes);
-
-                // If the request is binary protobuf, transcode to JSON for the
-                // REST handler. Otherwise, pass through as-is (already JSON).
-                #[cfg(feature = "grpc-proto-binary")]
-                let unframed = if use_proto_binary {
-                    let tc = transcoder.as_ref().expect("transcoder checked above");
-                    match tc.decode_request(&grpc_path, &unframed) {
-                        Ok(json_val) => {
-                            let json_bytes = serde_json::to_vec(&json_val).unwrap_or_default();
-                            bytes::Bytes::from(json_bytes)
-                        }
-                        Err(e) => {
-                            tracing::warn!(
-                                "proto-binary transcode failed for {}: {}",
-                                grpc_path, e
-                            );
-                            // Fall back to passing through raw bytes; the REST
-                            // handler will likely return a 400.
-                            unframed
-                        }
-                    }
-                } else {
-                    unframed
-                };
-
-                // Rewrite the request to target the REST endpoint.
-                parts.method = method.http_method.clone();
-
-                if let Ok(uri) = method.rest_path.parse::<http::Uri>() {
-                    parts.uri = uri;
-                }
-
-                // Set content-type to JSON for the REST handler.
-                parts.headers.remove(http::header::CONTENT_TYPE);
-                parts
-                    .headers
-                    .insert(
-                        http::header::CONTENT_TYPE,
-                        http::HeaderValue::from_static("application/json"),
-                    );
-
-                // Route with pre-collected bytes, applying timeout if present.
-                let rest_res = if let Some(timeout_duration) = grpc_timeout {
-                    match tokio::time::timeout(
-                        timeout_duration,
-                        router.route_with_bytes(parts, unframed),
-                    )
-                    .await
-                    {
-                        Ok(res) => res,
-                        Err(_) => {
-                            // Deadline exceeded — return grpc-status 4.
-                            let grpc_status = typeway_grpc::GrpcStatus {
-                                code: typeway_grpc::GrpcCode::DeadlineExceeded,
-                                message: "deadline exceeded".to_string(),
-                            };
-                            let mut res = http::Response::new(empty_body());
-                            *res.status_mut() = http::StatusCode::OK;
-                            for (name, value) in grpc_status.to_headers() {
-                                if let (Ok(name), Ok(value)) = (
-                                    name.parse::<http::header::HeaderName>(),
-                                    value.parse::<http::HeaderValue>(),
-                                ) {
-                                    res.headers_mut().insert(name, value);
-                                }
-                            }
-                            res.headers_mut().insert(
-                                "content-type",
-                                http::HeaderValue::from_static("application/grpc+json"),
-                            );
-                            return Ok(res);
-                        }
-                    }
-                } else {
-                    router.route_with_bytes(parts, unframed).await
-                };
-
-                // Collect the REST response body and wrap it in gRPC frame(s).
-                let (mut res_parts, res_body) = rest_res.into_parts();
-                let grpc_code = http_to_grpc_code(res_parts.status);
-
-                let res_bytes = match http_body_util::BodyExt::collect(res_body).await {
-                    Ok(collected) => collected.to_bytes(),
-                    Err(_) => bytes::Bytes::new(),
-                };
-
-                // Determine framing based on whether the client wants binary
-                // protobuf or JSON, and whether the response is streaming.
-                #[cfg(feature = "grpc-proto-binary")]
-                let (framed, response_content_type) = if use_proto_binary
-                    && grpc_code == typeway_grpc::GrpcCode::Ok
-                {
-                    let tc = transcoder.as_ref().expect("transcoder checked above");
-
-                    if method.server_streaming {
-                        // Split JSON array into individual binary proto frames.
-                        match serde_json::from_slice::<serde_json::Value>(&res_bytes) {
-                            Ok(serde_json::Value::Array(items)) => {
-                                let mut buf = Vec::new();
-                                for item in &items {
-                                    let proto_bytes = tc
-                                        .encode_response(&grpc_path, item)
-                                        .unwrap_or_default();
-                                    buf.extend_from_slice(
-                                        &typeway_grpc::framing::encode_grpc_frame(&proto_bytes),
-                                    );
-                                }
-                                (buf, "application/grpc+proto")
-                            }
-                            _ => {
-                                let json_val: serde_json::Value =
-                                    serde_json::from_slice(&res_bytes).unwrap_or_default();
-                                let proto_bytes = tc
-                                    .encode_response(&grpc_path, &json_val)
-                                    .unwrap_or_else(|_| res_bytes.to_vec());
-                                (
-                                    typeway_grpc::framing::encode_grpc_frame(&proto_bytes),
-                                    "application/grpc+proto",
-                                )
-                            }
-                        }
-                    } else {
-                        let json_val: serde_json::Value =
-                            serde_json::from_slice(&res_bytes).unwrap_or_default();
-                        match tc.encode_response(&grpc_path, &json_val) {
-                            Ok(proto_bytes) => (
-                                typeway_grpc::framing::encode_grpc_frame(&proto_bytes),
-                                "application/grpc+proto",
-                            ),
-                            Err(e) => {
-                                tracing::warn!(
-                                    "proto-binary response transcode failed for {}: {}",
-                                    grpc_path, e
-                                );
-                                // Fall back to JSON encoding.
-                                (
-                                    typeway_grpc::framing::encode_grpc_frame(&res_bytes),
-                                    "application/grpc+json",
-                                )
-                            }
-                        }
-                    }
-                } else if use_proto_binary {
-                    // Error response — keep JSON encoding for error bodies.
-                    (
-                        typeway_grpc::framing::encode_grpc_frame(&res_bytes),
-                        "application/grpc+proto",
-                    )
-                } else {
-                    // JSON mode: existing behavior.
-                    let framed = if method.server_streaming
-                        && grpc_code == typeway_grpc::GrpcCode::Ok
-                    {
-                        match serde_json::from_slice::<serde_json::Value>(&res_bytes) {
-                            Ok(serde_json::Value::Array(items)) => {
-                                let mut buf = Vec::new();
-                                for item in &items {
-                                    let item_bytes =
-                                        serde_json::to_vec(item).unwrap_or_default();
-                                    buf.extend_from_slice(
-                                        &typeway_grpc::framing::encode_grpc_frame(&item_bytes),
-                                    );
-                                }
-                                buf
-                            }
-                            _ => typeway_grpc::framing::encode_grpc_frame(&res_bytes),
-                        }
-                    } else {
-                        typeway_grpc::framing::encode_grpc_frame(&res_bytes)
-                    };
-                    (framed, "application/grpc+json")
-                };
-
-                // When proto-binary feature is not enabled, always use JSON.
-                #[cfg(not(feature = "grpc-proto-binary"))]
-                let (framed, response_content_type) = {
-                    let framed = if method.server_streaming
-                        && grpc_code == typeway_grpc::GrpcCode::Ok
-                    {
-                        match serde_json::from_slice::<serde_json::Value>(&res_bytes) {
-                            Ok(serde_json::Value::Array(items)) => {
-                                let mut buf = Vec::new();
-                                for item in &items {
-                                    let item_bytes =
-                                        serde_json::to_vec(item).unwrap_or_default();
-                                    buf.extend_from_slice(
-                                        &typeway_grpc::framing::encode_grpc_frame(&item_bytes),
-                                    );
-                                }
-                                buf
-                            }
-                            _ => typeway_grpc::framing::encode_grpc_frame(&res_bytes),
-                        }
-                    } else {
-                        typeway_grpc::framing::encode_grpc_frame(&res_bytes)
-                    };
-                    (framed, "application/grpc+json")
-                };
-
-                // gRPC always returns HTTP 200; the real status is in grpc-status.
-                res_parts.status = http::StatusCode::OK;
-                res_parts.headers.insert(
-                    "grpc-status",
-                    grpc_code
-                        .as_i32()
-                        .to_string()
-                        .parse()
-                        .expect("valid header value for grpc-status"),
-                );
-                res_parts.headers.insert(
-                    "content-type",
-                    response_content_type
-                        .parse()
-                        .expect("valid content-type header"),
-                );
-
-                let framed_body = body_from_bytes(bytes::Bytes::from(framed));
-                Ok(http::Response::from_parts(res_parts, framed_body))
-            })
-        } else {
-            // Regular REST request — delegate to the router service.
-            let mut rest = self.rest.clone();
-            Box::pin(async move { tower_service::Service::call(&mut rest, req).await })
-        }
-    }
-}
-
 /// Helper: create a [`GrpcServer`] from a router and service metadata.
-///
-/// This is called by [`Server::with_grpc`](crate::server::Server::with_grpc).
 pub(crate) fn make_grpc_server<A: ApiSpec + CollectRpcs>(
     router: Arc<Router>,
     service_name: &str,
     package: &str,
 ) -> GrpcServer<A> {
     GrpcServer::new(router, service_name.to_string(), package.to_string())
-}
-
-// ---------------------------------------------------------------------------
-// Native gRPC server (behind grpc-native feature)
-// ---------------------------------------------------------------------------
-
-/// A server that serves both REST and native gRPC on the same port.
-///
-/// Created by [`GrpcServer::with_native`]. Unlike the bridge-based
-/// [`GrpcServer`], this dispatches gRPC requests directly to handlers
-/// via a HashMap lookup, and uses real HTTP/2 trailers for gRPC status.
-#[cfg(feature = "grpc-native")]
-pub struct NativeGrpcServer<A: ApiSpec> {
-    multiplexer: crate::grpc_native::NativeMultiplexer,
-    _api: PhantomData<A>,
-}
-
-#[cfg(feature = "grpc-native")]
-impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
-    /// Enable native gRPC dispatch (bypasses the REST bridge).
-    ///
-    /// Builds a native gRPC dispatch table from the already-registered
-    /// REST handlers. gRPC requests are dispatched directly to handlers
-    /// via HashMap lookup with real HTTP/2 trailers. The REST bridge is
-    /// replaced entirely.
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// Server::<API>::new(handlers)
-    ///     .with_state(state)
-    ///     .with_grpc("UserService", "users.v1")
-    ///     .with_native()
-    ///     .serve(addr)
-    ///     .await?;
-    /// ```
-    pub fn with_native(self) -> NativeGrpcServer<A> {
-        let descriptor = A::service_descriptor(&self.service_name, &self.package);
-        let grpc_router = crate::grpc_native::GrpcRouter::from_router(
-            &self.router,
-            &descriptor,
-        );
-
-        let multiplexer = crate::grpc_native::NativeMultiplexer {
-            rest: RouterService::new(self.router),
-            grpc_router: Arc::new(grpc_router),
-            grpc_descriptor: Arc::new(descriptor),
-            reflection: Arc::new(self.reflection),
-            health: self.health,
-            reflection_enabled: self.reflection_enabled,
-            grpc_spec_json: self.grpc_spec_json,
-            grpc_docs_html: self.grpc_docs_html,
-            #[cfg(feature = "grpc-proto-binary")]
-            transcoder: self.transcoder,
-        };
-
-        NativeGrpcServer {
-            multiplexer,
-            _api: PhantomData,
-        }
-    }
-}
-
-#[cfg(feature = "grpc-native")]
-impl<A: ApiSpec + CollectRpcs> NativeGrpcServer<A> {
-    /// Start serving both REST and native gRPC.
-    pub async fn serve(
-        self,
-        addr: SocketAddr,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let listener = TcpListener::bind(addr).await?;
-        tracing::info!("Listening on http://{addr} (REST + native gRPC)");
-        self.serve_with_shutdown(listener, std::future::pending())
-            .await
-    }
-
-    /// Start serving with graceful shutdown.
-    pub async fn serve_with_shutdown(
-        self,
-        listener: TcpListener,
-        shutdown: impl Future<Output = ()> + Send,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let svc = self.multiplexer;
-        tokio::pin!(shutdown);
-
-        loop {
-            tokio::select! {
-                result = listener.accept() => {
-                    let (stream, _) = result?;
-                    let io = TokioIo::new(stream);
-                    let svc = svc.clone();
-                    let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
-
-                    tokio::task::spawn(async move {
-                        if let Err(e) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
-                            .serve_connection(io, hyper_svc)
-                            .await
-                        {
-                            tracing::debug!("Connection closed: {e}");
-                        }
-                    });
-                }
-                () = &mut shutdown => {
-                    tracing::info!("Shutting down gracefully...");
-                    return Ok(());
-                }
-            }
-        }
-    }
-
-    /// Apply a Tower middleware layer.
-    pub fn layer<L>(self, layer: L) -> LayeredNativeGrpcServer<A, L::Service>
-    where
-        L: tower_layer::Layer<crate::grpc_native::NativeMultiplexer>,
-        L::Service: tower_service::Service<
-                http::Request<hyper::body::Incoming>,
-                Response = http::Response<BoxBody>,
-                Error = Infallible,
-            > + Clone
-            + Send
-            + 'static,
-        <L::Service as tower_service::Service<http::Request<hyper::body::Incoming>>>::Future:
-            Send + 'static,
-    {
-        LayeredNativeGrpcServer {
-            service: layer.layer(self.multiplexer),
-            _api: PhantomData,
-        }
-    }
-}
-
-/// A native gRPC+REST server with Tower middleware layers applied.
-#[cfg(feature = "grpc-native")]
-pub struct LayeredNativeGrpcServer<A: ApiSpec, S> {
-    service: S,
-    _api: PhantomData<A>,
-}
-
-#[cfg(feature = "grpc-native")]
-impl<A, S> LayeredNativeGrpcServer<A, S>
-where
-    A: ApiSpec + CollectRpcs,
-    S: tower_service::Service<
-            http::Request<hyper::body::Incoming>,
-            Response = http::Response<BoxBody>,
-            Error = Infallible,
-        > + Clone
-        + Send
-        + 'static,
-    S::Future: Send + 'static,
-{
-    /// Start serving both REST and native gRPC.
-    pub async fn serve(
-        self,
-        addr: SocketAddr,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let listener = TcpListener::bind(addr).await?;
-        tracing::info!("Listening on http://{addr} (REST + native gRPC, layered)");
-        self.serve_with_shutdown(listener, std::future::pending())
-            .await
-    }
-
-    /// Start serving with graceful shutdown.
-    pub async fn serve_with_shutdown(
-        self,
-        listener: TcpListener,
-        shutdown: impl Future<Output = ()> + Send,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let svc = self.service;
-        tokio::pin!(shutdown);
-
-        loop {
-            tokio::select! {
-                result = listener.accept() => {
-                    let (stream, _) = result?;
-                    let io = TokioIo::new(stream);
-                    let svc = svc.clone();
-                    let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
-
-                    tokio::task::spawn(async move {
-                        if let Err(e) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
-                            .serve_connection(io, hyper_svc)
-                            .await
-                        {
-                            tracing::debug!("Connection closed: {e}");
-                        }
-                    });
-                }
-                () = &mut shutdown => {
-                    tracing::info!("Shutting down gracefully...");
-                    return Ok(());
-                }
-            }
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1071,10 +374,8 @@ impl<V: Send + Sync + 'static, E: EndpointToRpc> EndpointToRpc for crate::typed:
 // GrpcReady delegation for server-specific wrapper types
 // ---------------------------------------------------------------------------
 
-/// `Protected<Auth, E>` is gRPC-ready if the inner endpoint is.
 impl<Auth, E: typeway_grpc::GrpcReady> typeway_grpc::GrpcReady for crate::auth::Protected<Auth, E> {}
 
-/// `Validated<V, E>` is gRPC-ready if the inner endpoint is.
 impl<V: Send + Sync + 'static, E: typeway_grpc::GrpcReady> typeway_grpc::GrpcReady
     for crate::typed::Validated<V, E>
 {
@@ -1086,12 +387,6 @@ impl<V: Send + Sync + 'static, E: typeway_grpc::GrpcReady> typeway_grpc::GrpcRea
 
 use crate::handler_for::BindableEndpoint;
 
-/// `ServerStream<E>` delegates `BindableEndpoint` to the inner endpoint.
-///
-/// At the REST layer, a server-streaming endpoint behaves identically to
-/// a normal endpoint (it returns `Vec<T>` as JSON). The streaming behavior
-/// is only visible at the gRPC bridge layer, which splits the JSON array
-/// into individual gRPC frames.
 impl<E: BindableEndpoint> BindableEndpoint for typeway_grpc::streaming::ServerStream<E> {
     fn method() -> http::Method {
         E::method()
@@ -1104,7 +399,6 @@ impl<E: BindableEndpoint> BindableEndpoint for typeway_grpc::streaming::ServerSt
     }
 }
 
-/// `ClientStream<E>` delegates `BindableEndpoint` to the inner endpoint.
 impl<E: BindableEndpoint> BindableEndpoint for typeway_grpc::streaming::ClientStream<E> {
     fn method() -> http::Method {
         E::method()
@@ -1117,7 +411,6 @@ impl<E: BindableEndpoint> BindableEndpoint for typeway_grpc::streaming::ClientSt
     }
 }
 
-/// `BidirectionalStream<E>` delegates `BindableEndpoint` to the inner endpoint.
 impl<E: BindableEndpoint> BindableEndpoint for typeway_grpc::streaming::BidirectionalStream<E> {
     fn method() -> http::Method {
         E::method()

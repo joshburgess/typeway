@@ -1,10 +1,10 @@
 //! Integration tests for native gRPC dispatch (Phase 1).
 //!
-//! These tests start a real server with `.with_native()` and verify
+//! These tests start a real server with `` and verify
 //! that gRPC requests are dispatched directly to handlers with real
 //! HTTP/2 trailers.
 
-#![cfg(feature = "grpc-native")]
+#![cfg(feature = "grpc")]
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -128,7 +128,7 @@ async fn start_native_grpc_server() -> u16 {
     ))
     .with_state(state)
     .with_grpc("UserService", "users.v1")
-    .with_native();
+    ;
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -146,7 +146,7 @@ async fn start_native_grpc_server() -> u16 {
 
 // --- Tests ---
 
-/// Verify that `.with_native()` compiles.
+/// Verify that `` compiles.
 #[test]
 fn native_grpc_server_compiles() {
     let state: AppState = Arc::new(std::sync::Mutex::new(vec![]));
@@ -158,7 +158,7 @@ fn native_grpc_server_compiles() {
     ))
     .with_state(state)
     .with_grpc("UserService", "users.v1")
-    .with_native();
+    ;
 }
 
 /// Native gRPC server should still serve REST requests.
