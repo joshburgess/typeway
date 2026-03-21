@@ -469,7 +469,7 @@ Server::<API>::new(handlers)
     .await?;
 ```
 
-gRPC requests are dispatched directly to handlers via native dispatch (HashMap lookup in `NativeMultiplexer`) — no REST translation layer. The default codec is JSON (`application/grpc+json`), which shares serialization with the REST path. For binary protobuf encoding, `BinaryCodec` provides standard gRPC client interop (`application/grpc`), and `#[derive(TypewayCodec)]` generates specialized encoders for 3-8x faster protobuf encoding. `NativeGrpcClient` is codec-aware and selects the right encoding automatically.
+gRPC requests are dispatched directly to handlers via native dispatch (HashMap lookup in `GrpcMultiplexer`) — no REST translation layer. The default codec is JSON (`application/grpc+json`), which shares serialization with the REST path. For binary protobuf encoding, `BinaryCodec` provides standard gRPC client interop (`application/grpc`), and `#[derive(TypewayCodec)]` generates specialized encoders for 3-8x faster protobuf encoding. `NativeGrpcClient` is codec-aware and selects the right encoding automatically.
 
 Handlers are reused — a single handler implementation serves both REST and gRPC requests, sharing the same Tower middleware stack and Tokio runtime. The native dispatch handles gRPC framing (length-prefix encoding) with real HTTP/2 trailers for `grpc-status`, and real streaming via `tokio::sync::mpsc` channels.
 
@@ -518,12 +518,12 @@ let client = UserServiceClient::connect("http://localhost:3000").await?;
 let user = client.get_user(42u32).await?;
 ```
 
-`auto_grpc_client!` derives method names automatically from the API type — no manual endpoint listing needed:
+`grpc_client!` derives client methods automatically from the API type — no manual endpoint listing needed:
 
 ```rust
-use typeway_grpc::auto_grpc_client;
+use typeway_grpc::grpc_client;
 
-auto_grpc_client! {
+grpc_client! {
     pub struct UserServiceClient;
     api = UsersAPI;
     service = "UserService";
@@ -531,9 +531,9 @@ auto_grpc_client! {
 }
 ```
 
-Both macros include a `GrpcReady` compile-time assertion — the macro won't expand if any type in the API is missing its `ToProtoType` impl.
+The macro includes a `GrpcReady` compile-time assertion — it won't expand if any type in the API is missing its `ToProtoType` impl.
 
-Client interceptors are configurable via `GrpcClientConfig` for metadata injection, timeouts, and retry policies.
+Client interceptors are configurable via `GrpcClientConfig` for metadata injection, timeouts, and auth tokens.
 
 Both REST and gRPC clients are derived from the same API type — change the type, and both clients update.
 

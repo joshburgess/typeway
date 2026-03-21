@@ -1,4 +1,4 @@
-> **Status: Design proposal — not implemented.** This document describes a future typeway-protobuf library with zero-copy views and tiered deserialization. It has not been built. Current typeway-grpc uses prost (via BinaryCodec) and a compile-time specialized codec (`#[derive(TypewayCodec)]`) for protobuf encoding.
+> **Status: Partially implemented.** The `typeway-protobuf` crate exists and ships: `#[derive(TypewayCodec)]` (compile-time specialized encode/decode, 12-54% faster than prost), `BytesStr` (zero-copy strings), `RepeatedField<T>` (pooled allocations), `ProtoField<T, E>` (phantom-typed wire formats), `EncodeBuf` (buffer reuse), and `Proto<T>` (format-agnostic extractor). The more ambitious features in this design doc — GAT-based `View<'buf>` types, typestate builders, SIMD varint, and arena-scoped allocation — remain future work.
 
 # Redesigning Prost: typeway-protobuf — A Type-Theoretic, High-Performance Protobuf Library for Rust
 

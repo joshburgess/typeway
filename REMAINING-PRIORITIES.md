@@ -30,9 +30,9 @@ Updated status of all planned work. Checked items are complete.
   - Unified REST+gRPC serving via `.with_grpc()` on one port (shared handlers, no duplication)
   - `GrpcReady` compile-time check — `.with_grpc()` won't compile if any type lacks `ToProtoType`
   - `ServerStream<E>`, `ClientStream<E>`, `BidirectionalStream<E>` streaming markers
-  - `grpc_client!` macro for type-safe gRPC client with manual method names
-  - `auto_grpc_client!` macro for auto-derived client from API type
-  - `GrpcClientConfig` for client interceptors (metadata injection, timeouts)
+  - `grpc_client!` macro for type-safe gRPC client derived from API type
+  - `GrpcClient` with codec abstraction (JSON or binary protobuf)
+  - `GrpcClientConfig` for client interceptors (metadata injection, timeouts, auth)
   - Server reflection (`grpc.reflection.v1alpha`)
   - Health check service (`grpc.health.v1.Health/Check`) with graceful shutdown
   - `GrpcWebLayer` Tower middleware for browser clients

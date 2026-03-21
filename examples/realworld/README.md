@@ -360,7 +360,7 @@ server
     .await?;
 ```
 
-All 22 REST endpoints are automatically available as gRPC methods. The same handler functions serve both protocols -- incoming `application/grpc*` requests are dispatched directly to handlers by the native gRPC dispatch (HashMap lookup in `NativeMultiplexer`), with real HTTP/2 trailers for `grpc-status` and real streaming via `tokio::sync::mpsc` channels.
+All 22 REST endpoints are automatically available as gRPC methods. The same handler functions serve both protocols -- incoming `application/grpc*` requests are dispatched directly to handlers by the native gRPC dispatch (HashMap lookup in `GrpcMultiplexer`), with real HTTP/2 trailers for `grpc-status` and real streaming via `tokio::sync::mpsc` channels.
 
 **Try it:**
 

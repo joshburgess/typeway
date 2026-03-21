@@ -341,7 +341,7 @@ typeway-grpc was built incrementally over four phases. Each phase replaced a lay
 
 **Problem:** The original proof-of-concept used a "bridge" pattern — gRPC requests were translated into synthetic REST requests, routed through the REST handler, and the REST response was translated back to gRPC framing. This worked but was slow (double serialization), fragile (synthetic request construction could fail in surprising ways), and could not support real streaming.
 
-**Solution:** `NativeMultiplexer` dispatches gRPC requests directly to handlers via `HashMap` lookup. The `GrpcMultiplexer` sits at the HTTP layer and routes by `content-type: application/grpc*` — gRPC requests go to native dispatch, everything else goes to the REST router.
+**Solution:** `GrpcMultiplexer` dispatches gRPC requests directly to handlers via `HashMap` lookup. The `GrpcMultiplexer` sits at the HTTP layer and routes by `content-type: application/grpc*` — gRPC requests go to native dispatch, everything else goes to the REST router.
 
 Key implementation details:
 - Real HTTP/2 trailers carry `grpc-status` and `grpc-message` (via a custom `TrailerBody` type that uses hyper's trailer support)

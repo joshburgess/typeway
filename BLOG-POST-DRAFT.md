@@ -631,10 +631,10 @@ For encoding performance, `#[derive(TypewayCodec)]` generates compile-time speci
 
 Streaming is supported across all three gRPC patterns. `ServerStream<E>` splits JSON arrays into per-element gRPC frames for server-streaming RPCs. `ClientStream<E>` handles client-streaming. `BidirectionalStream<E>` handles full-duplex streaming. All three generate the correct `stream` annotations in the `.proto` output.
 
-Two macros generate type-safe gRPC clients. `grpc_client!` gives manual control over method names, while `auto_grpc_client!` derives them automatically from the API type:
+The `grpc_client!` macro generates a type-safe gRPC client from the API type:
 
 ```rust
-auto_grpc_client! {
+grpc_client! {
     pub struct UserServiceClient;
     api = UsersAPI;
     service = "UserService";
@@ -642,7 +642,7 @@ auto_grpc_client! {
 }
 ```
 
-Both macros include a `GrpcReady` compile-time assertion. Client interceptors are configurable via `GrpcClientConfig` for metadata injection and timeouts.
+The macro includes a `GrpcReady` compile-time assertion. Client interceptors are configurable via `GrpcClientConfig` for metadata injection and timeouts.
 
 Change the API type, and both the REST client and the gRPC client refuse to compile until they're updated. Server reflection means `grpcurl -plaintext localhost:3000 list` discovers services at runtime without needing a `.proto` file on disk. `.with_grpc_docs()` serves `/grpc-spec` (a structured JSON spec) and `/grpc-docs` (an HTML documentation page) — the gRPC equivalent of OpenAPI + Swagger UI. `GrpcWebLayer` handles browser clients that can't do HTTP/2 gRPC natively. The health check service handles graceful shutdown. The `IntoGrpcStatus` trait maps handler error types to gRPC status codes consistently across both protocols.
 
