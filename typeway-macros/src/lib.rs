@@ -2203,10 +2203,39 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
             }
         },
         CodecKind::Repeated(inner) => {
-            let item_encode = gen_encode_repeated_item(tag, wt, inner);
-            quote! {
-                for item in &self.#ident {
-                    #item_encode
+            if is_packable(inner) {
+                let item_write = gen_packed_item_write(inner);
+                // For fixed-size types, compute packed_len without iterating.
+                let packed_len_expr = match inner.as_ref() {
+                    CodecKind::Fixed32 => quote! { self.#ident.len() * 4 },
+                    CodecKind::Fixed64 => quote! { self.#ident.len() * 8 },
+                    CodecKind::Bool => quote! { self.#ident.len() },
+                    _ => {
+                        let item_len = gen_packed_item_len(inner);
+                        quote! { {
+                            let mut packed_len: usize = 0;
+                            for item in &self.#ident { packed_len += #item_len; }
+                            packed_len
+                        } }
+                    }
+                };
+                quote! {
+                    if !self.#ident.is_empty() {
+                        let packed_len = #packed_len_expr;
+                        ::typeway_protobuf::tw_encode_tag(buf, #tag, 2u8);
+                        ::typeway_protobuf::tw_encode_varint(buf, packed_len as u64);
+                        for item in &self.#ident {
+                            #item_write
+                        }
+                    }
+                }
+            } else {
+                // Non-packable (strings, messages): per-element tag.
+                let item_encode = gen_encode_repeated_item(tag, wt, inner);
+                quote! {
+                    for item in &self.#ident {
+                        #item_encode
+                    }
                 }
             }
         }
@@ -2218,6 +2247,81 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
                 buf.extend_from_slice(&nested);
             }
         },
+    }
+}
+
+/// Returns true if the inner type can use packed encoding (scalars only).
+fn is_packable(kind: &CodecKind) -> bool {
+    matches!(kind, CodecKind::Varint | CodecKind::Bool | CodecKind::Fixed32 | CodecKind::Fixed64)
+}
+
+/// Generate the per-item write for packed encoding (no tag per item).
+fn gen_packed_item_write(kind: &CodecKind) -> TokenStream2 {
+    match kind {
+        CodecKind::Varint => quote! {
+            ::typeway_protobuf::tw_encode_varint(buf, *item as u64);
+        },
+        CodecKind::Bool => quote! {
+            buf.push(if *item { 1 } else { 0 });
+        },
+        CodecKind::Fixed32 => quote! {
+            buf.extend_from_slice(&item.to_le_bytes());
+        },
+        CodecKind::Fixed64 => quote! {
+            buf.extend_from_slice(&item.to_le_bytes());
+        },
+        _ => quote! {},
+    }
+}
+
+/// Generate the per-item length for packed encoding.
+fn gen_packed_item_len(kind: &CodecKind) -> TokenStream2 {
+    match kind {
+        CodecKind::Varint => quote! {
+            ::typeway_protobuf::tw_varint_len(*item as u64)
+        },
+        CodecKind::Bool => quote! { 1 },
+        CodecKind::Fixed32 => quote! { 4 },
+        CodecKind::Fixed64 => quote! { 8 },
+        _ => quote! { 0 },
+    }
+}
+
+/// Generate per-item read for packed decoding.
+fn gen_packed_item_read(ident: &Ident, kind: &CodecKind) -> TokenStream2 {
+    match kind {
+        CodecKind::Varint => quote! {
+            let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+            offset += consumed;
+            #ident.push(val as _);
+        },
+        CodecKind::Bool => quote! {
+            #ident.push(bytes[offset] != 0);
+            offset += 1;
+        },
+        CodecKind::Fixed32 => quote! {
+            if offset + 4 > bytes.len() {
+                return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
+            }
+            #ident.push(f32::from_le_bytes([
+                bytes[offset], bytes[offset + 1],
+                bytes[offset + 2], bytes[offset + 3],
+            ]));
+            offset += 4;
+        },
+        CodecKind::Fixed64 => quote! {
+            if offset + 8 > bytes.len() {
+                return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
+            }
+            #ident.push(f64::from_le_bytes([
+                bytes[offset], bytes[offset + 1],
+                bytes[offset + 2], bytes[offset + 3],
+                bytes[offset + 4], bytes[offset + 5],
+                bytes[offset + 6], bytes[offset + 7],
+            ]));
+            offset += 8;
+        },
+        _ => quote! {},
     }
 }
 
@@ -2339,10 +2443,26 @@ fn gen_encoded_len_field(f: &CodecField) -> TokenStream2 {
             }
         },
         CodecKind::Repeated(inner) => {
-            let item_len = gen_encoded_len_repeated_item(tag, inner);
-            quote! {
-                for item in &self.#ident {
-                    #item_len
+            if is_packable(inner) {
+                let item_len = gen_packed_item_len(inner);
+                quote! {
+                    if !self.#ident.is_empty() {
+                        let mut packed_len: usize = 0;
+                        for item in &self.#ident {
+                            packed_len += #item_len;
+                        }
+                        // tag + length varint + packed data
+                        len += #tag_len_expr
+                            + ::typeway_protobuf::tw_varint_len(packed_len as u64)
+                            + packed_len;
+                    }
+                }
+            } else {
+                let item_len = gen_encoded_len_repeated_item(tag, inner);
+                quote! {
+                    for item in &self.#ident {
+                        #item_len
+                    }
                 }
             }
         }
@@ -2548,8 +2668,35 @@ fn gen_decode_arm(f: &CodecField) -> TokenStream2 {
             }
         },
         CodecKind::Repeated(inner) => {
-            let item_decode = gen_decode_repeated_item(ident, &ident_str, inner);
-            quote! { #tag => { #item_decode } }
+            if is_packable(inner) {
+                // Packed decode: wire type 2, read length, decode elements until consumed.
+                let item_read = gen_packed_item_read(ident, inner);
+                quote! {
+                    #tag => {
+                        if wire_type == 2 {
+                            // Packed encoding.
+                            let (packed_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                            offset += consumed;
+                            let packed_len = packed_len as usize;
+                            let packed_end = offset + packed_len;
+                            if packed_end > bytes.len() {
+                                return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
+                            }
+                            while offset < packed_end {
+                                #item_read
+                            }
+                        } else {
+                            // Non-packed (single element with own tag).
+                            let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                            offset += consumed;
+                            #ident.push(val as _);
+                        }
+                    }
+                }
+            } else {
+                let item_decode = gen_decode_repeated_item(ident, &ident_str, inner);
+                quote! { #tag => { #item_decode } }
+            }
         }
         CodecKind::RepeatedMessage => quote! {
             #tag => {

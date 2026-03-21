@@ -118,15 +118,31 @@ impl std::error::Error for TypewayDecodeError {}
 // ---------------------------------------------------------------------------
 
 /// Encode a varint to a buffer.
+///
+/// Optimized for the common case of small values (< 128) which
+/// encode to a single byte. Values up to 2^14 (16384) take two bytes.
 #[inline]
-pub fn tw_encode_varint(buf: &mut Vec<u8>, mut value: u64) {
+pub fn tw_encode_varint(buf: &mut Vec<u8>, value: u64) {
+    // Fast path: single byte (very common for field values and small lengths).
+    if value < 0x80 {
+        buf.push(value as u8);
+        return;
+    }
+    // Two bytes: covers values up to 16383 (common for lengths, small IDs).
+    if value < 0x4000 {
+        buf.push((value as u8 & 0x7F) | 0x80);
+        buf.push((value >> 7) as u8);
+        return;
+    }
+    // General case: loop for larger values.
+    let mut v = value;
     loop {
-        if value < 0x80 {
-            buf.push(value as u8);
+        if v < 0x80 {
+            buf.push(v as u8);
             return;
         }
-        buf.push((value as u8 & 0x7F) | 0x80);
-        value >>= 7;
+        buf.push((v as u8 & 0x7F) | 0x80);
+        v >>= 7;
     }
 }
 
@@ -165,17 +181,36 @@ pub fn tw_zigzag_encode(value: i64) -> u64 {
 /// Decode a varint from a byte slice.
 ///
 /// Returns `(value, bytes_consumed)`.
+/// Optimized with fast paths for 1-byte and 2-byte varints.
 #[inline]
 pub fn tw_decode_varint(bytes: &[u8]) -> Result<(u64, usize), TypewayDecodeError> {
-    let mut value: u64 = 0;
-    let mut shift: u32 = 0;
-    for (i, &byte) in bytes.iter().enumerate() {
-        if i >= 10 {
+    if bytes.is_empty() {
+        return Err(TypewayDecodeError::UnexpectedEof);
+    }
+    // Fast path: single byte (< 128). Most field tags and small values.
+    let b0 = bytes[0];
+    if b0 < 0x80 {
+        return Ok((b0 as u64, 1));
+    }
+    // Fast path: two bytes (< 16384).
+    if bytes.len() < 2 {
+        return Err(TypewayDecodeError::UnexpectedEof);
+    }
+    let b1 = bytes[1];
+    if b1 < 0x80 {
+        let value = ((b0 & 0x7F) as u64) | ((b1 as u64) << 7);
+        return Ok((value, 2));
+    }
+    // General case: loop for 3+ byte varints.
+    let mut value = ((b0 & 0x7F) as u64) | (((b1 & 0x7F) as u64) << 7);
+    let mut shift: u32 = 14;
+    for (i, &byte) in bytes[2..].iter().enumerate() {
+        if i + 2 >= 10 {
             return Err(TypewayDecodeError::VarintTooLong);
         }
         value |= ((byte & 0x7F) as u64) << shift;
         if byte < 0x80 {
-            return Ok((value, i + 1));
+            return Ok((value, i + 3));
         }
         shift += 7;
     }

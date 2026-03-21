@@ -95,6 +95,27 @@ struct MediumBytesStr {
     level: u32,
 }
 
+/// Message with repeated scalar fields (packed encoding target).
+#[derive(Debug, Clone, Default, PartialEq, TypewayCodec)]
+struct RepeatedMessage {
+    #[proto(tag = 1)]
+    id: u32,
+    #[proto(tag = 2)]
+    values: Vec<u32>,
+    #[proto(tag = 3)]
+    scores: Vec<f64>,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct ProstRepeatedMessage {
+    #[prost(uint32, tag = "1")]
+    id: u32,
+    #[prost(uint32, repeated, tag = "2")]
+    values: Vec<u32>,
+    #[prost(double, repeated, tag = "3")]
+    scores: Vec<f64>,
+}
+
 // ---------------------------------------------------------------------------
 // Prost equivalent types (for direct comparison)
 // ---------------------------------------------------------------------------
@@ -525,5 +546,37 @@ fn bench_roundtrip(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_encode, bench_decode, bench_roundtrip);
+fn bench_packed(c: &mut Criterion) {
+    let mut group = c.benchmark_group("packed");
+
+    let values: Vec<u32> = (0..100).collect();
+    let scores: Vec<f64> = (0..20).map(|i| i as f64 * 1.5).collect();
+
+    let tw_msg = RepeatedMessage { id: 1, values: values.clone(), scores: scores.clone() };
+    let prost_msg = ProstRepeatedMessage { id: 1, values: values.clone(), scores: scores.clone() };
+
+    group.bench_function("encode/typeway_packed", |b| {
+        b.iter(|| black_box(tw_msg.encode_to_vec()))
+    });
+    group.bench_function("encode/prost", |b| {
+        b.iter(|| black_box(prost_msg.encode_to_vec()))
+    });
+
+    let tw_bytes = tw_msg.encode_to_vec();
+    let prost_bytes = prost_msg.encode_to_vec();
+
+    // Verify they produce the same size (both should use packed encoding).
+    // Note: they may differ slightly if tag encoding differs.
+
+    group.bench_function("decode/typeway_packed", |b| {
+        b.iter(|| black_box(RepeatedMessage::typeway_decode(&tw_bytes).unwrap()))
+    });
+    group.bench_function("decode/prost", |b| {
+        b.iter(|| black_box(ProstRepeatedMessage::decode(prost_bytes.as_slice()).unwrap()))
+    });
+
+    group.finish();
+}
+
+criterion_group!(benches, bench_encode, bench_decode, bench_roundtrip, bench_packed);
 criterion_main!(benches);
