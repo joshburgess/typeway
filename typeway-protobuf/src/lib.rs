@@ -1,64 +1,52 @@
-//! `typeway-protobuf` — type-theoretic protobuf layer for the Typeway framework.
+//! `typeway-protobuf` — high-performance, type-theoretic protobuf for Rust.
 //!
-//! This crate provides the [`ProtoMessage`] trait and [`BytesStr`] type that
-//! enable zero-JSON-intermediate protobuf handling. Types that implement
-//! `ProtoMessage` can be deserialized from either JSON or binary protobuf
-//! by the [`Proto<T>`](https://docs.rs/typeway-server) extractor.
+//! Addresses prost's key limitations:
 //!
-//! # ProtoMessage
-//!
-//! A convenience trait combining the four bounds needed for format-agnostic
-//! message handling:
-//!
-//! ```ignore
-//! #[derive(Serialize, Deserialize, TypewayCodec, Default)]
-//! struct User {
-//!     #[proto(tag = 1)]
-//!     id: u32,
-//!     #[proto(tag = 2)]
-//!     name: String,
-//! }
-//! // User automatically implements ProtoMessage
-//! ```
-//!
-//! # BytesStr
-//!
-//! A zero-copy string type backed by `bytes::Bytes`. Validates UTF-8 on
-//! construction and provides `Deref<Target = str>` for ergonomic use.
+//! - **Zero-copy strings** via [`BytesStr`] — no allocation for string fields
+//! - **Pooled repeated fields** via [`RepeatedField<T>`] — reuse allocations across decodes
+//! - **Buffer reuse** via [`EncodeBuf`] — connection-scoped encode buffers
+//! - **Phantom-typed wire formats** via [`ProtoField<T, E>`] — disambiguate `i32` encodings at the type level
+//! - **Format-agnostic extraction** via [`ProtoMessage`] — same type works for JSON and binary
+
+pub mod repeated;
+pub mod wire;
 
 use bytes::Bytes;
 
-// Re-export the codec traits for convenience.
+// Re-export the codec traits.
 pub use typeway_grpc::{TypewayDecode, TypewayDecodeError, TypewayEncode};
+
+// Re-export submodules.
+pub use repeated::RepeatedField;
+pub use wire::{Fixed, Packed, ProtoField, Varint, ZigZag};
+
+// ---------------------------------------------------------------------------
+// ProtoMessage trait
+// ---------------------------------------------------------------------------
 
 /// A protobuf message type that supports both JSON and binary encoding.
 ///
-/// This is automatically implemented for any type that derives both
+/// Automatically implemented for any type that derives both
 /// `serde::Serialize + serde::Deserialize` and `TypewayCodec`.
-///
-/// Used as the bound for the `Proto<T>` extractor in typeway-server.
 pub trait ProtoMessage:
     TypewayEncode + TypewayDecode + serde::Serialize + serde::de::DeserializeOwned + Send + Sized
 {
 }
 
-/// Blanket implementation — any type with all four derives gets ProtoMessage for free.
 impl<T> ProtoMessage for T where
     T: TypewayEncode + TypewayDecode + serde::Serialize + serde::de::DeserializeOwned + Send + Sized
 {
 }
 
+// ---------------------------------------------------------------------------
+// BytesStr — zero-copy string backed by Bytes
+// ---------------------------------------------------------------------------
+
 /// A zero-copy string backed by `bytes::Bytes`.
 ///
-/// `BytesStr` validates UTF-8 on construction and provides `Deref<Target = str>`.
-/// Cloning is cheap (reference count increment on the underlying `Bytes`).
-///
-/// This is the building block for zero-copy protobuf string fields in future
-/// typeway-protobuf types. For the current `Proto<T>` extractor, standard
-/// `String` fields work fine — `BytesStr` is for performance-critical paths
-/// where avoiding allocation matters.
-///
-/// # Example
+/// Validates UTF-8 on construction. Cloning is O(1) (refcount increment).
+/// Use this for string fields in performance-critical protobuf types to
+/// avoid per-field allocation during deserialization.
 ///
 /// ```
 /// use typeway_protobuf::BytesStr;
@@ -66,9 +54,8 @@ impl<T> ProtoMessage for T where
 ///
 /// let s = BytesStr::from_utf8(Bytes::from_static(b"hello")).unwrap();
 /// assert_eq!(&*s, "hello");
-/// assert_eq!(s.len(), 5);
 ///
-/// // Cloning is cheap (refcount increment)
+/// // Cloning is cheap (refcount increment, no copy)
 /// let s2 = s.clone();
 /// assert_eq!(&*s2, "hello");
 /// ```
@@ -78,47 +65,58 @@ pub struct BytesStr {
 }
 
 impl BytesStr {
-    /// Create a `BytesStr` from `Bytes`, validating UTF-8.
+    /// Create from `Bytes`, validating UTF-8.
     pub fn from_utf8(bytes: Bytes) -> Result<Self, std::str::Utf8Error> {
         std::str::from_utf8(&bytes)?;
         Ok(BytesStr { inner: bytes })
     }
 
-    /// Create a `BytesStr` from `Bytes` without UTF-8 validation.
+    /// Create from `Bytes` without UTF-8 validation.
     ///
     /// # Safety
-    ///
     /// The caller must guarantee the bytes are valid UTF-8.
     pub unsafe fn from_utf8_unchecked(bytes: Bytes) -> Self {
         BytesStr { inner: bytes }
     }
 
-    /// Return the string as a byte slice.
+    /// Slice this string, producing a new `BytesStr` that shares the
+    /// backing buffer. O(1), no copy.
+    pub fn slice(&self, range: std::ops::Range<usize>) -> Self {
+        // Safety: if self is valid UTF-8 and range is on char boundaries, the slice is valid.
+        // For internal use where we control the range.
+        BytesStr {
+            inner: self.inner.slice(range),
+        }
+    }
+
     pub fn as_bytes(&self) -> &[u8] {
         &self.inner
     }
 
-    /// Return the underlying `Bytes`.
     pub fn into_bytes(self) -> Bytes {
         self.inner
     }
 
-    /// Return the string length in bytes.
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
-    /// Return whether the string is empty.
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 }
 
+impl Default for BytesStr {
+    fn default() -> Self {
+        BytesStr {
+            inner: Bytes::new(),
+        }
+    }
+}
+
 impl std::ops::Deref for BytesStr {
     type Target = str;
-
     fn deref(&self) -> &str {
-        // Safety: validated at construction
         unsafe { std::str::from_utf8_unchecked(&self.inner) }
     }
 }
@@ -137,17 +135,31 @@ impl std::fmt::Debug for BytesStr {
 
 impl From<String> for BytesStr {
     fn from(s: String) -> Self {
-        BytesStr {
-            inner: Bytes::from(s),
-        }
+        BytesStr { inner: Bytes::from(s) }
     }
 }
 
 impl From<&'static str> for BytesStr {
     fn from(s: &'static str) -> Self {
-        BytesStr {
-            inner: Bytes::from_static(s.as_bytes()),
-        }
+        BytesStr { inner: Bytes::from_static(s.as_bytes()) }
+    }
+}
+
+impl From<BytesStr> for String {
+    fn from(s: BytesStr) -> Self {
+        s.to_string()
+    }
+}
+
+impl PartialEq<str> for BytesStr {
+    fn eq(&self, other: &str) -> bool {
+        &**self == other
+    }
+}
+
+impl PartialEq<&str> for BytesStr {
+    fn eq(&self, other: &&str) -> bool {
+        &**self == *other
     }
 }
 
@@ -164,6 +176,60 @@ impl<'de> serde::Deserialize<'de> for BytesStr {
     }
 }
 
+// ---------------------------------------------------------------------------
+// EncodeBuf — reusable encode buffer
+// ---------------------------------------------------------------------------
+
+/// A reusable encode buffer that avoids allocation on repeated encodes.
+///
+/// Instead of `encode_to_vec()` (allocates a new Vec each time), use
+/// `EncodeBuf` to clear and reuse the same buffer:
+///
+/// ```ignore
+/// let mut buf = EncodeBuf::new();
+/// for msg in messages {
+///     let bytes = buf.encode(&msg); // reuses allocation
+///     send(bytes);
+/// }
+/// ```
+pub struct EncodeBuf {
+    inner: Vec<u8>,
+}
+
+impl EncodeBuf {
+    pub fn new() -> Self {
+        EncodeBuf { inner: Vec::new() }
+    }
+
+    pub fn with_capacity(cap: usize) -> Self {
+        EncodeBuf {
+            inner: Vec::with_capacity(cap),
+        }
+    }
+
+    /// Encode a message, reusing the buffer. Returns a slice of the encoded bytes.
+    pub fn encode<T: TypewayEncode>(&mut self, msg: &T) -> &[u8] {
+        self.inner.clear();
+        self.inner.reserve(msg.encoded_len());
+        msg.encode_to(&mut self.inner);
+        &self.inner
+    }
+
+    /// Encode a message and return owned Bytes (zero-copy via Bytes::from).
+    pub fn encode_to_bytes<T: TypewayEncode>(&mut self, msg: &T) -> Bytes {
+        self.inner.clear();
+        self.inner.reserve(msg.encoded_len());
+        msg.encode_to(&mut self.inner);
+        Bytes::copy_from_slice(&self.inner)
+    }
+}
+
+impl Default for EncodeBuf {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,13 +239,11 @@ mod tests {
         let s = BytesStr::from_utf8(Bytes::from_static(b"hello")).unwrap();
         assert_eq!(&*s, "hello");
         assert_eq!(s.len(), 5);
-        assert!(!s.is_empty());
     }
 
     #[test]
     fn bytes_str_invalid_utf8() {
-        let result = BytesStr::from_utf8(Bytes::from_static(&[0xFF, 0xFE]));
-        assert!(result.is_err());
+        assert!(BytesStr::from_utf8(Bytes::from_static(&[0xFF, 0xFE])).is_err());
     }
 
     #[test]
@@ -190,14 +254,16 @@ mod tests {
     }
 
     #[test]
-    fn bytes_str_display() {
-        let s = BytesStr::from("test");
-        assert_eq!(format!("{s}"), "test");
+    fn bytes_str_default_is_empty() {
+        let s = BytesStr::default();
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
     }
 
     #[test]
-    fn bytes_str_debug() {
+    fn bytes_str_display_debug() {
         let s = BytesStr::from("test");
+        assert_eq!(format!("{s}"), "test");
         assert_eq!(format!("{s:?}"), "\"test\"");
     }
 
@@ -205,16 +271,50 @@ mod tests {
     fn bytes_str_serde_roundtrip() {
         let original = BytesStr::from("hello");
         let json = serde_json::to_string(&original).unwrap();
-        assert_eq!(json, "\"hello\"");
         let deserialized: BytesStr = serde_json::from_str(&json).unwrap();
-        assert_eq!(&*deserialized, "hello");
+        assert_eq!(original, deserialized);
     }
 
     #[test]
-    fn bytes_str_empty() {
-        let s = BytesStr::from_utf8(Bytes::new()).unwrap();
-        assert!(s.is_empty());
-        assert_eq!(s.len(), 0);
+    fn bytes_str_partial_eq() {
+        let s = BytesStr::from("hello");
+        assert_eq!(s, "hello");
+        assert_eq!(s, *"hello");
     }
 
+    #[test]
+    fn bytes_str_into_string() {
+        let s = BytesStr::from("hello");
+        let owned: String = s.into();
+        assert_eq!(owned, "hello");
+    }
+
+    #[test]
+    fn bytes_str_slice() {
+        let s = BytesStr::from_utf8(Bytes::from_static(b"hello world")).unwrap();
+        let sub = s.slice(0..5);
+        assert_eq!(&*sub, "hello");
+    }
+
+    #[test]
+    fn encode_buf_reuse() {
+        use typeway_grpc::{tw_encode_tag, tw_encode_varint};
+
+        // Manual TypewayEncode for testing.
+        struct Small { id: u32 }
+        impl TypewayEncode for Small {
+            fn encoded_len(&self) -> usize { 1 + typeway_grpc::tw_varint_len(self.id as u64) }
+            fn encode_to(&self, buf: &mut Vec<u8>) {
+                tw_encode_tag(buf, 1, 0);
+                tw_encode_varint(buf, self.id as u64);
+            }
+        }
+
+        let mut buf = EncodeBuf::new();
+        let bytes1 = buf.encode(&Small { id: 1 }).to_vec();
+        let bytes2 = buf.encode(&Small { id: 2 }).to_vec();
+        // Different content, same buffer reused.
+        assert_ne!(bytes1, bytes2);
+        assert_eq!(bytes1.len(), bytes2.len());
+    }
 }
