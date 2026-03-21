@@ -121,42 +121,20 @@ impl GrpcRouter {
 /// content-type is set by the caller to `application/grpc+proto` so
 /// `Proto<T>` knows to use `TypewayDecode`.
 fn build_synthetic_request_raw(
-    original_parts: &http::request::Parts,
-    method_desc: &GrpcMethodDescriptor,
+    original_parts: http::request::Parts,
     state_injector: Option<&StateInjector>,
-) -> (http::request::Parts, Bytes) {
-    let mut builder = http::Request::builder()
-        .method(method_desc.http_method.clone());
-
-    builder = builder.uri(
-        method_desc.rest_path.parse::<http::Uri>()
-            .unwrap_or_default(),
-    );
-
-    let (synthetic_parts, _) = builder.body(()).unwrap().into_parts();
-    let mut parts = synthetic_parts;
-
-    // Copy headers from original request.
-    parts.headers = original_parts.headers.clone();
-
-    // Copy extensions from original request.
-    parts.extensions = original_parts.extensions.clone();
-
-    // Build PathSegments.
-    let path_str = parts.uri.path().to_string();
-    let segments: Vec<String> = path_str
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect();
-    parts.extensions.insert(PathSegments(Arc::new(segments)));
+) -> http::request::Parts {
+    // Lightweight: reuse original parts directly, just inject state.
+    // No header cloning, no URI rebuilding, no path segment construction.
+    // Proto<T> doesn't need PathSegments — it extracts from the body.
+    let mut parts = original_parts;
 
     // Inject state.
     if let Some(injector) = state_injector {
         injector(&mut parts.extensions);
     }
 
-    (parts, Bytes::new()) // body is set by caller
+    parts
 }
 
 /// Build synthetic `Parts` and body bytes from a gRPC message.
@@ -649,16 +627,16 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                 let (synthetic_parts, body_bytes) = if binary_fast_path {
                     // Fast path: pass raw binary bytes with protobuf content-type.
                     // Proto<T> extractor detects this and uses TypewayDecode.
+                    // Lightweight: reuses original parts, no header/extension cloning.
                     let mut synthetic = build_synthetic_request_raw(
-                        &parts,
-                        &method_desc,
+                        parts,
                         grpc_router.state_injector.as_ref(),
                     );
-                    synthetic.0.headers.insert(
+                    synthetic.headers.insert(
                         http::header::CONTENT_TYPE,
                         http::HeaderValue::from_static("application/grpc+proto"),
                     );
-                    (synthetic.0, Bytes::from(unframed))
+                    (synthetic, Bytes::from(unframed))
                 } else {
                     // JSON path: decode to serde_json::Value, serialize to body.
                     #[cfg(feature = "grpc-proto-binary")]

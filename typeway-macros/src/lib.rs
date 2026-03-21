@@ -2437,8 +2437,12 @@ fn gen_decode_arm(f: &CodecField) -> TokenStream2 {
                 if offset + str_len > bytes.len() {
                     return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
                 }
-                #ident = String::from_utf8(bytes[offset..offset + str_len].to_vec())
+                // Validate UTF-8 on borrowed slice, then construct String
+                // without re-validation (saves one O(n) scan).
+                let slice = &bytes[offset..offset + str_len];
+                ::core::str::from_utf8(slice)
                     .map_err(|_| ::typeway_grpc::TypewayDecodeError::InvalidUtf8(#ident_str))?;
+                #ident = unsafe { String::from_utf8_unchecked(slice.to_vec()) };
                 offset += str_len;
             }
         },
@@ -2543,8 +2547,12 @@ fn gen_decode_optional_inner(ident: &Ident, ident_str: &str, kind: &CodecKind) -
             if offset + str_len > bytes.len() {
                 return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
             }
-            #ident = Some(String::from_utf8(bytes[offset..offset + str_len].to_vec())
-                .map_err(|_| ::typeway_grpc::TypewayDecodeError::InvalidUtf8(#ident_str))?);
+            {
+                let slice = &bytes[offset..offset + str_len];
+                ::core::str::from_utf8(slice)
+                    .map_err(|_| ::typeway_grpc::TypewayDecodeError::InvalidUtf8(#ident_str))?;
+                #ident = Some(unsafe { String::from_utf8_unchecked(slice.to_vec()) });
+            }
             offset += str_len;
         },
         _ => quote! {
@@ -2590,8 +2598,12 @@ fn gen_decode_repeated_item(ident: &Ident, ident_str: &str, kind: &CodecKind) ->
             if offset + str_len > bytes.len() {
                 return Err(::typeway_grpc::TypewayDecodeError::UnexpectedEof);
             }
-            #ident.push(String::from_utf8(bytes[offset..offset + str_len].to_vec())
-                .map_err(|_| ::typeway_grpc::TypewayDecodeError::InvalidUtf8(#ident_str))?);
+            {
+                let slice = &bytes[offset..offset + str_len];
+                ::core::str::from_utf8(slice)
+                    .map_err(|_| ::typeway_grpc::TypewayDecodeError::InvalidUtf8(#ident_str))?;
+                #ident.push(unsafe { String::from_utf8_unchecked(slice.to_vec()) });
+            }
             offset += str_len;
         },
         _ => quote! {
