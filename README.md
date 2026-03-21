@@ -380,9 +380,13 @@ The `ApiChangelog` trait provides runtime introspection of the change set — ho
 
 ## gRPC / Protocol Buffers
 
-With the `grpc` feature, the same API type that drives your REST server, client, and OpenAPI spec also generates Protocol Buffers service definitions, serves gRPC alongside REST, provides a type-safe gRPC client, exposes server reflection, runs a health check service, serves gRPC documentation, supports gRPC-Web for browser clients, and validates proto compatibility across versions.
+Your REST handlers automatically become gRPC endpoints. With the `grpc` feature, adding `.with_grpc("Svc", "pkg")` to your server builder is all it takes — the same API type that drives your REST server, client, and OpenAPI spec also generates Protocol Buffers service definitions, serves gRPC alongside REST, provides a type-safe gRPC client, exposes server reflection, runs a health check service, serves gRPC documentation, supports gRPC-Web for browser clients, and validates proto compatibility across versions.
+
+For encoding, `#[derive(TypewayCodec)]` generates compile-time specialized protobuf encoders that are 3-8x faster than runtime reflection-based encoding. `BinaryCodec` provides standard protobuf interop for clients that expect `application/grpc`.
 
 One API type, eight projections: REST server, REST client, OpenAPI spec + Swagger UI, gRPC server, gRPC client, `.proto` file, gRPC spec + docs page, and server reflection.
+
+> **Honest caveat:** Typeway's gRPC support is experimental and not yet battle-tested like Tonic. If you need a standalone gRPC service with maximum ecosystem maturity, Tonic is the safer choice today. But for projects already using Typeway, the unified type-level approach eliminates the duplication of maintaining separate REST and gRPC stacks.
 
 ### Message Types from Rust Structs
 

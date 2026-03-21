@@ -1,3 +1,5 @@
+> **Status: Design proposal — not implemented.** This document describes a future typeway-protobuf library with zero-copy views and tiered deserialization. It has not been built. Current typeway-grpc uses prost (via BinaryCodec) and a compile-time specialized codec (`#[derive(TypewayCodec)]`) for protobuf encoding.
+
 # Redesigning Prost: typeway-protobuf — A Type-Theoretic, High-Performance Protobuf Library for Rust
 
 ## Executive Summary

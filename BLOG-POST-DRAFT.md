@@ -591,7 +591,7 @@ Nothing like this exists in Servant. Haskell's type system is powerful enough to
 
 This is the feature I'm most proud of, because nothing else in any language does it.
 
-The same type that drives the REST server, the type-safe client, and the OpenAPI spec now also generates Protocol Buffers service definitions, serves gRPC alongside REST on the same port, provides a type-safe gRPC client, exposes server reflection, runs a health check service, serves gRPC documentation, supports gRPC-Web for browser clients, and validates proto compatibility across versions. One API type, eight projections: REST server, REST client, OpenAPI spec + Swagger UI, gRPC server, gRPC client, `.proto` file, gRPC spec + docs page, and server reflection.
+Your REST handlers automatically become gRPC endpoints. The same type that drives the REST server, the type-safe client, and the OpenAPI spec now also generates Protocol Buffers service definitions, serves gRPC alongside REST on the same port, provides a type-safe gRPC client, exposes server reflection, runs a health check service, serves gRPC documentation, supports gRPC-Web for browser clients, and validates proto compatibility across versions. One API type, eight projections: REST server, REST client, OpenAPI spec + Swagger UI, gRPC server, gRPC client, `.proto` file, gRPC spec + docs page, and server reflection.
 
 `#[derive(ToProtoType)]` eliminates hand-written message definitions entirely. The Rust struct is the source of truth, with field tags declared inline for stable wire format numbering:
 
@@ -625,7 +625,9 @@ Server::<API>::new(handlers)
     .await?;
 ```
 
-The gRPC dispatch shares handlers between REST and gRPC — there is no duplication. A single handler implementation serves both protocols, sharing the same Tower middleware stack and Tokio runtime. The native dispatch handles gRPC framing (length-prefix encoding) with real HTTP/2 trailers and deadline propagation (the `grpc-timeout` header becomes a Tower timeout) transparently. Streaming uses real `tokio::sync::mpsc` channels with backpressure, not collect-and-split.
+The gRPC dispatch shares handlers between REST and gRPC — there is no duplication. A single handler implementation serves both protocols, sharing the same Tower middleware stack and Tokio runtime. The native dispatch uses HashMap lookup in `NativeMultiplexer` for direct method routing, handles gRPC framing (length-prefix encoding) with real HTTP/2 trailers for `grpc-status`, and propagates deadlines (the `grpc-timeout` header becomes a Tower timeout) transparently. Streaming uses real `tokio::sync::mpsc` channels with backpressure, not collect-and-split.
+
+For encoding performance, `#[derive(TypewayCodec)]` generates compile-time specialized protobuf encoders that are 3-8x faster than runtime reflection-based encoding — the specialization happens at compile time, so there is no runtime dispatch overhead. `BinaryCodec` provides standard protobuf interop (`application/grpc`) for clients that expect vanilla gRPC, while the default JSON codec (`application/grpc+json`) shares serialization with the REST path. `NativeGrpcClient` is codec-aware and selects the right encoding automatically.
 
 Streaming is supported across all three gRPC patterns. `ServerStream<E>` splits JSON arrays into per-element gRPC frames for server-streaming RPCs. `ClientStream<E>` handles client-streaming. `BidirectionalStream<E>` handles full-duplex streaming. All three generate the correct `stream` annotations in the `.proto` output.
 
@@ -647,6 +649,8 @@ Change the API type, and both the REST client and the gRPC client refuse to comp
 On the tooling side, `validate_proto()` checks generated proto files for validity, and `diff_protos()` compares two proto files and reports breaking vs. compatible changes — suitable for CI pipelines via the `typeway-grpc diff` CLI. For the reverse direction, `typeway-grpc api-from-proto` converts an existing `.proto` file into Typeway API types, and `typeway-grpc spec-from-proto` generates documentation from any proto file.
 
 The contrast with Haskell is stark. Servant has no gRPC story at all. The Haskell gRPC ecosystem (`grpc-haskell`, `proto-lens`) is completely separate from Servant — different type hierarchies, different code generation pipelines, different middleware stacks. If you want both REST and gRPC in a Haskell service, you maintain two independent API definitions with no shared types, no shared handlers, no unified serving. Typeway unifies REST and gRPC under one type, one set of handlers, and one middleware stack. I'm not aware of any other web framework in any language that derives both REST and gRPC from a single type-level API definition.
+
+This is a fundamentally different approach from Tonic. Tonic has years of production use and a large ecosystem. Typeway's gRPC is new and experimental. We think the type-level approach is better for projects already using Typeway, but we'd recommend Tonic for standalone gRPC services where ecosystem maturity matters.
 
 ---
 
