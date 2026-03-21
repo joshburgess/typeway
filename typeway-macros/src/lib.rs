@@ -2207,23 +2207,36 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
                 let item_write = gen_packed_item_write(inner);
                 let is_varint = matches!(inner.as_ref(), CodecKind::Varint);
                 if is_varint {
-                    // Single-pass approach for varints: write data first, backfill length.
-                    // Avoids iterating twice (once for length, once for data).
+                    // Single-pass batch write: one reserve + one set_len
+                    // for the entire packed field. Eliminates per-element
+                    // set_len calls and function call overhead.
                     quote! {
                         if !self.#ident.is_empty() {
                             ::typeway_protobuf::tw_encode_tag(buf, #tag, 2u8);
                             let len_pos = buf.len();
                             buf.push(0); // placeholder for length
                             let data_start = buf.len();
-                            buf.reserve(self.#ident.len() * 5);
-                            for item in &self.#ident {
-                                #item_write
+                            buf.reserve(self.#ident.len() * 10);
+                            // Batch unsafe write: ONE set_len for all varints.
+                            unsafe {
+                                let base = buf.as_mut_ptr();
+                                let mut pos = data_start;
+                                for item in &self.#ident {
+                                    let mut v = *item as u64;
+                                    while v >= 0x80 {
+                                        *base.add(pos) = (v as u8 & 0x7F) | 0x80;
+                                        v >>= 7;
+                                        pos += 1;
+                                    }
+                                    *base.add(pos) = v as u8;
+                                    pos += 1;
+                                }
+                                buf.set_len(pos);
                             }
                             let packed_len = buf.len() - data_start;
                             if packed_len < 0x80 {
                                 buf[len_pos] = packed_len as u8;
                             } else {
-                                // Shift data to make room for multi-byte length.
                                 let data = buf[data_start..].to_vec();
                                 buf.truncate(len_pos);
                                 ::typeway_protobuf::tw_encode_varint(buf, packed_len as u64);
