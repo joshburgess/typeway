@@ -177,6 +177,59 @@ impl<'de> serde::Deserialize<'de> for BytesStr {
 }
 
 // ---------------------------------------------------------------------------
+// TypewayEncode / TypewayDecode for BytesStr
+// ---------------------------------------------------------------------------
+
+impl TypewayEncode for BytesStr {
+    fn encoded_len(&self) -> usize {
+        if self.is_empty() {
+            0
+        } else {
+            // tag is handled by the parent struct's derive; this is just the value
+            typeway_grpc::tw_varint_len(self.len() as u64) + self.len()
+        }
+    }
+
+    fn encode_to(&self, buf: &mut Vec<u8>) {
+        if !self.is_empty() {
+            typeway_grpc::tw_encode_varint(buf, self.len() as u64);
+            buf.extend_from_slice(self.as_bytes());
+        }
+    }
+}
+
+impl TypewayDecode for BytesStr {
+    fn typeway_decode(bytes: &[u8]) -> Result<Self, TypewayDecodeError> {
+        // When decoded from &[u8], we must copy (no Bytes backing).
+        std::str::from_utf8(bytes)
+            .map(|s| BytesStr::from(s.to_string()))
+            .map_err(|_| TypewayDecodeError::InvalidUtf8("BytesStr"))
+    }
+
+    fn typeway_decode_bytes(bytes: Bytes) -> Result<Self, TypewayDecodeError> {
+        // Zero-copy: validate UTF-8, then wrap the Bytes directly.
+        BytesStr::from_utf8(bytes)
+            .map_err(|_| TypewayDecodeError::InvalidUtf8("BytesStr"))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TypewayEncode / TypewayDecode for RepeatedField<T>
+// ---------------------------------------------------------------------------
+
+impl<T: TypewayEncode> TypewayEncode for RepeatedField<T> {
+    fn encoded_len(&self) -> usize {
+        self.iter().map(|item| item.encoded_len()).sum()
+    }
+
+    fn encode_to(&self, buf: &mut Vec<u8>) {
+        for item in self.iter() {
+            item.encode_to(buf);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // EncodeBuf — reusable encode buffer
 // ---------------------------------------------------------------------------
 

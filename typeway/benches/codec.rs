@@ -377,6 +377,13 @@ fn bench_decode(c: &mut Criterion) {
     group.bench_function("small/hand_written", |b| {
         b.iter(|| black_box(proto_binary_to_json(&small_bytes, &small_f).unwrap()))
     });
+    let small_bytes_b = bytes::Bytes::from(small_bytes.clone());
+    group.bench_function("small/typeway_zerocopy", |b| {
+        b.iter(|| {
+            let input = small_bytes_b.clone();
+            black_box(SmallMessage::typeway_decode_bytes(input).unwrap())
+        })
+    });
     group.bench_function("small/prost", |b| {
         b.iter(|| black_box(ProstSmallMessage::decode(small_bytes.as_slice()).unwrap()))
     });
@@ -391,6 +398,13 @@ fn bench_decode(c: &mut Criterion) {
     group.bench_function("medium/hand_written", |b| {
         b.iter(|| black_box(proto_binary_to_json(&medium_bytes, &medium_f).unwrap()))
     });
+    let medium_bytes_b = bytes::Bytes::from(medium_bytes.clone());
+    group.bench_function("medium/typeway_zerocopy", |b| {
+        b.iter(|| {
+            let input = medium_bytes_b.clone();
+            black_box(MediumMessage::typeway_decode_bytes(input).unwrap())
+        })
+    });
     group.bench_function("medium/prost", |b| {
         b.iter(|| black_box(ProstMediumMessage::decode(medium_bytes.as_slice()).unwrap()))
     });
@@ -404,6 +418,13 @@ fn bench_decode(c: &mut Criterion) {
     });
     group.bench_function("large/hand_written", |b| {
         b.iter(|| black_box(proto_binary_to_json(&large_bytes, &large_f).unwrap()))
+    });
+    let large_bytes_b = bytes::Bytes::from(large_bytes.clone());
+    group.bench_function("large/typeway_zerocopy", |b| {
+        b.iter(|| {
+            let input = large_bytes_b.clone();
+            black_box(LargeMessage::typeway_decode_bytes(input).unwrap())
+        })
     });
     group.bench_function("large/prost", |b| {
         b.iter(|| black_box(ProstLargeMessage::decode(large_bytes.as_slice()).unwrap()))

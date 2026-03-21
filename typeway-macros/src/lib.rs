@@ -1991,7 +1991,7 @@ fn classify_scalar(ty: &syn::Type) -> CodecKind {
         "bool" => CodecKind::Bool,
         "f32" => CodecKind::Fixed32,
         "f64" => CodecKind::Fixed64,
-        "String" => CodecKind::LenString,
+        "String" | "BytesStr" | "typeway_protobuf::BytesStr" => CodecKind::LenString,
         _ => CodecKind::Message,
     }
 }
@@ -2071,6 +2071,33 @@ fn derive_typeway_codec_struct(
             fn typeway_decode(
                 bytes: &[u8],
             ) -> ::core::result::Result<Self, ::typeway_grpc::TypewayDecodeError> {
+                #(#field_defaults)*
+                let mut offset: usize = 0;
+
+                while offset < bytes.len() {
+                    let (tag_wire, consumed) =
+                        ::typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                    offset += consumed;
+                    let field_number = (tag_wire >> 3) as u32;
+                    let wire_type = (tag_wire & 0x07) as u8;
+
+                    match field_number {
+                        #(#decode_arms)*
+                        _ => {
+                            let skipped =
+                                ::typeway_grpc::tw_skip_wire_value(&bytes[offset..], wire_type)?;
+                            offset += skipped;
+                        }
+                    }
+                }
+
+                Ok(#name { #(#field_names),* })
+            }
+
+            fn typeway_decode_bytes(
+                input: ::bytes::Bytes,
+            ) -> ::core::result::Result<Self, ::typeway_grpc::TypewayDecodeError> {
+                let bytes = &input[..];
                 #(#field_defaults)*
                 let mut offset: usize = 0;
 

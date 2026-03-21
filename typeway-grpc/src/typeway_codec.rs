@@ -65,6 +65,15 @@ pub trait TypewayEncode {
 pub trait TypewayDecode: Sized {
     /// Decode from protobuf binary bytes.
     fn typeway_decode(bytes: &[u8]) -> Result<Self, TypewayDecodeError>;
+
+    /// Decode from `Bytes`, enabling zero-copy string fields.
+    ///
+    /// When string fields use `BytesStr`, this method produces them by
+    /// slicing the input `Bytes` (refcount increment, no copy). Falls
+    /// back to `typeway_decode` by default.
+    fn typeway_decode_bytes(bytes: bytes::Bytes) -> Result<Self, TypewayDecodeError> {
+        Self::typeway_decode(&bytes)
+    }
 }
 
 /// Error from decoding a protobuf message.

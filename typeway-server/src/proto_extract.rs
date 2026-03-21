@@ -129,8 +129,9 @@ impl<T: ProtoMessage + 'static> FromRequest for Proto<T> {
             .unwrap_or("application/json");
 
         if is_binary_protobuf(content_type) {
-            // Fast path: binary protobuf → TypewayDecode (no JSON intermediate)
-            T::typeway_decode(&body)
+            // Fast path: binary protobuf → TypewayDecode (no JSON intermediate).
+            // Uses typeway_decode_bytes for zero-copy string fields (BytesStr).
+            T::typeway_decode_bytes(body)
                 .map(|v| Proto { inner: v, format: WireFormat::BinaryProtobuf })
                 .map_err(|e| (StatusCode::BAD_REQUEST, format!("protobuf decode error: {e}")))
         } else {
