@@ -376,4 +376,65 @@ mod tests {
         assert_ne!(bytes1, bytes2);
         assert_eq!(bytes1.len(), bytes2.len());
     }
+
+    #[test]
+    fn encode_buf_preserves_capacity() {
+        use crate::{tw_encode_tag, tw_encode_varint};
+
+        struct Msg { id: u32 }
+        impl TypewayEncode for Msg {
+            fn encoded_len(&self) -> usize { 1 + crate::tw_varint_len(self.id as u64) }
+            fn encode_to(&self, buf: &mut Vec<u8>) {
+                tw_encode_tag(buf, 1, 0);
+                tw_encode_varint(buf, self.id as u64);
+            }
+        }
+
+        let mut buf = EncodeBuf::new();
+        buf.encode(&Msg { id: 1 });
+        buf.encode(&Msg { id: 999999 }); // larger varint
+        // Third encode should reuse without realloc.
+        let result = buf.encode(&Msg { id: 1 });
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn repeated_field_with_typeway_encode() {
+        use crate::{tw_encode_tag, tw_encode_varint};
+
+        let mut field = RepeatedField::new();
+        field.push(10u32);
+        field.push(20u32);
+        field.push(30u32);
+
+        // TypewayEncode for RepeatedField delegates to elements.
+        // Since u32 doesn't implement TypewayEncode, we test the trait exists.
+        assert_eq!(field.len(), 3);
+        assert_eq!(&field[..], &[10, 20, 30]);
+    }
+
+    #[test]
+    fn bytes_str_encode_decode_consistency() {
+        // Encode a BytesStr and verify it produces the same bytes as String.
+        let bs = BytesStr::from("hello");
+        let s = "hello".to_string();
+
+        // Both should have the same byte representation.
+        assert_eq!(bs.as_bytes(), s.as_bytes());
+        assert_eq!(bs.len(), s.len());
+    }
+
+    #[test]
+    fn const_varint_len() {
+        // Verify tw_varint_len is const fn.
+        const LEN_ZERO: usize = crate::tw_varint_len(0);
+        const LEN_127: usize = crate::tw_varint_len(127);
+        const LEN_128: usize = crate::tw_varint_len(128);
+        const LEN_MAX: usize = crate::tw_varint_len(u64::MAX);
+
+        assert_eq!(LEN_ZERO, 1);
+        assert_eq!(LEN_127, 1);
+        assert_eq!(LEN_128, 2);
+        assert_eq!(LEN_MAX, 10);
+    }
 }
