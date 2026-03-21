@@ -195,12 +195,21 @@ pub fn tw_encode_packed_u32(buf: &mut Vec<u8>, values: &[u32]) {
 
 /// Encode a varint to a buffer that is known to have enough spare capacity.
 ///
+/// No bounds checks, no reserve. Single `set_len` at the end.
+/// Use this in hot loops after a single `reserve()` for the entire batch.
+///
 /// # Safety
 /// The caller must ensure `buf` has at least 10 bytes of spare capacity.
-#[inline]
+#[inline(always)]
 pub unsafe fn tw_encode_varint_unchecked(buf: &mut Vec<u8>, mut value: u64) {
     let mut pos = buf.len();
     let base = buf.as_mut_ptr();
+    // Single-byte fast path (no branch for the common case).
+    if value < 0x80 {
+        *base.add(pos) = value as u8;
+        buf.set_len(pos + 1);
+        return;
+    }
     while value >= 0x80 {
         *base.add(pos) = (value as u8 & 0x7F) | 0x80;
         value >>= 7;
