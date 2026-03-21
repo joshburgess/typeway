@@ -51,14 +51,20 @@ type StateInjector = Arc<dyn Fn(&mut http::Extensions) + Send + Sync>;
 /// Maps gRPC method paths (e.g., `/pkg.v1.Svc/GetUser`) directly to
 /// handlers via HashMap lookup. This is O(1) compared to the REST
 /// router's linear scan.
-pub(crate) struct GrpcRouter {
+pub struct GrpcRouter {
     handlers: HashMap<String, GrpcRouteEntry>,
     state_injector: Option<StateInjector>,
 }
 
-struct GrpcRouteEntry {
-    handler: BoxedHandler,
-    method_descriptor: GrpcMethodDescriptor,
+enum GrpcRouteEntry {
+    /// Standard handler — goes through extractor pipeline (Proto<T>, Json<T>).
+    Standard {
+        handler: BoxedHandler,
+        method_descriptor: GrpcMethodDescriptor,
+    },
+    /// Direct handler — bypasses extractors, decodes/encodes protobuf directly.
+    #[cfg(feature = "protobuf")]
+    Direct(crate::grpc_direct::DirectHandler),
 }
 
 impl GrpcRouter {
@@ -68,7 +74,7 @@ impl GrpcRouter {
     /// REST handler by matching `http_method` and `rest_path`. Since
     /// `BoxedHandler` is `Arc`-wrapped, the handler is shared between
     /// REST and gRPC dispatch (cheap clone).
-    pub(crate) fn from_router(
+    pub fn from_router(
         router: &Router,
         descriptor: &GrpcServiceDescriptor,
     ) -> Self {
@@ -81,7 +87,7 @@ impl GrpcRouter {
             ) {
                 handlers.insert(
                     method.full_path.clone(),
-                    GrpcRouteEntry {
+                    GrpcRouteEntry::Standard {
                         handler,
                         method_descriptor: method.clone(),
                     },
@@ -102,6 +108,16 @@ impl GrpcRouter {
             handlers,
             state_injector,
         }
+    }
+
+    /// Register a direct gRPC handler for a method path.
+    #[cfg(feature = "protobuf")]
+    pub fn add_direct_handler(
+        &mut self,
+        grpc_path: String,
+        handler: crate::grpc_direct::DirectHandler,
+    ) {
+        self.handlers.insert(grpc_path, GrpcRouteEntry::Direct(handler));
     }
 
     /// Look up a handler by gRPC method path.
@@ -299,13 +315,13 @@ fn json_value_to_string(val: &serde_json::Value) -> String {
 /// applied via [`GrpcServer::layer`](crate::grpc::GrpcServer::layer).
 #[derive(Clone)]
 pub struct GrpcMultiplexer {
-    pub(crate) rest: RouterService,
-    pub(crate) grpc_router: Arc<GrpcRouter>,
-    pub(crate) reflection: Arc<ReflectionService>,
-    pub(crate) health: HealthService,
-    pub(crate) reflection_enabled: bool,
-    pub(crate) grpc_spec_json: Option<Arc<String>>,
-    pub(crate) grpc_docs_html: Option<Arc<String>>,
+    pub rest: RouterService,
+    pub grpc_router: Arc<GrpcRouter>,
+    pub reflection: Arc<ReflectionService>,
+    pub health: HealthService,
+    pub reflection_enabled: bool,
+    pub grpc_spec_json: Option<Arc<String>>,
+    pub grpc_docs_html: Option<Arc<String>>,
     /// Transcoder for binary protobuf support. When set, the native dispatch
     /// auto-detects `application/grpc` (binary) vs `application/grpc+json`
     /// and transcodes accordingly.
@@ -586,8 +602,28 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                     }
                 };
 
-                let method_desc = entry.method_descriptor.clone();
-                let handler = entry.handler.clone();
+                // Direct handler: bypass entire extractor pipeline.
+                #[cfg(feature = "protobuf")]
+                if let GrpcRouteEntry::Direct(direct_handler) = entry {
+                    let direct_handler = direct_handler.clone();
+                    let body_bytes = match http_body_util::BodyExt::collect(req.into_body()).await {
+                        Ok(collected) => collected.to_bytes(),
+                        Err(_) => Bytes::new(),
+                    };
+                    return Ok(crate::grpc_direct::dispatch_direct(
+                        &direct_handler,
+                        body_bytes,
+                    ).await);
+                }
+
+                // Standard handler: extractor pipeline.
+                let (method_desc, handler) = match entry {
+                    GrpcRouteEntry::Standard { handler, method_descriptor } => {
+                        (method_descriptor.clone(), handler.clone())
+                    }
+                    #[cfg(feature = "protobuf")]
+                    GrpcRouteEntry::Direct(_) => unreachable!(),
+                };
 
                 // Parse grpc-timeout for deadline propagation.
                 let grpc_timeout = req

@@ -202,6 +202,67 @@ async fn start_typeway_proto_server() -> u16 {
 }
 
 // =========================================================================
+// 1c. Typeway server with direct handler (maximum throughput)
+// =========================================================================
+
+async fn start_typeway_direct_server() -> u16 {
+    use typeway_server::grpc_direct::into_direct_handler;
+
+    let direct = into_direct_handler(|req: CreateUser| async move {
+        User { id: 3, name: req.name }
+    });
+
+    type DirectAPI = (
+        PostEndpoint<UsersPath, CreateUser, User>,
+    );
+
+    let server = Server::<DirectAPI>::new((
+        bind::<_, _, _>(tw_create_user),
+    ))
+    .with_grpc("BenchService", "bench.v1");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+
+    let addr = listener.local_addr().unwrap();
+    let descriptor = <DirectAPI as typeway_grpc::service::ApiToServiceDescriptor>::service_descriptor("BenchService", "bench.v1");
+    let mut grpc_router = typeway_server::grpc_dispatch::GrpcRouter::from_router(
+        &typeway_server::Router::new(), // empty — direct handler replaces it
+        &descriptor,
+    );
+    grpc_router.add_direct_handler(
+        "/bench.v1.BenchService/CreateUser".to_string(),
+        direct,
+    );
+
+    // Build multiplexer manually with the direct handler.
+    let multiplexer = typeway_server::grpc_dispatch::GrpcMultiplexer {
+        rest: typeway_server::RouterService::new(std::sync::Arc::new(typeway_server::Router::new())),
+        grpc_router: std::sync::Arc::new(grpc_router),
+        reflection: std::sync::Arc::new(typeway_grpc::ReflectionService::from_api::<DirectAPI>("BenchService", "bench.v1")),
+        health: typeway_grpc::HealthService::new(),
+        reflection_enabled: false,
+        grpc_spec_json: None,
+        grpc_docs_html: None,
+    };
+
+    tokio::spawn(async move {
+        loop {
+            let (stream, _) = listener.accept().await.unwrap();
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let svc = multiplexer.clone();
+            tokio::spawn(async move {
+                let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
+                    .serve_connection(io, hyper_util::service::TowerToHyperService::new(svc))
+                    .await;
+            });
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    port
+}
+
+// =========================================================================
 // 2. Tonic server (manual impl matching what codegen produces)
 // =========================================================================
 
@@ -472,6 +533,7 @@ fn bench_e2e(c: &mut Criterion) {
 
     let tw_port = rt.block_on(start_typeway_server());
     let tw_proto_port = rt.block_on(start_typeway_proto_server());
+    let tw_direct_port = rt.block_on(start_typeway_direct_server());
     let tonic_port = rt.block_on(start_tonic_server());
     let baseline_port = rt.block_on(start_baseline_server());
 
@@ -506,6 +568,16 @@ fn bench_e2e(c: &mut Criterion) {
             let body = create_binary.clone();
             async move {
                 grpc_call_binary(&client, tw_proto_port, "bench.v1.BenchService", "CreateUser", &body).await
+            }
+        })
+    });
+
+    group.bench_function("create_user/typeway_direct", |b| {
+        b.to_async(&rt).iter(|| {
+            let client = client.clone();
+            let body = create_binary.clone();
+            async move {
+                grpc_call_binary(&client, tw_direct_port, "bench.v1.BenchService", "CreateUser", &body).await
             }
         })
     });

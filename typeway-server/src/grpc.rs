@@ -208,6 +208,41 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
         }
     }
 
+    /// Start serving with direct gRPC handlers registered.
+    ///
+    /// Direct handlers bypass the extractor pipeline for maximum throughput.
+    /// Each entry is `(grpc_method_path, handler)`.
+    #[cfg(feature = "protobuf")]
+    pub async fn serve_with_direct_handlers(
+        self,
+        addr: SocketAddr,
+        direct_handlers: Vec<(String, crate::grpc_direct::DirectHandler)>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let listener = TcpListener::bind(addr).await?;
+        tracing::info!("Listening on http://{addr} (REST + gRPC)");
+        let multiplexer = self.build_multiplexer_with_directs(direct_handlers);
+
+        let shutdown = std::future::pending::<()>();
+        tokio::pin!(shutdown);
+
+        loop {
+            tokio::select! {
+                result = listener.accept() => {
+                    let (stream, _) = result?;
+                    let io = TokioIo::new(stream);
+                    let svc = multiplexer.clone();
+                    let hyper_svc = hyper_util::service::TowerToHyperService::new(svc);
+                    tokio::task::spawn(async move {
+                        let _ = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+                            .serve_connection(io, hyper_svc)
+                            .await;
+                    });
+                }
+                () = &mut shutdown => { return Ok(()); }
+            }
+        }
+    }
+
     /// Get a reference to the service descriptor.
     pub fn service_descriptor(&self) -> GrpcServiceDescriptor {
         A::service_descriptor(&self.service_name, &self.package)
@@ -231,6 +266,34 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
         LayeredGrpcServer {
             service: layer.layer(multiplexer),
             _api: PhantomData,
+        }
+    }
+
+    /// Build the multiplexer, returning it with a mutable router for direct handler registration.
+    #[cfg(feature = "protobuf")]
+    fn build_multiplexer_with_directs(
+        self,
+        direct_handlers: Vec<(String, crate::grpc_direct::DirectHandler)>,
+    ) -> crate::grpc_dispatch::GrpcMultiplexer {
+        let descriptor = A::service_descriptor(&self.service_name, &self.package);
+        let mut grpc_router = crate::grpc_dispatch::GrpcRouter::from_router(
+            &self.router,
+            &descriptor,
+        );
+        for (path, handler) in direct_handlers {
+            grpc_router.add_direct_handler(path, handler);
+        }
+
+        crate::grpc_dispatch::GrpcMultiplexer {
+            rest: RouterService::new(self.router),
+            grpc_router: Arc::new(grpc_router),
+            reflection: Arc::new(self.reflection),
+            health: self.health,
+            reflection_enabled: self.reflection_enabled,
+            grpc_spec_json: self.grpc_spec_json,
+            grpc_docs_html: self.grpc_docs_html,
+            #[cfg(feature = "grpc-proto-binary")]
+            transcoder: self.transcoder,
         }
     }
 

@@ -11,6 +11,8 @@ pub mod effects;
 pub mod error;
 #[cfg(feature = "grpc")]
 pub mod grpc;
+#[cfg(feature = "protobuf")]
+pub mod grpc_direct;
 #[cfg(feature = "grpc")]
 pub mod grpc_dispatch;
 #[cfg(feature = "grpc")]
