@@ -156,6 +156,7 @@ pub fn grpc_channel_default<T>() -> (GrpcSender<T>, GrpcReceiver<T>) {
 /// - `server_bistream` is the handle the server handler receives
 /// - `client_tx` feeds the server's receiver (framework reads client frames into this)
 /// - `client_rx` reads the server's sender (framework writes to client from this)
+#[allow(clippy::type_complexity)]
 pub fn grpc_bidi_channel<Req, Resp>(
     buffer: usize,
 ) -> (

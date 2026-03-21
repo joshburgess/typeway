@@ -127,9 +127,8 @@ pub fn tw_varint_len(value: u64) -> usize {
     if value == 0 {
         return 1;
     }
-    // ceil(bits_needed / 7)
     let bits = 64 - value.leading_zeros() as usize;
-    (bits + 6) / 7
+    bits.div_ceil(7)
 }
 
 /// Encode a tag (field_number << 3 | wire_type) as a varint.
@@ -141,7 +140,7 @@ pub fn tw_encode_tag(buf: &mut Vec<u8>, field_number: u32, wire_type: u8) {
 /// Compute the encoded length of a tag.
 #[inline]
 pub fn tw_tag_len(field_number: u32) -> usize {
-    tw_varint_len(((field_number as u64) << 3) | 0)
+    tw_varint_len((field_number as u64) << 3)
 }
 
 /// ZigZag encode a signed integer (for sint32/sint64).

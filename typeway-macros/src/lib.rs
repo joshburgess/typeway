@@ -2028,13 +2028,13 @@ fn derive_typeway_codec_struct(
     // Generate encode_to body.
     let encode_stmts: Vec<TokenStream2> = codec_fields
         .iter()
-        .map(|f| gen_encode_field(f))
+        .map(gen_encode_field)
         .collect();
 
     // Generate encoded_len body.
     let len_stmts: Vec<TokenStream2> = codec_fields
         .iter()
-        .map(|f| gen_encoded_len_field(f))
+        .map(gen_encoded_len_field)
         .collect();
 
     // Generate decode body.
@@ -2049,7 +2049,7 @@ fn derive_typeway_codec_struct(
 
     let decode_arms: Vec<TokenStream2> = codec_fields
         .iter()
-        .map(|f| gen_decode_arm(f))
+        .map(gen_decode_arm)
         .collect();
 
     let field_names: Vec<&Ident> = codec_fields.iter().map(|f| &f.ident).collect();

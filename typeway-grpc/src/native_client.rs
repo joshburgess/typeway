@@ -30,7 +30,7 @@ use bytes::Bytes;
 
 use crate::codec::{CodecError, GrpcCodec, JsonCodec};
 use crate::framing;
-use crate::status::{GrpcCode, GrpcStatus};
+use crate::status::GrpcCode;
 
 /// A native gRPC client with codec abstraction.
 ///

@@ -316,7 +316,7 @@ impl Router {
     ///
     /// Used by the Axum interop adapter and the gRPC multiplexer where
     /// the body has already been collected (e.g., to strip gRPC framing).
-    #[cfg(any(feature = "axum-interop", feature = "grpc"))]
+    #[cfg(feature = "axum-interop")]
     pub(crate) fn route_with_bytes(
         self: &Arc<Self>,
         mut parts: http::request::Parts,
