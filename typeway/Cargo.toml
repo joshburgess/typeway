@@ -39,6 +39,7 @@ typeway-macros = { path = "../typeway-macros" }
 axum = "0.8"
 tower = { version = "0.5", features = ["util"] }
 bytes = "1"
+prost = "0.13"
 
 [[bench]]
 name = "routing"

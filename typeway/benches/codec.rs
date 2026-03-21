@@ -3,11 +3,12 @@
 //! Compares three approaches:
 //! 1. Hand-written codec (json_to_proto_binary / proto_binary_to_json)
 //! 2. TypewayCodec (compile-time specialized via derive macro)
-//! 3. (Future: prost, once dual-derive types are set up)
+//! 3. Prost (industry-standard protobuf library for Rust)
 //!
 //! Run with: `cargo bench --bench codec --features grpc`
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use prost::Message;
 use typeway_grpc::proto_codec::{json_to_proto_binary, proto_binary_to_json, ProtoFieldDef};
 use typeway_grpc::{TypewayDecode, TypewayEncode};
 use typeway_macros::TypewayCodec;
@@ -72,6 +73,58 @@ struct LargeMessage {
     #[proto(tag = 8)]
     created_at: String,
     #[proto(tag = 9)]
+    updated_at: String,
+}
+
+// ---------------------------------------------------------------------------
+// Prost equivalent types (for direct comparison)
+// ---------------------------------------------------------------------------
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct ProstSmallMessage {
+    #[prost(uint32, tag = "1")]
+    id: u32,
+    #[prost(string, tag = "2")]
+    name: String,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct ProstMediumMessage {
+    #[prost(uint64, tag = "1")]
+    id: u64,
+    #[prost(string, tag = "2")]
+    username: String,
+    #[prost(string, tag = "3")]
+    email: String,
+    #[prost(string, tag = "4")]
+    bio: String,
+    #[prost(bool, tag = "5")]
+    active: bool,
+    #[prost(double, tag = "6")]
+    score: f64,
+    #[prost(uint32, tag = "7")]
+    level: u32,
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct ProstLargeMessage {
+    #[prost(uint64, tag = "1")]
+    id: u64,
+    #[prost(string, tag = "2")]
+    title: String,
+    #[prost(string, tag = "3")]
+    body: String,
+    #[prost(string, tag = "4")]
+    author: String,
+    #[prost(string, repeated, tag = "5")]
+    tags: Vec<String>,
+    #[prost(uint64, tag = "6")]
+    view_count: u64,
+    #[prost(bool, tag = "7")]
+    favorited: bool,
+    #[prost(string, tag = "8")]
+    created_at: String,
+    #[prost(string, tag = "9")]
     updated_at: String,
 }
 
@@ -207,6 +260,53 @@ fn large_fields() -> Vec<ProtoFieldDef> {
 }
 
 // ---------------------------------------------------------------------------
+// Prost data constructors
+// ---------------------------------------------------------------------------
+
+fn prost_small_msg() -> ProstSmallMessage {
+    ProstSmallMessage {
+        id: 42,
+        name: "Alice".into(),
+    }
+}
+
+fn prost_medium_msg() -> ProstMediumMessage {
+    ProstMediumMessage {
+        id: 12345,
+        username: "johndoe".into(),
+        email: "john.doe@example.com".into(),
+        bio: "Software developer with 10 years of experience in systems programming.".into(),
+        active: true,
+        score: 98.5,
+        level: 42,
+    }
+}
+
+fn prost_large_msg() -> ProstLargeMessage {
+    ProstLargeMessage {
+        id: 999999,
+        title: "How to Build a Type-Level Web Framework in Rust".into(),
+        body: "This is a comprehensive guide to building a type-level web framework \
+               using Rust's type system. We cover HLists, type-level programming, \
+               compile-time route validation, and more. The framework interprets API \
+               types into servers, clients, and documentation automatically."
+            .into(),
+        author: "typeway-team".into(),
+        tags: vec![
+            "rust".into(),
+            "web".into(),
+            "type-level".into(),
+            "framework".into(),
+            "grpc".into(),
+        ],
+        view_count: 42000,
+        favorited: true,
+        created_at: "2025-01-15T10:30:00Z".into(),
+        updated_at: "2025-03-20T14:22:00Z".into(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Benchmarks
 // ---------------------------------------------------------------------------
 
@@ -224,6 +324,10 @@ fn bench_encode(c: &mut Criterion) {
     group.bench_function("small/hand_written", |b| {
         b.iter(|| black_box(json_to_proto_binary(&small_j, &small_f).unwrap()))
     });
+    let prost_small = prost_small_msg();
+    group.bench_function("small/prost", |b| {
+        b.iter(|| black_box(prost_small.encode_to_vec()))
+    });
 
     // Medium message
     let medium = medium_msg();
@@ -236,6 +340,10 @@ fn bench_encode(c: &mut Criterion) {
     group.bench_function("medium/hand_written", |b| {
         b.iter(|| black_box(json_to_proto_binary(&medium_j, &medium_f).unwrap()))
     });
+    let prost_medium = prost_medium_msg();
+    group.bench_function("medium/prost", |b| {
+        b.iter(|| black_box(prost_medium.encode_to_vec()))
+    });
 
     // Large message
     let large = large_msg();
@@ -247,6 +355,10 @@ fn bench_encode(c: &mut Criterion) {
     });
     group.bench_function("large/hand_written", |b| {
         b.iter(|| black_box(json_to_proto_binary(&large_j, &large_f).unwrap()))
+    });
+    let prost_large = prost_large_msg();
+    group.bench_function("large/prost", |b| {
+        b.iter(|| black_box(prost_large.encode_to_vec()))
     });
 
     group.finish();
@@ -265,6 +377,9 @@ fn bench_decode(c: &mut Criterion) {
     group.bench_function("small/hand_written", |b| {
         b.iter(|| black_box(proto_binary_to_json(&small_bytes, &small_f).unwrap()))
     });
+    group.bench_function("small/prost", |b| {
+        b.iter(|| black_box(ProstSmallMessage::decode(small_bytes.as_slice()).unwrap()))
+    });
 
     // Medium message
     let medium_bytes = medium_msg().encode_to_vec();
@@ -276,6 +391,9 @@ fn bench_decode(c: &mut Criterion) {
     group.bench_function("medium/hand_written", |b| {
         b.iter(|| black_box(proto_binary_to_json(&medium_bytes, &medium_f).unwrap()))
     });
+    group.bench_function("medium/prost", |b| {
+        b.iter(|| black_box(ProstMediumMessage::decode(medium_bytes.as_slice()).unwrap()))
+    });
 
     // Large message
     let large_bytes = large_msg().encode_to_vec();
@@ -286,6 +404,9 @@ fn bench_decode(c: &mut Criterion) {
     });
     group.bench_function("large/hand_written", |b| {
         b.iter(|| black_box(proto_binary_to_json(&large_bytes, &large_f).unwrap()))
+    });
+    group.bench_function("large/prost", |b| {
+        b.iter(|| black_box(ProstLargeMessage::decode(large_bytes.as_slice()).unwrap()))
     });
 
     group.finish();
@@ -320,6 +441,34 @@ fn bench_roundtrip(c: &mut Criterion) {
         b.iter(|| {
             let encoded = large.encode_to_vec();
             let decoded = LargeMessage::typeway_decode(&encoded).unwrap();
+            black_box(decoded)
+        })
+    });
+
+    // Prost roundtrips
+    let prost_small = prost_small_msg();
+    group.bench_function("small/prost", |b| {
+        b.iter(|| {
+            let encoded = prost_small.encode_to_vec();
+            let decoded = ProstSmallMessage::decode(encoded.as_slice()).unwrap();
+            black_box(decoded)
+        })
+    });
+
+    let prost_medium = prost_medium_msg();
+    group.bench_function("medium/prost", |b| {
+        b.iter(|| {
+            let encoded = prost_medium.encode_to_vec();
+            let decoded = ProstMediumMessage::decode(encoded.as_slice()).unwrap();
+            black_box(decoded)
+        })
+    });
+
+    let prost_large = prost_large_msg();
+    group.bench_function("large/prost", |b| {
+        b.iter(|| {
+            let encoded = prost_large.encode_to_vec();
+            let decoded = ProstLargeMessage::decode(encoded.as_slice()).unwrap();
             black_box(decoded)
         })
     });
