@@ -11,6 +11,7 @@ client = ["dep:typeway-client"]
 openapi = ["dep:typeway-openapi", "typeway-server?/openapi"]
 axum-interop = ["server", "typeway-server/axum-interop"]
 grpc = ["server", "typeway-server/grpc", "dep:typeway-grpc"]
+protobuf = ["grpc", "typeway-server/protobuf", "dep:typeway-protobuf"]
 full = ["server", "client", "openapi", "grpc"]
 
 [dependencies]
@@ -19,6 +20,7 @@ typeway-macros = { path = "../typeway-macros" }
 typeway-server = { path = "../typeway-server", optional = true }
 typeway-client = { path = "../typeway-client", optional = true }
 typeway-grpc = { path = "../typeway-grpc", optional = true }
+typeway-protobuf = { path = "../typeway-protobuf", optional = true }
 typeway-openapi = { path = "../typeway-openapi", optional = true }
 
 # Re-export common deps so users don't need to depend on them directly
@@ -65,7 +67,7 @@ required-features = ["grpc"]
 [[bench]]
 name = "grpc_e2e"
 harness = false
-required-features = ["grpc"]
+required-features = ["protobuf"]
 
 [[example]]
 name = "hello_world"

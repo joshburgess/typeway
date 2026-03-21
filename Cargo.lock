@@ -3272,6 +3272,7 @@ dependencies = [
  "typeway-grpc",
  "typeway-macros",
  "typeway-openapi",
+ "typeway-protobuf",
  "typeway-server",
 ]
 

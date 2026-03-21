@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use typeway_core::endpoint::{GetEndpoint, PostEndpoint};
 use typeway_core::path::{HCons, HNil, Lit, LitSegment};
 use typeway_grpc::mapping::ToProtoType;
+use typeway_macros::TypewayCodec;
 use typeway_server::*;
 
 // =========================================================================
@@ -31,9 +32,11 @@ impl LitSegment for __lit_users {
 }
 type UsersPath = HCons<Lit<__lit_users>, HNil>;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
 struct User {
+    #[proto(tag = 1)]
     id: u32,
+    #[proto(tag = 2)]
     name: String,
 }
 impl ToProtoType for User {
@@ -44,8 +47,11 @@ impl ToProtoType for User {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct CreateUser { name: String }
+#[derive(Debug, Default, Serialize, Deserialize, TypewayCodec)]
+struct CreateUser {
+    #[proto(tag = 1)]
+    name: String,
+}
 impl ToProtoType for CreateUser {
     fn proto_type_name() -> &'static str { "CreateUser" }
     fn is_message() -> bool { true }
@@ -93,6 +99,33 @@ async fn start_typeway_server() -> u16 {
     let server = Server::<TestAPI>::new((
         bind::<_, _, _>(tw_list_users),
         bind::<_, _, _>(tw_create_user),
+    ))
+    .with_grpc("BenchService", "bench.v1");
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        server.serve_with_shutdown(listener, std::future::pending()).await.unwrap();
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    port
+}
+
+// =========================================================================
+// 1b. Typeway server with Proto<T> (binary fast path)
+// =========================================================================
+
+async fn tw_create_user_proto(body: Proto<CreateUser>) -> Proto<User> {
+    Proto::binary(User { id: 3, name: body.name.clone() })
+}
+
+async fn start_typeway_proto_server() -> u16 {
+    type ProtoAPI = (
+        PostEndpoint<UsersPath, CreateUser, User>,
+    );
+
+    let server = Server::<ProtoAPI>::new((
+        bind::<_, _, _>(tw_create_user_proto),
     ))
     .with_grpc("BenchService", "bench.v1");
 
@@ -358,10 +391,24 @@ async fn grpc_call(client: &reqwest::Client, port: u16, service: &str, method: &
     resp.bytes().await.unwrap().to_vec()
 }
 
+async fn grpc_call_binary(client: &reqwest::Client, port: u16, service: &str, method: &str, body: &[u8]) -> Vec<u8> {
+    let framed = typeway_grpc::framing::encode_grpc_frame(body);
+    let resp = client
+        .post(format!("http://127.0.0.1:{port}/{service}/{method}"))
+        .header("content-type", "application/grpc+proto")
+        .header("te", "trailers")
+        .body(framed)
+        .send()
+        .await
+        .unwrap();
+    resp.bytes().await.unwrap().to_vec()
+}
+
 fn bench_e2e(c: &mut Criterion) {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
     let tw_port = rt.block_on(start_typeway_server());
+    let tw_proto_port = rt.block_on(start_typeway_proto_server());
     let tonic_port = rt.block_on(start_tonic_server());
     let baseline_port = rt.block_on(start_baseline_server());
 
@@ -372,6 +419,11 @@ fn bench_e2e(c: &mut Criterion) {
         .unwrap();
 
     let create_body = serde_json::json!({"name": "Charlie"}).to_string().into_bytes();
+
+    // Binary protobuf body for Proto<T> and Tonic comparisons.
+    use typeway_grpc::TypewayEncode;
+    let create_binary = CreateUser { name: "Charlie".into() }.encode_to_vec();
+    let create_prost_binary = prost::Message::encode_to_vec(&ProstCreateUserRequest { name: "Charlie".into() });
 
     let mut group = c.benchmark_group("grpc_e2e");
 
@@ -385,12 +437,22 @@ fn bench_e2e(c: &mut Criterion) {
         })
     });
 
+    group.bench_function("create_user/typeway_proto", |b| {
+        b.to_async(&rt).iter(|| {
+            let client = client.clone();
+            let body = create_binary.clone();
+            async move {
+                grpc_call_binary(&client, tw_proto_port, "bench.v1.BenchService", "CreateUser", &body).await
+            }
+        })
+    });
+
     group.bench_function("create_user/tonic", |b| {
         b.to_async(&rt).iter(|| {
             let client = client.clone();
-            let body = create_body.clone();
+            let body = create_prost_binary.clone();
             async move {
-                grpc_call(&client, tonic_port, "bench.v1.BenchService", "CreateUser", &body).await
+                grpc_call_binary(&client, tonic_port, "bench.v1.BenchService", "CreateUser", &body).await
             }
         })
     });
