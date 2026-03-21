@@ -3089,6 +3089,7 @@ dependencies = [
  "http",
  "hyper",
  "hyper-util",
+ "prost",
  "serde",
  "serde_json",
  "tokio",

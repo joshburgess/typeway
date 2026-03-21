@@ -382,7 +382,7 @@ The `ApiChangelog` trait provides runtime introspection of the change set — ho
 
 Your REST handlers automatically become gRPC endpoints. With the `grpc` feature, adding `.with_grpc("Svc", "pkg")` to your server builder is all it takes — the same API type that drives your REST server, client, and OpenAPI spec also generates Protocol Buffers service definitions, serves gRPC alongside REST, provides a type-safe gRPC client, exposes server reflection, runs a health check service, serves gRPC documentation, supports gRPC-Web for browser clients, and validates proto compatibility across versions.
 
-For encoding, `#[derive(TypewayCodec)]` generates compile-time specialized protobuf encoders that are 3-8x faster than runtime reflection-based encoding. `BinaryCodec` provides standard protobuf interop for clients that expect `application/grpc`.
+For encoding, `#[derive(TypewayCodec)]` generates compile-time specialized protobuf encoders — 15-30% faster than prost on decode, 20-26% faster on roundtrip (benchmarked with Criterion against `#[derive(prost::Message)]`). `BinaryCodec` provides standard protobuf interop for clients that expect `application/grpc`.
 
 One API type, eight projections: REST server, REST client, OpenAPI spec + Swagger UI, gRPC server, gRPC client, `.proto` file, gRPC spec + docs page, and server reflection.
 

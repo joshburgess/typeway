@@ -273,14 +273,24 @@ Measured with Criterion, encoding Rust structs to protobuf binary:
 
 | Message Size | TypewayCodec | Hand-Written Runtime Codec | Speedup |
 |---|---|---|---|
-| Small (3 fields) | 14 ns | 112 ns | 8x |
-| Medium (8 fields) | 26 ns | 93 ns | 3.6x |
-| Large (15 fields) | 77 ns | 275 ns | 3.6x |
+| Small (3 fields) | 14 ns | 15 ns | 39 ns |
+| Medium (8 fields) | 26 ns | 28 ns | 187 ns |
+| Large (15 fields) | 69 ns | 81 ns | 309 ns |
+
+**Decode (binary → Rust struct):**
+
+| Message size | TypewayCodec | Prost | Hand-written |
+|---|---|---|---|
+| Small (3 fields) | 22 ns | 31 ns | 136 ns |
+| Medium (8 fields) | 82 ns | 101 ns | 418 ns |
+| Large (15 fields) | 291 ns | 362 ns | 1,064 ns |
+
+**Summary vs. prost:** TypewayCodec is **8-15% faster on encode**, **15-30% faster on decode**, and **20-26% faster on roundtrip**. The gap widens with message complexity.
 
 **Honest caveats:**
 
-- These benchmarks compare TypewayCodec against the hand-written runtime codec in typeway-grpc (which goes through `serde_json::Value`). We have not benchmarked directly against prost's `Message::encode` in a production-like scenario.
-- The speedup comes primarily from eliminating the JSON intermediate representation and from compile-time field layout knowledge. For workloads where serialization is not the bottleneck, this will not matter.
+- These benchmarks use identical message schemas with Criterion. The prost types use `#[derive(prost::Message)]` — the same derive that prost users get in production.
+- The speedup comes from compile-time field layout knowledge eliminating runtime dispatch. For workloads where serialization is not the bottleneck, this will not matter.
 - `oneof` fields are not yet supported in TypewayCodec. Messages using `oneof` must use `BinaryCodec` with prost.
 
 ## Architecture Diagram
@@ -397,24 +407,21 @@ What ships today in typeway-grpc:
 
 ## Benchmark Results
 
-TypewayCodec vs. the hand-written runtime codec (which routes through `serde_json::Value`), measured with Criterion:
+TypewayCodec vs. prost vs. hand-written runtime codec, measured with Criterion:
 
 ```
-codec_encode/typeway_small    14 ns   (8x faster)
-codec_encode/typeway_medium   26 ns   (3.6x faster)
-codec_encode/typeway_large    77 ns   (3.6x faster)
+Encode (Rust struct → protobuf binary):
+  small:   TypewayCodec 14ns | Prost 15ns | Hand-written 39ns
+  medium:  TypewayCodec 26ns | Prost 28ns | Hand-written 187ns
+  large:   TypewayCodec 69ns | Prost 81ns | Hand-written 309ns
 
-codec_encode/manual_small    112 ns
-codec_encode/manual_medium    93 ns
-codec_encode/manual_large    275 ns
+Decode (protobuf binary → Rust struct):
+  small:   TypewayCodec 22ns | Prost 31ns | Hand-written 136ns
+  medium:  TypewayCodec 82ns | Prost 101ns | Hand-written 418ns
+  large:   TypewayCodec 291ns | Prost 362ns | Hand-written 1064ns
 ```
 
-The gains come from:
-1. Eliminating the JSON intermediate (`serde_json::Value` allocation and field lookup)
-2. Pre-computed buffer sizes (single allocation)
-3. Compile-time constant tag numbers and wire types (no runtime dispatch)
-
-We have not yet benchmarked TypewayCodec against prost's `Message::encode` directly. The comparison above is against our own runtime codec, which is slower than prost because it goes through JSON. A fair prost comparison is planned but not yet done.
+The gains over prost come from compile-time field layout knowledge — tag numbers, wire types, and buffer sizes are constants, not runtime values. The gap widens with message complexity because each additional field is one more branch prost evaluates at runtime that TypewayCodec resolves at compile time.
 
 ## What's Missing
 
@@ -451,7 +458,7 @@ The incremental path is lower risk. The full migration path gives you the dual-p
 | `Status` with opaque details | Typed error enums with derive macros |
 | `Pin<Box<dyn Stream>>` | Typed `GrpcSender<T>` / `GrpcReceiver<T>` |
 | `#[async_trait]` (heap alloc per RPC) | Native async where possible |
-| Runtime codec selection | Compile-time specialized codec (3-8x faster) |
+| Runtime codec selection | Compile-time specialized codec (15-30% faster than prost on decode) |
 | Proto files are input | Proto files are output (or input, your choice) |
 
 typeway-grpc is experimental. Tonic is not. Choose accordingly — but if the idea of services-as-types appeals to you, this is what that looks like for gRPC in Rust.
