@@ -2097,46 +2097,79 @@ fn derive_typeway_codec_struct(
     })
 }
 
+/// Compute the tag+wiretype bytes at compile time (macro expansion time).
+/// For field numbers 1-15 (and any wire type), this is a single byte.
+/// For field numbers 16-2047, it's two bytes. Returns the bytes as a Vec.
+fn precompute_tag_bytes(field_number: u32, wire_type: u8) -> Vec<u8> {
+    let mut value = ((field_number as u64) << 3) | (wire_type as u64);
+    let mut bytes = Vec::new();
+    loop {
+        if value < 0x80 {
+            bytes.push(value as u8);
+            break;
+        }
+        bytes.push((value as u8 & 0x7F) | 0x80);
+        value >>= 7;
+    }
+    bytes
+}
+
+/// Generate code to write pre-computed tag bytes inline.
+fn emit_tag(tag: u32, wt: u8) -> TokenStream2 {
+    let bytes = precompute_tag_bytes(tag, wt);
+    if bytes.len() == 1 {
+        let b = bytes[0];
+        quote! { buf.push(#b); }
+    } else {
+        quote! { buf.extend_from_slice(&[#(#bytes),*]); }
+    }
+}
+
 fn gen_encode_field(f: &CodecField) -> TokenStream2 {
     let ident = &f.ident;
     let tag = f.tag;
     let wt = wire_type_for_kind(&f.codec_kind);
+    let tag_emit = emit_tag(tag, wt);
 
     match &f.codec_kind {
         CodecKind::Varint => quote! {
             if self.#ident != 0 {
-                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                #tag_emit
                 ::typeway_grpc::tw_encode_varint(buf, self.#ident as u64);
             }
         },
-        CodecKind::Bool => quote! {
-            if self.#ident {
-                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
-                buf.push(1);
+        CodecKind::Bool => {
+            // Bool: tag byte + 0x01, precomputed as two bytes
+            let mut bytes = precompute_tag_bytes(tag, wt);
+            bytes.push(0x01);
+            quote! {
+                if self.#ident {
+                    buf.extend_from_slice(&[#(#bytes),*]);
+                }
             }
         },
         CodecKind::Fixed32 => quote! {
             if self.#ident != 0.0 {
-                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                #tag_emit
                 buf.extend_from_slice(&self.#ident.to_le_bytes());
             }
         },
         CodecKind::Fixed64 => quote! {
             if self.#ident != 0.0 {
-                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                #tag_emit
                 buf.extend_from_slice(&self.#ident.to_le_bytes());
             }
         },
         CodecKind::LenString => quote! {
             if !self.#ident.is_empty() {
-                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                #tag_emit
                 ::typeway_grpc::tw_encode_varint(buf, self.#ident.len() as u64);
                 buf.extend_from_slice(self.#ident.as_bytes());
             }
         },
         CodecKind::LenBytes => quote! {
             if !self.#ident.is_empty() {
-                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                #tag_emit
                 ::typeway_grpc::tw_encode_varint(buf, self.#ident.len() as u64);
                 buf.extend_from_slice(&self.#ident);
             }
@@ -2145,7 +2178,7 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
             {
                 let nested = ::typeway_grpc::TypewayEncode::encode_to_vec(&self.#ident);
                 if !nested.is_empty() {
-                    ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                    #tag_emit
                     ::typeway_grpc::tw_encode_varint(buf, nested.len() as u64);
                     buf.extend_from_slice(&nested);
                 }
@@ -2162,7 +2195,7 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
         CodecKind::OptionalMessage => quote! {
             if let Some(ref val) = self.#ident {
                 let nested = ::typeway_grpc::TypewayEncode::encode_to_vec(val);
-                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                #tag_emit
                 ::typeway_grpc::tw_encode_varint(buf, nested.len() as u64);
                 buf.extend_from_slice(&nested);
             }
@@ -2178,7 +2211,7 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
         CodecKind::RepeatedMessage => quote! {
             for item in &self.#ident {
                 let nested = ::typeway_grpc::TypewayEncode::encode_to_vec(item);
-                ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+                #tag_emit
                 ::typeway_grpc::tw_encode_varint(buf, nested.len() as u64);
                 buf.extend_from_slice(&nested);
             }
@@ -2187,26 +2220,27 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
 }
 
 fn gen_encode_optional_inner(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2 {
+    let tag_emit = emit_tag(tag, wt);
     match kind {
         CodecKind::Varint => quote! {
-            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            #tag_emit
             ::typeway_grpc::tw_encode_varint(buf, *val as u64);
         },
         CodecKind::Fixed32 => quote! {
-            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            #tag_emit
             buf.extend_from_slice(&val.to_le_bytes());
         },
         CodecKind::Fixed64 => quote! {
-            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            #tag_emit
             buf.extend_from_slice(&val.to_le_bytes());
         },
         CodecKind::LenString => quote! {
-            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            #tag_emit
             ::typeway_grpc::tw_encode_varint(buf, val.len() as u64);
             buf.extend_from_slice(val.as_bytes());
         },
         CodecKind::LenBytes => quote! {
-            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            #tag_emit
             ::typeway_grpc::tw_encode_varint(buf, val.len() as u64);
             buf.extend_from_slice(val);
         },
@@ -2215,21 +2249,22 @@ fn gen_encode_optional_inner(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2
 }
 
 fn gen_encode_repeated_item(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2 {
+    let tag_emit = emit_tag(tag, wt);
     match kind {
         CodecKind::Varint => quote! {
-            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            #tag_emit
             ::typeway_grpc::tw_encode_varint(buf, *item as u64);
         },
         CodecKind::Fixed32 => quote! {
-            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            #tag_emit
             buf.extend_from_slice(&item.to_le_bytes());
         },
         CodecKind::Fixed64 => quote! {
-            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            #tag_emit
             buf.extend_from_slice(&item.to_le_bytes());
         },
         CodecKind::LenString => quote! {
-            ::typeway_grpc::tw_encode_tag(buf, #tag, #wt);
+            #tag_emit
             ::typeway_grpc::tw_encode_varint(buf, item.len() as u64);
             buf.extend_from_slice(item.as_bytes());
         },
@@ -2240,7 +2275,10 @@ fn gen_encode_repeated_item(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2 
 fn gen_encoded_len_field(f: &CodecField) -> TokenStream2 {
     let ident = &f.ident;
     let tag = f.tag;
-    let tag_len_expr = quote! { ::typeway_grpc::tw_tag_len(#tag) };
+    let wt = wire_type_for_kind(&f.codec_kind);
+    // Pre-compute tag byte length at macro expansion time.
+    let tag_byte_len = precompute_tag_bytes(tag, wt).len();
+    let tag_len_expr = quote! { #tag_byte_len };
 
     match &f.codec_kind {
         CodecKind::Varint => quote! {
@@ -2323,7 +2361,8 @@ fn gen_encoded_len_field(f: &CodecField) -> TokenStream2 {
 }
 
 fn gen_encoded_len_optional_inner(tag: u32, kind: &CodecKind) -> TokenStream2 {
-    let tag_len_expr = quote! { ::typeway_grpc::tw_tag_len(#tag) };
+    let tag_byte_len = precompute_tag_bytes(tag, wire_type_for_kind(kind)).len();
+    let tag_len_expr = quote! { #tag_byte_len };
     match kind {
         CodecKind::Varint => quote! {
             len += #tag_len_expr + ::typeway_grpc::tw_varint_len(*val as u64);
@@ -2340,7 +2379,8 @@ fn gen_encoded_len_optional_inner(tag: u32, kind: &CodecKind) -> TokenStream2 {
 }
 
 fn gen_encoded_len_repeated_item(tag: u32, kind: &CodecKind) -> TokenStream2 {
-    let tag_len_expr = quote! { ::typeway_grpc::tw_tag_len(#tag) };
+    let tag_byte_len = precompute_tag_bytes(tag, wire_type_for_kind(kind)).len();
+    let tag_len_expr = quote! { #tag_byte_len };
     match kind {
         CodecKind::Varint => quote! {
             len += #tag_len_expr + ::typeway_grpc::tw_varint_len(*item as u64);
