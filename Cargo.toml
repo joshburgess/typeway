@@ -6,6 +6,7 @@ members = [
     "typeway-openapi",
     "typeway-macros",
     "typeway-grpc",
+    "typeway-protobuf",
     "typeway",
     "typeway-migrate",
     "spike",

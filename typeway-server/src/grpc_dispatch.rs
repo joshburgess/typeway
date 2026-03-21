@@ -114,6 +114,51 @@ impl GrpcRouter {
 // Synthetic request construction
 // ---------------------------------------------------------------------------
 
+/// Build synthetic `Parts` for a binary protobuf request (no body decoding).
+///
+/// Used for the fast path when the handler uses `Proto<T>`. The raw binary
+/// bytes are passed directly as the body — no JSON intermediate. The
+/// content-type is set by the caller to `application/grpc+proto` so
+/// `Proto<T>` knows to use `TypewayDecode`.
+fn build_synthetic_request_raw(
+    original_parts: &http::request::Parts,
+    method_desc: &GrpcMethodDescriptor,
+    state_injector: Option<&StateInjector>,
+) -> (http::request::Parts, Bytes) {
+    let mut builder = http::Request::builder()
+        .method(method_desc.http_method.clone());
+
+    builder = builder.uri(
+        method_desc.rest_path.parse::<http::Uri>()
+            .unwrap_or_default(),
+    );
+
+    let (synthetic_parts, _) = builder.body(()).unwrap().into_parts();
+    let mut parts = synthetic_parts;
+
+    // Copy headers from original request.
+    parts.headers = original_parts.headers.clone();
+
+    // Copy extensions from original request.
+    parts.extensions = original_parts.extensions.clone();
+
+    // Build PathSegments.
+    let path_str = parts.uri.path().to_string();
+    let segments: Vec<String> = path_str
+        .split('/')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    parts.extensions.insert(PathSegments(Arc::new(segments)));
+
+    // Inject state.
+    if let Some(injector) = state_injector {
+        injector(&mut parts.extensions);
+    }
+
+    (parts, Bytes::new()) // body is set by caller
+}
+
 /// Build synthetic `Parts` and body bytes from a gRPC message.
 ///
 /// This enables existing REST extractors (`Path<T>`, `State<T>`, `Json<T>`)
@@ -591,22 +636,59 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                     .map(|b| b.to_vec())
                     .unwrap_or_else(|_| body_bytes.to_vec());
 
-                // Decode the message — binary protobuf or JSON.
+                // For binary protobuf requests without path captures, pass raw
+                // bytes directly to the handler. If the handler uses Proto<T>,
+                // it will decode via TypewayDecode — no JSON intermediate.
                 #[cfg(feature = "grpc-proto-binary")]
-                let message = if use_proto_binary {
-                    let tc = transcoder.as_ref().unwrap();
-                    match tc.decode_request(&grpc_path, &unframed) {
-                        Ok(json) => json,
-                        Err(e) => {
-                            let status = GrpcStatus {
-                                code: GrpcCode::InvalidArgument,
-                                message: format!("failed to decode binary protobuf: {e}"),
-                            };
-                            return Ok(grpc_error_response(status));
-                        }
-                    }
+                let binary_fast_path = use_proto_binary
+                    && !method_desc.rest_path.contains("{}");
+
+                #[cfg(not(feature = "grpc-proto-binary"))]
+                let binary_fast_path = false;
+
+                let (synthetic_parts, body_bytes) = if binary_fast_path {
+                    // Fast path: pass raw binary bytes with protobuf content-type.
+                    // Proto<T> extractor detects this and uses TypewayDecode.
+                    let mut synthetic = build_synthetic_request_raw(
+                        &parts,
+                        &method_desc,
+                        grpc_router.state_injector.as_ref(),
+                    );
+                    synthetic.0.headers.insert(
+                        http::header::CONTENT_TYPE,
+                        http::HeaderValue::from_static("application/grpc+proto"),
+                    );
+                    (synthetic.0, Bytes::from(unframed))
                 } else {
-                    match JsonCodec.decode(&unframed) {
+                    // JSON path: decode to serde_json::Value, serialize to body.
+                    #[cfg(feature = "grpc-proto-binary")]
+                    let message = if use_proto_binary {
+                        let tc = transcoder.as_ref().unwrap();
+                        match tc.decode_request(&grpc_path, &unframed) {
+                            Ok(json) => json,
+                            Err(e) => {
+                                let status = GrpcStatus {
+                                    code: GrpcCode::InvalidArgument,
+                                    message: format!("failed to decode binary protobuf: {e}"),
+                                };
+                                return Ok(grpc_error_response(status));
+                            }
+                        }
+                    } else {
+                        match JsonCodec.decode(&unframed) {
+                            Ok(msg) => msg,
+                            Err(e) => {
+                                let status = GrpcStatus {
+                                    code: GrpcCode::InvalidArgument,
+                                    message: format!("failed to decode request: {e}"),
+                                };
+                                return Ok(grpc_error_response(status));
+                            }
+                        }
+                    };
+
+                    #[cfg(not(feature = "grpc-proto-binary"))]
+                    let message = match JsonCodec.decode(&unframed) {
                         Ok(msg) => msg,
                         Err(e) => {
                             let status = GrpcStatus {
@@ -615,28 +697,15 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                             };
                             return Ok(grpc_error_response(status));
                         }
-                    }
-                };
+                    };
 
-                #[cfg(not(feature = "grpc-proto-binary"))]
-                let message = match JsonCodec.decode(&unframed) {
-                    Ok(msg) => msg,
-                    Err(e) => {
-                        let status = GrpcStatus {
-                            code: GrpcCode::InvalidArgument,
-                            message: format!("failed to decode request: {e}"),
-                        };
-                        return Ok(grpc_error_response(status));
-                    }
+                    build_synthetic_request(
+                        &parts,
+                        &method_desc,
+                        &message,
+                        grpc_router.state_injector.as_ref(),
+                    )
                 };
-
-                // Build synthetic Parts + body for the handler.
-                let (synthetic_parts, body_bytes) = build_synthetic_request(
-                    &parts,
-                    &method_desc,
-                    &message,
-                    grpc_router.state_injector.as_ref(),
-                );
 
                 // Call the handler, with optional timeout.
                 let rest_response = if let Some(timeout_duration) = grpc_timeout {

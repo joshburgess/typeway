@@ -3386,6 +3386,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "typeway-protobuf"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "serde",
+ "serde_json",
+ "typeway-grpc",
+]
+
+[[package]]
 name = "typeway-realworld"
 version = "0.1.0"
 dependencies = [
@@ -3446,6 +3456,7 @@ dependencies = [
  "typeway-grpc",
  "typeway-macros",
  "typeway-openapi",
+ "typeway-protobuf",
  "uuid",
 ]
 

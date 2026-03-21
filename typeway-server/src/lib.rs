@@ -15,6 +15,8 @@ pub mod grpc;
 pub mod grpc_dispatch;
 #[cfg(feature = "grpc")]
 pub mod grpc_stream;
+#[cfg(feature = "protobuf")]
+pub mod proto_extract;
 pub mod extract;
 pub mod handler;
 pub mod handler_for;
@@ -63,6 +65,8 @@ pub use serves::Serves;
 pub use grpc::{GrpcServer, LayeredGrpcServer};
 #[cfg(feature = "grpc")]
 pub use grpc_stream::{GrpcStream, GrpcStreamSender};
+#[cfg(feature = "protobuf")]
+pub use proto_extract::Proto;
 
 /// Re-export tower-http for middleware layers.
 pub use tower_http;
