@@ -139,24 +139,28 @@ pub fn tw_encode_varint_array(value: u64) -> ([u8; 10], usize) {
 
 /// Encode a varint to a buffer.
 ///
-/// Writes directly to the Vec's spare capacity with a single `set_len`
-/// at the end — zero bounds checks per byte. Matches prost's approach.
+/// Fast path for single-byte values (< 128) avoids reserve entirely.
+/// Multi-byte values write directly to spare capacity.
 #[inline]
-pub fn tw_encode_varint(buf: &mut Vec<u8>, mut value: u64) {
-    // Ensure we have room for the worst case (10 bytes for u64).
+pub fn tw_encode_varint(buf: &mut Vec<u8>, value: u64) {
+    // Fast path: single byte (most field tags, small values, booleans).
+    if value < 0x80 {
+        buf.push(value as u8);
+        return;
+    }
+    // Multi-byte: reserve + unsafe write with single set_len.
     buf.reserve(10);
     let mut pos = buf.len();
-    // Safety: we reserved 10 bytes of spare capacity.
+    let mut v = value;
     unsafe {
         let base = buf.as_mut_ptr();
-        while value >= 0x80 {
-            *base.add(pos) = (value as u8 & 0x7F) | 0x80;
-            value >>= 7;
+        while v >= 0x80 {
+            *base.add(pos) = (v as u8 & 0x7F) | 0x80;
+            v >>= 7;
             pos += 1;
         }
-        *base.add(pos) = value as u8;
-        pos += 1;
-        buf.set_len(pos);
+        *base.add(pos) = v as u8;
+        buf.set_len(pos + 1);
     }
 }
 

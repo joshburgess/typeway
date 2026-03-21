@@ -2691,27 +2691,61 @@ fn gen_decode_arm(f: &CodecField) -> TokenStream2 {
         },
         CodecKind::Repeated(inner) => {
             if is_packable(inner) {
-                // Packed decode: wire type 2, read length, decode elements until consumed.
-                let item_read = gen_packed_item_read(ident, inner);
-                quote! {
-                    #tag => {
-                        if wire_type == 2 {
-                            // Packed encoding.
-                            let (packed_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
-                            offset += consumed;
-                            let packed_len = packed_len as usize;
-                            let packed_end = offset + packed_len;
-                            if packed_end > bytes.len() {
-                                return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
+                let is_varint = matches!(inner.as_ref(), CodecKind::Varint);
+                if is_varint {
+                    // Optimized packed varint decode: inline 1-byte fast path,
+                    // pre-reserve Vec capacity.
+                    quote! {
+                        #tag => {
+                            if wire_type == 2 {
+                                let (packed_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                                offset += consumed;
+                                let packed_len = packed_len as usize;
+                                let packed_end = offset + packed_len;
+                                if packed_end > bytes.len() {
+                                    return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
+                                }
+                                // Estimate: at least 1 element per byte.
+                                #ident.reserve(packed_len);
+                                while offset < packed_end {
+                                    // Inline 1-byte fast path (most common for small u32).
+                                    let b = bytes[offset];
+                                    if b < 0x80 {
+                                        #ident.push(b as _);
+                                        offset += 1;
+                                    } else {
+                                        let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                                        offset += consumed;
+                                        #ident.push(val as _);
+                                    }
+                                }
+                            } else {
+                                let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                                offset += consumed;
+                                #ident.push(val as _);
                             }
-                            while offset < packed_end {
-                                #item_read
+                        }
+                    }
+                } else {
+                    let item_read = gen_packed_item_read(ident, inner);
+                    quote! {
+                        #tag => {
+                            if wire_type == 2 {
+                                let (packed_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                                offset += consumed;
+                                let packed_len = packed_len as usize;
+                                let packed_end = offset + packed_len;
+                                if packed_end > bytes.len() {
+                                    return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
+                                }
+                                while offset < packed_end {
+                                    #item_read
+                                }
+                            } else {
+                                let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                                offset += consumed;
+                                #ident.push(val as _);
                             }
-                        } else {
-                            // Non-packed (single element with own tag).
-                            let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
-                            offset += consumed;
-                            #ident.push(val as _);
                         }
                     }
                 }
