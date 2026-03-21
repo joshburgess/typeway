@@ -598,9 +598,11 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                     match tc.decode_request(&grpc_path, &unframed) {
                         Ok(json) => json,
                         Err(e) => {
-                            tracing::warn!("proto-binary decode failed for {}: {}", grpc_path, e);
-                            // Fall back to JSON decode.
-                            JsonCodec.decode(&unframed).unwrap_or_default()
+                            let status = GrpcStatus {
+                                code: GrpcCode::InvalidArgument,
+                                message: format!("failed to decode binary protobuf: {e}"),
+                            };
+                            return Ok(grpc_error_response(status));
                         }
                     }
                 } else {
