@@ -40,10 +40,12 @@ axum = "0.8"
 tower = { version = "0.5", features = ["util"] }
 bytes = "1"
 prost = "0.13"
-tonic = { version = "0.12", default-features = false }
+tonic = { version = "0.12", features = ["transport"] }
 reqwest = { version = "0.12", features = ["json"] }
 http-body-util = "0.1"
 tower-service = "0.3"
+async-trait = "0.1"
+tokio-stream = { version = "0.1", features = ["net"] }
 
 [[bench]]
 name = "routing"
