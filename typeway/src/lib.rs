@@ -80,10 +80,16 @@ pub use typeway_client::{CallEndpoint, Client, ClientError};
 #[cfg(feature = "grpc")]
 pub use typeway_grpc::{
     ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcCode, GrpcMultiplexer, GrpcReady,
-    GrpcServiceDescriptor, ToProtoType,
+    GrpcServiceDescriptor, GrpcClient, GrpcClientConfig, GrpcClientError, ToProtoType,
 };
 #[cfg(feature = "grpc")]
 pub use typeway_server::GrpcServer;
+
+// --- Protobuf (feature = "protobuf") ---
+#[cfg(feature = "protobuf")]
+pub use typeway_protobuf::{BytesStr, ProtoMessage, TypewayDecode, TypewayEncode};
+#[cfg(feature = "protobuf")]
+pub use typeway_server::{Proto, into_direct_handler};
 
 // --- OpenAPI (feature = "openapi") ---
 #[cfg(feature = "openapi")]
@@ -113,10 +119,15 @@ pub mod prelude {
     #[cfg(feature = "grpc")]
     pub use typeway_grpc::{
         ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcCode, GrpcMultiplexer, GrpcReady,
-        GrpcServiceDescriptor, ToProtoType,
+        GrpcServiceDescriptor, GrpcClient, GrpcClientConfig, GrpcClientError, ToProtoType,
     };
     #[cfg(feature = "grpc")]
     pub use typeway_server::GrpcServer;
+
+    #[cfg(feature = "protobuf")]
+    pub use typeway_protobuf::{BytesStr, ProtoMessage, TypewayDecode, TypewayEncode};
+    #[cfg(feature = "protobuf")]
+    pub use typeway_server::{Proto, into_direct_handler};
 
     #[cfg(feature = "openapi")]
     pub use typeway_openapi::{

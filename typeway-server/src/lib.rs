@@ -69,6 +69,8 @@ pub use grpc::{GrpcServer, LayeredGrpcServer};
 pub use grpc_stream::{GrpcStream, GrpcStreamSender};
 #[cfg(feature = "protobuf")]
 pub use proto_extract::Proto;
+#[cfg(feature = "protobuf")]
+pub use grpc_direct::into_direct_handler;
 
 /// Re-export tower-http for middleware layers.
 pub use tower_http;

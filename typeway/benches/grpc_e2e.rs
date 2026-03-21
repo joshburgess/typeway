@@ -167,11 +167,11 @@ async fn start_typeway_server() -> u16 {
 // =========================================================================
 
 async fn tw_create_user_proto(body: Proto<CreateUser>) -> Proto<User> {
-    Proto::binary(User { id: 3, name: body.name.clone() })
+    Proto(User { id: 3, name: body.name.clone() })
 }
 
 async fn tw_create_profile_proto(body: Proto<UserProfile>) -> Proto<UserProfile> {
-    Proto::binary(UserProfile {
+    Proto(UserProfile {
         id: body.id + 1,
         username: body.username.clone(),
         email: body.email.clone(),
