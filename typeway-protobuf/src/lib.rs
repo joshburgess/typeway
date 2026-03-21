@@ -81,6 +81,9 @@ impl BytesStr {
     ///
     /// # Safety
     /// The caller must guarantee the bytes are valid UTF-8.
+    /// # Safety
+    /// The caller must guarantee the bytes are valid UTF-8.
+    #[doc(hidden)]
     pub unsafe fn from_utf8_unchecked(bytes: Bytes) -> Self {
         BytesStr { inner: bytes }
     }

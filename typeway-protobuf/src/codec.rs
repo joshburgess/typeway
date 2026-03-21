@@ -142,6 +142,7 @@ pub fn tw_encode_varint_array(value: u64) -> ([u8; 10], usize) {
 /// Fast path for single-byte values (< 128) avoids reserve entirely.
 /// Multi-byte values write directly to spare capacity.
 #[inline]
+#[doc(hidden)]
 pub fn tw_encode_varint(buf: &mut Vec<u8>, value: u64) {
     // Fast path: single byte (most field tags, small values, booleans).
     if value < 0x80 {
@@ -196,10 +197,11 @@ pub fn tw_encode_packed_u32(buf: &mut Vec<u8>, values: &[u32]) {
 /// Encode a varint to a buffer that is known to have enough spare capacity.
 ///
 /// No bounds checks, no reserve. Single `set_len` at the end.
-/// Use this in hot loops after a single `reserve()` for the entire batch.
+/// Used by generated packed encode loops after a single `reserve()`.
 ///
 /// # Safety
 /// The caller must ensure `buf` has at least 10 bytes of spare capacity.
+#[doc(hidden)]
 #[inline(always)]
 pub unsafe fn tw_encode_varint_unchecked(buf: &mut Vec<u8>, mut value: u64) {
     let mut pos = buf.len();
@@ -221,6 +223,7 @@ pub unsafe fn tw_encode_varint_unchecked(buf: &mut Vec<u8>, mut value: u64) {
 /// Division by 64 compiles to a bit shift (3 cycles) instead of
 /// `div_ceil(7)` which is a real integer division (20-40 cycles).
 #[inline]
+#[doc(hidden)]
 pub const fn tw_varint_len(value: u64) -> usize {
     // Based on prost's encoded_len_varint formula.
     // Safety: value | 1 is always non-zero.
@@ -230,18 +233,21 @@ pub const fn tw_varint_len(value: u64) -> usize {
 
 /// Encode a tag (field_number << 3 | wire_type) as a varint.
 #[inline]
+#[doc(hidden)]
 pub fn tw_encode_tag(buf: &mut Vec<u8>, field_number: u32, wire_type: u8) {
     tw_encode_varint(buf, ((field_number as u64) << 3) | (wire_type as u64));
 }
 
 /// Compute the encoded length of a tag.
 #[inline]
+#[doc(hidden)]
 pub fn tw_tag_len(field_number: u32) -> usize {
     tw_varint_len((field_number as u64) << 3)
 }
 
 /// ZigZag encode a signed integer (for sint32/sint64).
 #[inline]
+#[doc(hidden)]
 pub fn tw_zigzag_encode(value: i64) -> u64 {
     ((value << 1) ^ (value >> 63)) as u64
 }
@@ -255,6 +261,7 @@ pub fn tw_zigzag_encode(value: i64) -> u64 {
 /// Returns `(value, bytes_consumed)`.
 /// Optimized with fast paths for 1-byte and 2-byte varints.
 #[inline]
+#[doc(hidden)]
 pub fn tw_decode_varint(bytes: &[u8]) -> Result<(u64, usize), TypewayDecodeError> {
     if bytes.is_empty() {
         return Err(TypewayDecodeError::UnexpectedEof);
@@ -291,12 +298,14 @@ pub fn tw_decode_varint(bytes: &[u8]) -> Result<(u64, usize), TypewayDecodeError
 
 /// ZigZag decode an unsigned integer to signed (for sint32/sint64).
 #[inline]
+#[doc(hidden)]
 pub fn tw_zigzag_decode(value: u64) -> i64 {
     ((value >> 1) as i64) ^ (-((value & 1) as i64))
 }
 
 /// Skip a wire value by wire type, returning bytes consumed.
 #[inline]
+#[doc(hidden)]
 pub fn tw_skip_wire_value(
     bytes: &[u8],
     wire_type: u8,
