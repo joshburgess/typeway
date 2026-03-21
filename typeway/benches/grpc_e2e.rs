@@ -60,6 +60,57 @@ impl ToProtoType for CreateUser {
     }
 }
 
+// Medium-sized types for larger message benchmark
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
+struct UserProfile {
+    #[proto(tag = 1)]
+    id: u64,
+    #[proto(tag = 2)]
+    username: String,
+    #[proto(tag = 3)]
+    email: String,
+    #[proto(tag = 4)]
+    bio: String,
+    #[proto(tag = 5)]
+    active: bool,
+    #[proto(tag = 6)]
+    score: f64,
+    #[proto(tag = 7)]
+    level: u32,
+}
+impl ToProtoType for UserProfile {
+    fn proto_type_name() -> &'static str { "UserProfile" }
+    fn is_message() -> bool { true }
+    fn message_definition() -> Option<String> {
+        Some("message UserProfile {\n  uint64 id = 1;\n  string username = 2;\n  string email = 3;\n  string bio = 4;\n  bool active = 5;\n  double score = 6;\n  uint32 level = 7;\n}".to_string())
+    }
+}
+
+#[derive(Clone, PartialEq, prost::Message)]
+struct ProstUserProfile {
+    #[prost(uint64, tag = "1")]
+    id: u64,
+    #[prost(string, tag = "2")]
+    username: String,
+    #[prost(string, tag = "3")]
+    email: String,
+    #[prost(string, tag = "4")]
+    bio: String,
+    #[prost(bool, tag = "5")]
+    active: bool,
+    #[prost(double, tag = "6")]
+    score: f64,
+    #[prost(uint32, tag = "7")]
+    level: u32,
+}
+
+#[allow(non_camel_case_types)]
+struct __lit_profiles;
+impl LitSegment for __lit_profiles {
+    const VALUE: &'static str = "profiles";
+}
+type ProfilesPath = HCons<Lit<__lit_profiles>, HNil>;
+
 // Prost message types for tonic server
 #[derive(Clone, PartialEq, prost::Message)]
 struct ProstCreateUserRequest {
@@ -117,6 +168,18 @@ async fn start_typeway_server() -> u16 {
 
 async fn tw_create_user_proto(body: Proto<CreateUser>) -> Proto<User> {
     Proto::binary(User { id: 3, name: body.name.clone() })
+}
+
+async fn tw_create_profile_proto(body: Proto<UserProfile>) -> Proto<UserProfile> {
+    Proto::binary(UserProfile {
+        id: body.id + 1,
+        username: body.username.clone(),
+        email: body.email.clone(),
+        bio: body.bio.clone(),
+        active: true,
+        score: 98.5,
+        level: 42,
+    })
 }
 
 async fn start_typeway_proto_server() -> u16 {
@@ -470,5 +533,152 @@ fn bench_e2e(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_e2e);
+fn bench_e2e_medium(c: &mut Criterion) {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+
+    // Typeway server with Proto<T> for medium message
+    let tw_profile_port = rt.block_on(async {
+        type ProfileAPI = (
+            PostEndpoint<ProfilesPath, UserProfile, UserProfile>,
+        );
+        let server = Server::<ProfileAPI>::new((
+            bind::<_, _, _>(tw_create_profile_proto),
+        ))
+        .with_grpc("ProfileService", "bench.v1");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            server.serve_with_shutdown(listener, std::future::pending()).await.unwrap();
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        port
+    });
+
+    // Tonic server for medium message — same handler logic with prost types
+    let tonic_profile_port = rt.block_on(async {
+        use std::convert::Infallible;
+
+        #[derive(Clone)]
+        struct TonicProfileSvc;
+
+        impl tower_service::Service<http::Request<tonic::body::BoxBody>> for TonicProfileSvc {
+            type Response = http::Response<tonic::body::BoxBody>;
+            type Error = Infallible;
+            type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+            fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+                std::task::Poll::Ready(Ok(()))
+            }
+
+            fn call(&mut self, req: http::Request<tonic::body::BoxBody>) -> Self::Future {
+                Box::pin(async move {
+                    let body_bytes = http_body_util::BodyExt::collect(req.into_body())
+                        .await
+                        .map(|c| c.to_bytes())
+                        .unwrap_or_default();
+                    let unframed = if body_bytes.len() >= 5 { &body_bytes[5..] } else { &body_bytes[..] };
+
+                    let req_msg = <ProstUserProfile as prost::Message>::decode(unframed).unwrap_or_default();
+                    let resp_msg = ProstUserProfile {
+                        id: req_msg.id + 1,
+                        username: req_msg.username,
+                        email: req_msg.email,
+                        bio: req_msg.bio,
+                        active: true,
+                        score: 98.5,
+                        level: 42,
+                    };
+
+                    let encoded = prost::Message::encode_to_vec(&resp_msg);
+                    let len = encoded.len() as u32;
+                    let mut framed = Vec::with_capacity(5 + encoded.len());
+                    framed.push(0);
+                    framed.extend_from_slice(&len.to_be_bytes());
+                    framed.extend_from_slice(&encoded);
+
+                    let body = tonic::body::BoxBody::new(
+                        http_body_util::BodyExt::map_err(
+                            http_body_util::Full::new(bytes::Bytes::from(framed)),
+                            |e| match e {},
+                        )
+                    );
+                    let mut res = http::Response::new(body);
+                    *res.status_mut() = http::StatusCode::OK;
+                    res.headers_mut().insert("content-type", http::HeaderValue::from_static("application/grpc+proto"));
+                    res.headers_mut().insert("grpc-status", http::HeaderValue::from_static("0"));
+                    Ok(res)
+                })
+            }
+        }
+
+        impl tonic::server::NamedService for TonicProfileSvc {
+            const NAME: &'static str = "bench.v1.ProfileService";
+        }
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            tonic::transport::Server::builder()
+                .add_service(TonicProfileSvc)
+                .serve_with_incoming(tokio_stream::wrappers::TcpListenerStream::new(listener))
+                .await
+                .unwrap();
+        });
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        port
+    });
+
+    let client = reqwest::Client::builder()
+        .http2_prior_knowledge()
+        .pool_max_idle_per_host(1)
+        .build()
+        .unwrap();
+
+    use typeway_protobuf::TypewayEncode;
+    let profile_binary = UserProfile {
+        id: 12345,
+        username: "johndoe".into(),
+        email: "john.doe@example.com".into(),
+        bio: "Software developer with 10 years of experience in systems programming.".into(),
+        active: true,
+        score: 98.5,
+        level: 42,
+    }.encode_to_vec();
+
+    let profile_prost_binary = prost::Message::encode_to_vec(&ProstUserProfile {
+        id: 12345,
+        username: "johndoe".into(),
+        email: "john.doe@example.com".into(),
+        bio: "Software developer with 10 years of experience in systems programming.".into(),
+        active: true,
+        score: 98.5,
+        level: 42,
+    });
+
+    let mut group = c.benchmark_group("grpc_e2e_medium");
+
+    group.bench_function("create_profile/typeway_proto", |b| {
+        b.to_async(&rt).iter(|| {
+            let client = client.clone();
+            let body = profile_binary.clone();
+            async move {
+                grpc_call_binary(&client, tw_profile_port, "bench.v1.ProfileService", "CreateProfile", &body).await
+            }
+        })
+    });
+
+    group.bench_function("create_profile/tonic", |b| {
+        b.to_async(&rt).iter(|| {
+            let client = client.clone();
+            let body = profile_prost_binary.clone();
+            async move {
+                grpc_call_binary(&client, tonic_profile_port, "bench.v1.ProfileService", "CreateProfile", &body).await
+            }
+        })
+    });
+
+    group.finish();
+}
+
+criterion_group!(benches, bench_e2e, bench_e2e_medium);
 criterion_main!(benches);
