@@ -62,7 +62,7 @@ pub mod health;
 pub mod mapping;
 pub mod multiplex;
 #[cfg(feature = "grpc-native")]
-pub mod native_client;
+pub mod client;
 #[cfg(feature = "grpc-native")]
 pub mod native_streaming;
 pub mod proto_codec;
@@ -110,7 +110,7 @@ pub use health::{HealthService, HealthStatus};
 pub use mapping::{build_message, ProtoField, ToProtoType};
 pub use multiplex::{is_grpc_request, GrpcMultiplexer};
 #[cfg(feature = "grpc-native")]
-pub use native_client::{
+pub use client::{
     ClientStream as GrpcClientStream, GrpcClient, GrpcClientConfig, GrpcClientError,
     GrpcRequestInterceptor,
 };

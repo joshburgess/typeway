@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```ignore
-//! use typeway_grpc::native_client::GrpcClient;
+//! use typeway_grpc::client::GrpcClient;
 //! use typeway_grpc::codec::JsonCodec;
 //!
 //! let client = GrpcClient::new("http://localhost:3000", "UserService", "users.v1")
@@ -414,14 +414,14 @@ macro_rules! grpc_client {
     ) => {
         $(#[$meta])*
         $vis struct $Name {
-            inner: $crate::native_client::GrpcClient,
+            inner: $crate::client::GrpcClient,
         }
 
         impl $Name {
             /// Create a new client with the default JSON codec.
-            pub fn new(base_url: &str) -> Result<Self, $crate::native_client::GrpcClientError> {
+            pub fn new(base_url: &str) -> Result<Self, $crate::client::GrpcClientError> {
                 Ok(Self {
-                    inner: $crate::native_client::GrpcClient::new(
+                    inner: $crate::client::GrpcClient::new(
                         base_url, $service, $package,
                     )?,
                 })
@@ -431,9 +431,9 @@ macro_rules! grpc_client {
             pub fn with_codec(
                 base_url: &str,
                 codec: ::std::sync::Arc<dyn $crate::codec::GrpcCodec>,
-            ) -> Result<Self, $crate::native_client::GrpcClientError> {
+            ) -> Result<Self, $crate::client::GrpcClientError> {
                 Ok(Self {
-                    inner: $crate::native_client::GrpcClient::with_codec(
+                    inner: $crate::client::GrpcClient::with_codec(
                         base_url, $service, $package, codec,
                     )?,
                 })
@@ -443,10 +443,10 @@ macro_rules! grpc_client {
             pub fn with_config(
                 base_url: &str,
                 codec: ::std::sync::Arc<dyn $crate::codec::GrpcCodec>,
-                config: $crate::native_client::GrpcClientConfig,
-            ) -> Result<Self, $crate::native_client::GrpcClientError> {
+                config: $crate::client::GrpcClientConfig,
+            ) -> Result<Self, $crate::client::GrpcClientError> {
                 Ok(Self {
-                    inner: $crate::native_client::GrpcClient::with_codec_and_config(
+                    inner: $crate::client::GrpcClient::with_codec_and_config(
                         base_url, $service, $package, codec, config,
                     )?,
                 })
@@ -457,7 +457,7 @@ macro_rules! grpc_client {
                 &self,
                 method: &str,
                 request: &serde_json::Value,
-            ) -> Result<serde_json::Value, $crate::native_client::GrpcClientError> {
+            ) -> Result<serde_json::Value, $crate::client::GrpcClientError> {
                 self.inner.call(method, request).await
             }
 
@@ -466,7 +466,7 @@ macro_rules! grpc_client {
                 &self,
                 method: &str,
                 request: &serde_json::Value,
-            ) -> Result<$crate::native_client::ClientStream, $crate::native_client::GrpcClientError>
+            ) -> Result<$crate::client::ClientStream, $crate::client::GrpcClientError>
             {
                 self.inner.call_server_stream(method, request).await
             }

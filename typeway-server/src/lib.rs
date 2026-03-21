@@ -12,7 +12,7 @@ pub mod error;
 #[cfg(feature = "grpc")]
 pub mod grpc;
 #[cfg(feature = "grpc")]
-pub mod grpc_native;
+pub mod grpc_dispatch;
 #[cfg(feature = "grpc")]
 pub mod grpc_stream;
 pub mod extract;
