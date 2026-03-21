@@ -421,7 +421,7 @@ fn bench_e2e(c: &mut Criterion) {
     let create_body = serde_json::json!({"name": "Charlie"}).to_string().into_bytes();
 
     // Binary protobuf body for Proto<T> and Tonic comparisons.
-    use typeway_grpc::TypewayEncode;
+    use typeway_protobuf::TypewayEncode;
     let create_binary = CreateUser { name: "Charlie".into() }.encode_to_vec();
     let create_prost_binary = prost::Message::encode_to_vec(&ProstCreateUserRequest { name: "Charlie".into() });
 

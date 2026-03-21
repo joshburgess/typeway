@@ -22,6 +22,7 @@ tonic-compat = ["dep:prost", "dep:tonic"]
 
 [dependencies]
 typeway-core = { path = "../typeway-core" }
+typeway-protobuf = { path = "../typeway-protobuf" }
 typeway-client = { path = "../typeway-client", optional = true }
 http = "1"
 indexmap = { version = "2", features = ["serde"] }

@@ -10,7 +10,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use prost::Message;
 use typeway_grpc::proto_codec::{json_to_proto_binary, proto_binary_to_json, ProtoFieldDef};
-use typeway_grpc::{TypewayDecode, TypewayEncode};
+use typeway_protobuf::{TypewayDecode, TypewayEncode};
 use typeway_macros::TypewayCodec;
 
 // ---------------------------------------------------------------------------

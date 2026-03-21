@@ -82,7 +82,6 @@ pub mod tonic_compat;
 pub mod trailer_body;
 #[cfg(feature = "proto-binary")]
 pub mod transcode;
-pub mod typeway_codec;
 pub mod typeway_codec_adapter;
 pub mod validate;
 pub mod web;
@@ -144,7 +143,7 @@ pub use transcode::{
     grpc_content_type, is_grpc_json_content_type, is_proto_binary_content_type, ProtoTranscoder,
     TranscodeError,
 };
-pub use typeway_codec::{
+pub use typeway_protobuf::{
     tw_decode_varint, tw_encode_tag, tw_encode_varint, tw_skip_wire_value, tw_tag_len,
     tw_varint_len, tw_zigzag_decode, tw_zigzag_encode, TypewayDecode, TypewayDecodeError,
     TypewayEncode,

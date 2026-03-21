@@ -8,13 +8,18 @@
 //! - **Phantom-typed wire formats** via [`ProtoField<T, E>`] — disambiguate `i32` encodings at the type level
 //! - **Format-agnostic extraction** via [`ProtoMessage`] — same type works for JSON and binary
 
+pub mod codec;
 pub mod repeated;
 pub mod wire;
 
 use bytes::Bytes;
 
-// Re-export the codec traits.
-pub use typeway_grpc::{TypewayDecode, TypewayDecodeError, TypewayEncode};
+// Export the codec traits and helpers from this crate (the canonical location).
+pub use codec::{
+    tw_decode_varint, tw_encode_tag, tw_encode_varint, tw_skip_wire_value, tw_tag_len,
+    tw_varint_len, tw_zigzag_decode, tw_zigzag_encode, TypewayDecode, TypewayDecodeError,
+    TypewayEncode,
+};
 
 // Re-export submodules.
 pub use repeated::RepeatedField;
@@ -186,13 +191,13 @@ impl TypewayEncode for BytesStr {
             0
         } else {
             // tag is handled by the parent struct's derive; this is just the value
-            typeway_grpc::tw_varint_len(self.len() as u64) + self.len()
+            crate::tw_varint_len(self.len() as u64) + self.len()
         }
     }
 
     fn encode_to(&self, buf: &mut Vec<u8>) {
         if !self.is_empty() {
-            typeway_grpc::tw_encode_varint(buf, self.len() as u64);
+            crate::tw_encode_varint(buf, self.len() as u64);
             buf.extend_from_slice(self.as_bytes());
         }
     }
@@ -351,12 +356,12 @@ mod tests {
 
     #[test]
     fn encode_buf_reuse() {
-        use typeway_grpc::{tw_encode_tag, tw_encode_varint};
+        use crate::{tw_encode_tag, tw_encode_varint};
 
         // Manual TypewayEncode for testing.
         struct Small { id: u32 }
         impl TypewayEncode for Small {
-            fn encoded_len(&self) -> usize { 1 + typeway_grpc::tw_varint_len(self.id as u64) }
+            fn encoded_len(&self) -> usize { 1 + crate::tw_varint_len(self.id as u64) }
             fn encode_to(&self, buf: &mut Vec<u8>) {
                 tw_encode_tag(buf, 1, 0);
                 tw_encode_varint(buf, self.id as u64);

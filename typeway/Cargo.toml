@@ -42,6 +42,7 @@ axum = "0.8"
 tower = { version = "0.5", features = ["util"] }
 bytes = "1"
 prost = "0.13"
+typeway-protobuf = { path = "../typeway-protobuf" }
 tonic = { version = "0.12", features = ["transport"] }
 reqwest = { version = "0.12", features = ["json"] }
 http-body-util = "0.1"

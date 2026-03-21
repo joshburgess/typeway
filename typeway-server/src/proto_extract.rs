@@ -184,7 +184,7 @@ impl<T: ProtoMessage> IntoResponse for Proto<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use typeway_grpc::{TypewayDecode, TypewayDecodeError, TypewayEncode};
+    use typeway_protobuf::{TypewayDecode, TypewayDecodeError, TypewayEncode};
 
     // Manual impls for testing (in real usage, #[derive(TypewayCodec)] generates these)
     #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -197,22 +197,22 @@ mod tests {
         fn encoded_len(&self) -> usize {
             let mut len = 0;
             if self.id != 0 {
-                len += 1 + typeway_grpc::tw_varint_len(self.id as u64);
+                len += 1 + typeway_protobuf::tw_varint_len(self.id as u64);
             }
             if !self.name.is_empty() {
-                len += 1 + typeway_grpc::tw_varint_len(self.name.len() as u64) + self.name.len();
+                len += 1 + typeway_protobuf::tw_varint_len(self.name.len() as u64) + self.name.len();
             }
             len
         }
 
         fn encode_to(&self, buf: &mut Vec<u8>) {
             if self.id != 0 {
-                typeway_grpc::tw_encode_tag(buf, 1, 0);
-                typeway_grpc::tw_encode_varint(buf, self.id as u64);
+                typeway_protobuf::tw_encode_tag(buf, 1, 0);
+                typeway_protobuf::tw_encode_varint(buf, self.id as u64);
             }
             if !self.name.is_empty() {
-                typeway_grpc::tw_encode_tag(buf, 2, 2);
-                typeway_grpc::tw_encode_varint(buf, self.name.len() as u64);
+                typeway_protobuf::tw_encode_tag(buf, 2, 2);
+                typeway_protobuf::tw_encode_varint(buf, self.name.len() as u64);
                 buf.extend_from_slice(self.name.as_bytes());
             }
         }
@@ -223,18 +223,18 @@ mod tests {
             let mut user = TestUser::default();
             let mut offset = 0;
             while offset < bytes.len() {
-                let (tag_wire, consumed) = typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                let (tag_wire, consumed) = typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
                 offset += consumed;
                 let field_number = (tag_wire >> 3) as u32;
                 let wire_type = (tag_wire & 0x07) as u8;
                 match field_number {
                     1 => {
-                        let (val, consumed) = typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                        let (val, consumed) = typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
                         offset += consumed;
                         user.id = val as u32;
                     }
                     2 => {
-                        let (len, consumed) = typeway_grpc::tw_decode_varint(&bytes[offset..])?;
+                        let (len, consumed) = typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
                         offset += consumed;
                         let len = len as usize;
                         user.name = String::from_utf8(bytes[offset..offset + len].to_vec())
@@ -242,7 +242,7 @@ mod tests {
                         offset += len;
                     }
                     _ => {
-                        offset += typeway_grpc::tw_skip_wire_value(&bytes[offset..], wire_type)?;
+                        offset += typeway_protobuf::tw_skip_wire_value(&bytes[offset..], wire_type)?;
                     }
                 }
             }
