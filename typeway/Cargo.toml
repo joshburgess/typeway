@@ -40,6 +40,10 @@ axum = "0.8"
 tower = { version = "0.5", features = ["util"] }
 bytes = "1"
 prost = "0.13"
+tonic = { version = "0.12", default-features = false }
+reqwest = { version = "0.12", features = ["json"] }
+http-body-util = "0.1"
+tower-service = "0.3"
 
 [[bench]]
 name = "routing"
@@ -53,6 +57,11 @@ required-features = ["server"]
 
 [[bench]]
 name = "codec"
+harness = false
+required-features = ["grpc"]
+
+[[bench]]
+name = "grpc_e2e"
 harness = false
 required-features = ["grpc"]
 
