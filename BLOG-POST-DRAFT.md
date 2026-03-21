@@ -625,7 +625,7 @@ Server::<API>::new(handlers)
     .await?;
 ```
 
-The gRPC bridge shares handlers between REST and gRPC — there is no duplication. A single handler implementation serves both protocols, sharing the same Tower middleware stack and Tokio runtime. The bridge handles gRPC framing (length-prefix encoding) and deadline propagation (the `grpc-timeout` header becomes a Tower timeout) transparently.
+The gRPC dispatch shares handlers between REST and gRPC — there is no duplication. A single handler implementation serves both protocols, sharing the same Tower middleware stack and Tokio runtime. The native dispatch handles gRPC framing (length-prefix encoding) with real HTTP/2 trailers and deadline propagation (the `grpc-timeout` header becomes a Tower timeout) transparently. Streaming uses real `tokio::sync::mpsc` channels with backpressure, not collect-and-split.
 
 Streaming is supported across all three gRPC patterns. `ServerStream<E>` splits JSON arrays into per-element gRPC frames for server-streaming RPCs. `ClientStream<E>` handles client-streaming. `BidirectionalStream<E>` handles full-duplex streaming. All three generate the correct `stream` annotations in the `.proto` output.
 

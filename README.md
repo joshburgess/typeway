@@ -90,7 +90,7 @@ typeway = "0.1"
 | `tls` | no | HTTPS via tokio-rustls |
 | `ws` | no | WebSocket upgrade support |
 | `multipart` | no | Multipart form upload (file uploads) |
-| `grpc` | no | gRPC server + client, `.proto` generation, `#[derive(ToProtoType)]`, server reflection, health check, gRPC-Web, service spec + docs, proto diff/validation CLI (Tonic) |
+| `grpc` | no | Native gRPC server + client, `.proto` generation, `#[derive(ToProtoType)]`, `#[derive(TypewayCodec)]`, `BinaryCodec`, `NativeGrpcClient`, server reflection, health check, gRPC-Web, service spec + docs, proto diff/validation CLI |
 | `full` | no | server + client + openapi |
 
 ## Workspace Structure
@@ -103,7 +103,7 @@ typeway = "0.1"
 | `typeway-client` | Type-safe HTTP client |
 | `typeway-openapi` | OpenAPI 3.1 spec derivation |
 | `typeway-macros` | Proc macros (`typeway_path!`, `#[handler]`, `#[api_description]`) |
-| `typeway-grpc` | gRPC bridge: `.proto` generation, `#[derive(ToProtoType)]`, REST+gRPC co-serving, type-safe client, server reflection, health check, gRPC-Web, service spec/docs, proto diff/validation, `api-from-proto`/`spec-from-proto` CLI |
+| `typeway-grpc` | Native gRPC dispatch: `.proto` generation, `#[derive(ToProtoType)]`, `#[derive(TypewayCodec)]`, REST+gRPC co-serving, type-safe client (`NativeGrpcClient`), `BinaryCodec` for standard interop, server reflection, health check, gRPC-Web, service spec/docs, proto diff/validation, `api-from-proto`/`spec-from-proto` CLI |
 
 ## What Makes Typeway Different
 
@@ -465,9 +465,9 @@ Server::<API>::new(handlers)
     .await?;
 ```
 
-The gRPC bridge uses **JSON encoding** (`application/grpc+json`), not binary Protocol Buffers. Since the REST handlers already use JSON, this avoids protobuf transcoding entirely. Standard gRPC clients (grpcurl, tonic, Postman) need to be configured for JSON mode. The `grpc_client!` and `auto_grpc_client!` macros generate clients that use JSON encoding automatically, so typeway client-to-server communication works seamlessly. For binary protobuf support, use Tonic directly alongside typeway via the `.with_fallback()` method.
+gRPC requests are dispatched directly to handlers via native dispatch (HashMap lookup in `NativeMultiplexer`) — no REST translation layer. The default codec is JSON (`application/grpc+json`), which shares serialization with the REST path. For binary protobuf encoding, `BinaryCodec` provides standard gRPC client interop (`application/grpc`), and `#[derive(TypewayCodec)]` generates specialized encoders for 3-8x faster protobuf encoding. `NativeGrpcClient` is codec-aware and selects the right encoding automatically.
 
-Handlers are reused — a single handler implementation serves both REST and gRPC requests, sharing the same Tower middleware stack and Tokio runtime. gRPC framing (length-prefix encoding) is handled transparently by the bridge.
+Handlers are reused — a single handler implementation serves both REST and gRPC requests, sharing the same Tower middleware stack and Tokio runtime. The native dispatch handles gRPC framing (length-prefix encoding) with real HTTP/2 trailers for `grpc-status`, and real streaming via `tokio::sync::mpsc` channels.
 
 ### Server Reflection and Health Checks
 
@@ -492,7 +492,7 @@ type API = (
 );
 ```
 
-`ServerStream<E>` splits JSON arrays into per-element gRPC frames. `ClientStream<E>` and `BidirectionalStream<E>` generate the corresponding `stream` annotations in the `.proto` output.
+`ServerStream<E>`, `ClientStream<E>`, and `BidirectionalStream<E>` use real streaming via `tokio::sync::mpsc` channels with backpressure. All three generate the corresponding `stream` annotations in the `.proto` output.
 
 ### Type-Safe gRPC Client
 
@@ -535,7 +535,7 @@ Both REST and gRPC clients are derived from the same API type — change the typ
 
 ### gRPC-Web for Browser Clients
 
-The `GrpcWebLayer` Tower middleware translates between gRPC-Web (HTTP/1.1 with base64 or binary framing) and the gRPC bridge, enabling browser-to-server gRPC without a separate proxy:
+The `GrpcWebLayer` Tower middleware translates between gRPC-Web (HTTP/1.1 with base64 or binary framing) and the native gRPC dispatch, enabling browser-to-server gRPC without a separate proxy:
 
 ```rust
 Server::<API>::new(handlers)
@@ -547,7 +547,7 @@ Server::<API>::new(handlers)
 
 ### Deadline/Timeout Propagation
 
-The gRPC bridge parses the `grpc-timeout` header and propagates deadlines to the REST handler as a Tower timeout. When a gRPC client sets a 5-second deadline, the handler is cancelled after 5 seconds.
+The native gRPC dispatch parses the `grpc-timeout` header and propagates deadlines to the handler as a Tower timeout. When a gRPC client sets a 5-second deadline, the handler is cancelled after 5 seconds.
 
 ### Error Mapping
 

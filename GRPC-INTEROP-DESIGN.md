@@ -1,5 +1,7 @@
 # gRPC / Tonic Interop: Design & Implementation Plan
 
+> **Historical note:** The bridge approach described in this document (`GrpcBridge`, `Multiplexer`, REST translation) has been superseded by native dispatch. gRPC requests are now dispatched directly to handlers via `NativeMultiplexer` (HashMap lookup) with real HTTP/2 trailers, real streaming via `tokio::sync::mpsc` channels, `BinaryCodec` for standard interop, and `#[derive(TypewayCodec)]` for 3-8x faster encoding. See TYPEWAY-GRPC-PLAN.md for the current architecture.
+
 ## Overview
 
 This document covers two things: what works today with zero new code (items 1-3) and a detailed implementation plan for the novel feature — generating gRPC service definitions from typeway's API type (item 4).

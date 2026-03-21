@@ -1,18 +1,20 @@
 # typeway-grpc: Implementation Status and Future Work
 
+All 4 implementation phases are complete. The bridge (`GrpcBridge`, `Multiplexer`) has been removed. Native dispatch via `NativeMultiplexer` (HashMap lookup, real HTTP/2 trailers, real streaming) is the default and only gRPC path. The `grpc-native` feature flag has been folded into `grpc`. `#[derive(TypewayCodec)]` provides 3-8x faster protobuf encoding, `BinaryCodec` provides standard gRPC client interop, and `NativeGrpcClient` is codec-aware.
+
 Status of all planned gRPC features. Items 1-15 from the original roadmap are tracked below, along with new features that were added during implementation.
 
 ---
 
 ## Protocol Improvements
 
-### 1. Full Protobuf Binary Encoding -- DEFERRED
+### 1. Full Protobuf Binary Encoding -- DONE
 
-Currently uses `application/grpc+json` (JSON over gRPC framing). Real gRPC uses `application/grpc` with length-prefixed protobuf binary encoding. Would require `prost` for serialization/deserialization in the bridge and client. This is the biggest gap for interoperability with standard gRPC clients and servers. Deferred because the JSON bridge shares handlers with REST without transcoding, which is the core design advantage.
+`BinaryCodec` provides standard `application/grpc` interop via prost. `#[derive(TypewayCodec)]` generates specialized protobuf encoders for 3-8x faster encoding. The default codec for typeway-to-typeway communication is TypewayCodec; `BinaryCodec` is used for standard gRPC client interop.
 
 ### 2. gRPC-Web Support -- DONE
 
-`GrpcWebLayer` Tower middleware translates between gRPC-Web (HTTP/1.1 with base64 or binary framing) and the existing bridge, enabling browser-to-server gRPC without a proxy.
+`GrpcWebLayer` Tower middleware translates between gRPC-Web (HTTP/1.1 with base64 or binary framing) and the native gRPC dispatch, enabling browser-to-server gRPC without a proxy.
 
 ### 3. Client-Streaming and Bidirectional-Streaming RPCs -- DONE
 
@@ -90,9 +92,9 @@ The `typeway-grpc diff` CLI exits with code 1 on breaking changes, suitable for 
 
 ## Integration
 
-### 11. Tonic Codegen Bridge -- DEFERRED
+### 11. Tonic Codegen Bridge -- REMOVED
 
-Generate glue code that lets `tonic::include_proto!` types work as typeway handler arguments directly. Deferred -- the JSON bridge approach avoids the need for dual serialization in most use cases.
+No longer needed. With native dispatch and `BinaryCodec`, typeway speaks standard gRPC on the wire. `NativeGrpcClient` handles codec selection automatically. The old bridge approach has been removed entirely.
 
 ### 12. gRPC Client Interceptors -- DONE
 
@@ -100,7 +102,7 @@ Generate glue code that lets `tonic::include_proto!` types work as typeway handl
 
 ### 13. Deadline/Timeout Propagation -- DONE
 
-The gRPC bridge parses the `grpc-timeout` header (all units: hours, minutes, seconds, milliseconds, microseconds, nanoseconds) and propagates deadlines as Tower timeouts on the REST handler. `parse_grpc_timeout()` is exported for custom use.
+The native gRPC dispatch parses the `grpc-timeout` header (all units: hours, minutes, seconds, milliseconds, microseconds, nanoseconds) and propagates deadlines as Tower timeouts on the handler. `parse_grpc_timeout()` is exported for custom use.
 
 ### 14. Structured Error Details -- DEFERRED
 
@@ -150,7 +152,7 @@ The `typeway-grpc spec-from-proto` CLI generates a spec or docs page from any `.
 
 | Item | Status |
 |------|--------|
-| 1. Full protobuf binary encoding | Deferred |
+| 1. Full protobuf binary encoding | Done (BinaryCodec + TypewayCodec) |
 | 2. gRPC-Web support | Done |
 | 3. Client/bidirectional streaming | Done |
 | 4. Enum derive support | Done |
@@ -160,7 +162,7 @@ The `typeway-grpc spec-from-proto` CLI generates a spec or docs page from any `.
 | 8. proto-from-api CLI (syn parsing) | Partial (programmatic API works) |
 | 9. Proto validation | Done |
 | 10. Proto diff | Done |
-| 11. Tonic codegen bridge | Deferred |
+| 11. Tonic codegen bridge | Removed (native dispatch replaces it) |
 | 12. Client interceptors | Done |
 | 13. Deadline/timeout propagation | Done |
 | 14. Structured error details | Deferred |
@@ -172,4 +174,4 @@ The `typeway-grpc spec-from-proto` CLI generates a spec or docs page from any `.
 | chrono/uuid support | Done (new) |
 | gRPC framing | Done (new) |
 
-**12 of 15 original items complete. 3 deferred (binary protobuf, Tonic codegen bridge, structured error details). 6 additional features implemented. 351 tests.**
+**14 of 15 original items complete or resolved. 1 deferred (structured error details). 1 removed (Tonic codegen bridge — superseded by native dispatch). 6 additional features implemented. 351 tests.**

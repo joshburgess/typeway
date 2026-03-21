@@ -349,7 +349,7 @@ Protected endpoints use `bind_auth!()` in the handler tuple, which verifies at c
 
 ### 9. Dual-Protocol gRPC
 
-The same 22-endpoint API serves both REST and gRPC on the same port. Zero additional handler code -- the gRPC bridge translates between protocols automatically.
+The same 22-endpoint API serves both REST and gRPC on the same port. Zero additional handler code -- the native gRPC dispatch handles both protocols automatically.
 
 ```rust
 server
@@ -360,7 +360,7 @@ server
     .await?;
 ```
 
-All 22 REST endpoints are automatically available as gRPC methods. The same handler functions serve both protocols -- incoming `application/grpc*` requests are translated to REST calls by the gRPC bridge, routed through the same handlers, and the response is translated back to gRPC framing.
+All 22 REST endpoints are automatically available as gRPC methods. The same handler functions serve both protocols -- incoming `application/grpc*` requests are dispatched directly to handlers by the native gRPC dispatch (HashMap lookup in `NativeMultiplexer`), with real HTTP/2 trailers for `grpc-status` and real streaming via `tokio::sync::mpsc` channels.
 
 **Try it:**
 
