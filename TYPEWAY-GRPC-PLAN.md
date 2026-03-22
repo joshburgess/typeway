@@ -431,17 +431,21 @@ The gains over prost come from compile-time field layout knowledge — tag numbe
 - **Enum + oneof support.** `#[derive(TypewayCodec)]` handles simple enums (varint) and tagged enums (oneof). Proto parser handles `enum` blocks.
 - **Import resolution.** `parse_proto_with_imports()` resolves imports recursively from include directories.
 - **Connection pooling.** `GrpcClientPool` shares HTTP/2 connections across multiple `GrpcClient` instances with configurable pool size and timeouts.
+- **Retry + circuit breaker.** `GrpcRetryPolicy` with exponential backoff + jitter. `CircuitBreaker` with Closed→Open→HalfOpen state machine. Both integrated into `GrpcClient::send_request()`.
+- **Per-RPC middleware.** `GrpcRouter::add_middleware()` registers per-method middleware that runs between request decode and handler call.
 - **Arena pooling.** `BufPool` provides thread-safe reusable encode buffers for zero-allocation steady-state encoding.
 - **GAT-based zero-copy views.** `MessageView` trait with `type View<'buf>` for borrowed decode without allocation.
-- **gRPC conformance testing.** Smoke test suite covering proto validation, framing, status codes, error details, and proto diffing.
+- **Typestate builders.** `#[derive(TypestateBuilder)]` with `#[required]` fields — `.build()` only compiles when all required fields are set.
+- **gRPC conformance testing.** Smoke + interop test suite covering proto validation, framing, status codes, error details, proto diffing, retry defaults, and circuit breaker state transitions.
 - **Proto-first codegen.** `.proto` → Rust types with TypewayCodec + ToProtoType + BytesStr, via library API or CLI (`typeway-grpc api-from-proto --codec`).
+- **OpenAPI bidirectional codegen.** Swagger 2.x ↔ Rust, OpenAPI 3.x ↔ Rust — parse specs to generate typeway types, or generate specs from types.
+- **ServerBuilder with `.mount()`.** Compose large APIs from sub-APIs with type-level mount + effect tracking. `.build()` checks both `AllMounted` and `AllProvided`.
 
 ### Remaining gaps
 
 - **Production use.** typeway-grpc has not been deployed in production. Tonic has. This matters.
-- **Per-RPC middleware scoping.** Designed at the type level (`WithMiddleware<M, Endpoint>`) but not fully implemented at runtime.
 - **Official gRPC conformance suite.** We have our own smoke tests but have not run the official gRPC interop test suite.
-- **Load balancing / circuit breaking.** Connection pooling exists but there is no built-in retry logic, circuit breaker, or load balancer.
+- **Load balancing.** Retry and circuit breaking exist, but there is no built-in load balancer or service discovery.
 
 ## Migration from Tonic
 

@@ -85,12 +85,12 @@ typeway = "0.1"
 |------|---------|-------------|
 | `server` | yes | HTTP/1.1 + HTTP/2 server (Tower/Hyper) |
 | `client` | no | Type-safe HTTP client (reqwest) |
-| `openapi` | no | OpenAPI 3.1 spec generation + embedded docs UI |
+| `openapi` | no | OpenAPI 3.1 spec generation + Swagger 2.0 output + bidirectional codegen (Swagger 2.x ↔ Rust, OpenAPI 3.x ↔ Rust) |
 | `axum-interop` | no | Embed typeway in Axum apps and vice versa |
 | `tls` | no | HTTPS via tokio-rustls |
 | `ws` | no | WebSocket upgrade support |
 | `multipart` | no | Multipart form upload (file uploads) |
-| `grpc` | no | Native gRPC server + client, `.proto` generation + codegen (both directions), `#[derive(ToProtoType)]`, `#[derive(TypewayCodec)]` (structs + enums), `BytesStr` zero-copy, `BinaryCodec`, server reflection, health check, gRPC-Web, structured error details (`RichGrpcStatus`), connection pooling (`GrpcClientPool`), proto import resolution, proto diff/validation CLI |
+| `grpc` | no | Native gRPC server + client, `.proto` ↔ Rust bidirectional codegen, `#[derive(TypewayCodec)]` (structs + enums + oneofs), `#[derive(TypestateBuilder)]`, `BytesStr` zero-copy, retry + circuit breaker, per-RPC middleware, `ServerBuilder` with `.mount()` (25-element tuples), server reflection, health check, gRPC-Web, structured error details, connection pooling, proto import resolution, CLI |
 | `full` | no | server + client + openapi |
 
 ## Workspace Structure
@@ -101,10 +101,10 @@ typeway = "0.1"
 | `typeway-core` | Type-level primitives (path segments, methods, HList) |
 | `typeway-server` | Tower/Hyper server integration |
 | `typeway-client` | Type-safe HTTP client |
-| `typeway-openapi` | OpenAPI 3.1 spec derivation |
-| `typeway-macros` | Proc macros (`typeway_path!`, `#[handler]`, `#[derive(TypewayCodec)]`, `#[derive(ToProtoType)]`) |
-| `typeway-grpc` | gRPC: `.proto` ↔ Rust bidirectional codegen, REST+gRPC co-serving, streaming, client with connection pooling, server reflection, structured error details, proto diff/validation CLI |
-| `typeway-protobuf` | High-performance protobuf: `BytesStr` zero-copy, `EncodeBuf`/`BufPool` buffer pooling, `MessageView` GAT zero-copy decode, 12-54% faster than prost |
+| `typeway-openapi` | OpenAPI bidirectional: spec generation (3.1) + Swagger 2.0 output + codegen from Swagger 2.x and OpenAPI 3.x |
+| `typeway-macros` | Proc macros (`typeway_path!`, `#[handler]`, `#[derive(TypewayCodec)]`, `#[derive(ToProtoType)]`, `#[derive(TypestateBuilder)]`) |
+| `typeway-grpc` | gRPC: `.proto` ↔ Rust codegen, REST+gRPC co-serving, streaming, retry + circuit breaker, per-RPC middleware, connection pooling, server reflection, structured error details, CLI |
+| `typeway-protobuf` | High-performance protobuf: `BytesStr` zero-copy, `BufPool` arena pooling, `MessageView` GAT zero-copy decode, typestate builders, 12-54% faster than prost |
 
 ## What Makes Typeway Different
 
@@ -614,6 +614,25 @@ Two modes are available:
 | `proto_to_typeway_with_codec()` | BytesStr fields, TypewayCodec | High-performance binary gRPC |
 
 See the [proto-first codegen guide](guides/proto-first-codegen.md) for a full walkthrough.
+
+### Importing from OpenAPI / Swagger Specs
+
+Generate typeway types from an existing OpenAPI 3.x or Swagger 2.x spec:
+
+```rust
+// OpenAPI 3.x (JSON or YAML)
+let code = typeway_openapi::openapi3_to_typeway(&spec_source).unwrap();
+
+// Swagger 2.0 (JSON or YAML)
+let code = typeway_openapi::swagger_to_typeway(&spec_source).unwrap();
+```
+
+For the reverse — generating Swagger 2.0 output from typeway types:
+
+```rust
+let spec_3x = MyAPI::to_spec("My Service", "1.0");
+let swagger_json = typeway_openapi::to_swagger2_json(&spec_3x);
+```
 
 ## Performance: The Cost of Type Safety
 
