@@ -1,0 +1,5 @@
+error: duplicate proto tag 1: already used by field `name`
+  --> tests/compile_fail/codec_duplicate_tags.rs:10:5
+   |
+10 |     other: String,
+   |     ^^^^^

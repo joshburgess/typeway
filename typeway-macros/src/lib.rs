@@ -2014,11 +2014,30 @@ fn derive_typeway_codec_struct(
     name: &Ident,
     fields: &syn::punctuated::Punctuated<syn::Field, syn::token::Comma>,
 ) -> syn::Result<TokenStream2> {
-    // Parse fields.
+    // Parse fields and validate tags.
     let mut codec_fields = Vec::new();
+    let mut seen_tags = std::collections::HashMap::new();
     for (i, field) in fields.iter().enumerate() {
         let ident = field.ident.clone().unwrap();
         let tag = extract_proto_tag(&field.attrs).unwrap_or((i as u32) + 1);
+
+        if tag == 0 {
+            return Err(syn::Error::new_spanned(
+                &ident,
+                "proto tag 0 is reserved; tags must be >= 1",
+            ));
+        }
+
+        if let Some(prev_ident) = seen_tags.get(&tag) {
+            return Err(syn::Error::new_spanned(
+                &ident,
+                format!(
+                    "duplicate proto tag {tag}: already used by field `{prev_ident}`"
+                ),
+            ));
+        }
+        seen_tags.insert(tag, ident.to_string());
+
         let codec_kind = classify_type(&field.ty);
         codec_fields.push(CodecField {
             ident,
@@ -2431,6 +2450,10 @@ fn gen_encode_optional_inner(tag: u32, wt: u8, kind: &CodecKind) -> TokenStream2
             #tp
             ::typeway_protobuf::tw_encode_varint(buf, *val as u64);
         },
+        CodecKind::Bool => quote! {
+            #tp
+            buf.push(if *val { 1 } else { 0 });
+        },
         CodecKind::Fixed32 => quote! {
             #tp
             buf.extend_from_slice(&val.to_le_bytes());
@@ -2589,6 +2612,7 @@ fn gen_encoded_len_optional_inner(tag: u32, kind: &CodecKind) -> TokenStream2 {
         CodecKind::Varint => quote! {
             len += #tag_len_expr + ::typeway_protobuf::tw_varint_len(*val as u64);
         },
+        CodecKind::Bool => quote! { len += #tag_len_expr + 1; },
         CodecKind::Fixed32 => quote! { len += #tag_len_expr + 4; },
         CodecKind::Fixed64 => quote! { len += #tag_len_expr + 8; },
         CodecKind::LenString | CodecKind::LenBytesStr => quote! {
@@ -2776,10 +2800,23 @@ fn gen_decode_arm(f: &CodecField) -> TokenStream2 {
         },
         CodecKind::Repeated(inner) => {
             if is_packable(inner) {
-                let is_varint = matches!(inner.as_ref(), CodecKind::Varint);
+                let is_varint = matches!(inner.as_ref(), CodecKind::Varint | CodecKind::Bool);
+                let is_bool = matches!(inner.as_ref(), CodecKind::Bool);
                 if is_varint {
                     // Optimized packed varint decode: inline 1-byte fast path,
                     // pre-reserve Vec capacity.
+                    // For bool: use `!= 0` conversion. For integers: use `as _`.
+                    let push_packed_fast = if is_bool {
+                        quote! { #ident.push(b != 0); }
+                    } else {
+                        quote! { #ident.push(b as _); }
+                    };
+                    let push_packed_slow = if is_bool {
+                        quote! { #ident.push(val != 0); }
+                    } else {
+                        quote! { #ident.push(val as _); }
+                    };
+                    let push_unpacked = push_packed_slow.clone();
                     quote! {
                         #tag => {
                             if wire_type == 2 {
@@ -2793,21 +2830,21 @@ fn gen_decode_arm(f: &CodecField) -> TokenStream2 {
                                 // Reserve worst case: at least 1 element per byte.
                                 #ident.reserve(packed_len);
                                 while offset < packed_end {
-                                    // Inline 1-byte fast path (most common for small u32).
+                                    // Inline 1-byte fast path (most common for small values).
                                     let b = bytes[offset];
                                     if b < 0x80 {
-                                        #ident.push(b as _);
+                                        #push_packed_fast
                                         offset += 1;
                                     } else {
                                         let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
                                         offset += consumed;
-                                        #ident.push(val as _);
+                                        #push_packed_slow
                                     }
                                 }
                             } else {
                                 let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
                                 offset += consumed;
-                                #ident.push(val as _);
+                                #push_unpacked
                             }
                         }
                     }
@@ -2862,6 +2899,11 @@ fn gen_decode_optional_inner(ident: &Ident, ident_str: &str, kind: &CodecKind) -
             let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
             offset += consumed;
             #ident = Some(val as _);
+        },
+        CodecKind::Bool => quote! {
+            let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+            offset += consumed;
+            #ident = Some(val != 0);
         },
         CodecKind::Fixed32 => quote! {
             if offset + 4 > bytes.len() {

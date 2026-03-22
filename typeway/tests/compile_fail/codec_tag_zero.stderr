@@ -1,0 +1,5 @@
+error: proto tag 0 is reserved; tags must be >= 1
+ --> tests/compile_fail/codec_tag_zero.rs:8:5
+  |
+8 |     name: String,
+  |     ^^^^
