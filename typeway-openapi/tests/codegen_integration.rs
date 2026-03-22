@@ -395,3 +395,165 @@ mod openapi3 {
         assert!(output.contains("pub score: f32,"));
     }
 }
+
+// ===========================================================================
+// Round-trip tests: Swagger 2.0 ↔ OpenAPI 3.x conversion
+// ===========================================================================
+
+mod roundtrip {
+    use typeway_openapi::{openapi3_to_typeway, swagger_to_typeway, to_swagger2, to_swagger2_json};
+    use typeway_openapi::spec::*;
+    use indexmap::IndexMap;
+
+    /// Build a sample OpenAPI 3.x spec programmatically.
+    fn sample_spec() -> OpenApiSpec {
+        let mut spec = OpenApiSpec::new("Round-Trip Test", "2.0");
+
+        // GET /users → array of User
+        let mut users_path = PathItem::default();
+        let mut get_op = Operation::new();
+        get_op.summary = Some("List users".to_string());
+        get_op.tags = vec!["users".to_string()];
+        get_op.parameters.push(Parameter {
+            name: "limit".to_string(),
+            location: ParameterLocation::Query,
+            required: false,
+            schema: Some(Schema::integer()),
+        });
+        get_op.responses.insert("200".to_string(), Response {
+            description: "Success".to_string(),
+            content: IndexMap::from([("application/json".to_string(), MediaType {
+                schema: Some(Schema::array(Schema::string())),
+                example: None,
+            })]),
+        });
+        users_path.get = Some(get_op);
+
+        // POST /users → create user
+        let mut post_op = Operation::new();
+        post_op.summary = Some("Create user".to_string());
+        post_op.request_body = Some(RequestBody {
+            required: true,
+            content: IndexMap::from([("application/json".to_string(), MediaType {
+                schema: Some(Schema::object()),
+                example: None,
+            })]),
+        });
+        post_op.responses.insert("201".to_string(), Response {
+            description: "Created".to_string(),
+            content: IndexMap::from([("application/json".to_string(), MediaType {
+                schema: Some(Schema::object()),
+                example: None,
+            })]),
+        });
+        users_path.post = Some(post_op);
+
+        spec.paths.insert("/users".to_string(), users_path);
+
+        // DELETE /users/{id}
+        let mut user_path = PathItem::default();
+        let mut delete_op = Operation::new();
+        delete_op.parameters.push(Parameter {
+            name: "id".to_string(),
+            location: ParameterLocation::Path,
+            required: true,
+            schema: Some(Schema::string()),
+        });
+        delete_op.responses.insert("204".to_string(), Response {
+            description: "Deleted".to_string(),
+            content: IndexMap::new(),
+        });
+        user_path.delete = Some(delete_op);
+        spec.paths.insert("/users/{id}".to_string(), user_path);
+
+        spec
+    }
+
+    #[test]
+    fn openapi3_to_swagger2_preserves_paths() {
+        let spec = sample_spec();
+        let swagger = to_swagger2(&spec);
+
+        assert_eq!(swagger.swagger, "2.0");
+        assert!(swagger.paths.contains_key("/users"));
+        assert!(swagger.paths.contains_key("/users/{id}"));
+        assert!(swagger.paths["/users"].contains_key("get"));
+        assert!(swagger.paths["/users"].contains_key("post"));
+        assert!(swagger.paths["/users/{id}"].contains_key("delete"));
+    }
+
+    #[test]
+    fn openapi3_to_swagger2_converts_request_body() {
+        let spec = sample_spec();
+        let swagger = to_swagger2(&spec);
+
+        let post = &swagger.paths["/users"]["post"];
+        let body_param = post.parameters.iter()
+            .find(|p| p["in"] == "body")
+            .expect("POST should have body parameter");
+        assert_eq!(body_param["required"], true);
+    }
+
+    #[test]
+    fn openapi3_to_swagger2_preserves_query_params() {
+        let spec = sample_spec();
+        let swagger = to_swagger2(&spec);
+
+        let get = &swagger.paths["/users"]["get"];
+        let query_param = get.parameters.iter()
+            .find(|p| p["in"] == "query")
+            .expect("GET should have query parameter");
+        assert_eq!(query_param["name"], "limit");
+    }
+
+    #[test]
+    fn openapi3_to_swagger2_preserves_summary_and_tags() {
+        let spec = sample_spec();
+        let swagger = to_swagger2(&spec);
+
+        let get = &swagger.paths["/users"]["get"];
+        assert_eq!(get.summary.as_deref(), Some("List users"));
+        assert_eq!(get.tags, vec!["users"]);
+    }
+
+    #[test]
+    fn swagger2_json_roundtrip_is_parseable() {
+        // Generate OpenAPI 3.x → convert to Swagger 2.0 JSON → parse back.
+        let spec = sample_spec();
+        let swagger_json = to_swagger2_json(&spec);
+
+        // The Swagger 2.0 JSON should be parseable by swagger_to_typeway.
+        let rust_code = swagger_to_typeway(&swagger_json).unwrap();
+        assert!(rust_code.contains("type API = ("), "got:\n{rust_code}");
+        assert!(rust_code.contains("GetEndpoint"));
+        assert!(rust_code.contains("PostEndpoint"));
+        assert!(rust_code.contains("DeleteEndpoint"));
+        assert!(rust_code.contains("UsersPath"));
+    }
+
+    #[test]
+    fn openapi3_to_swagger2_to_rust_produces_valid_code() {
+        // Full pipeline: OpenAPI 3.x spec → Swagger 2.0 → Rust codegen.
+        let spec = sample_spec();
+        let swagger_json = to_swagger2_json(&spec);
+        let rust_code = swagger_to_typeway(&swagger_json).unwrap();
+
+        // Should have path declarations.
+        assert!(rust_code.contains("typeway_path!"));
+        // Should have use statements.
+        assert!(rust_code.contains("use typeway::prelude::*;"));
+        assert!(rust_code.contains("use serde::{Serialize, Deserialize};"));
+    }
+
+    #[test]
+    fn openapi3_json_roundtrip_is_parseable() {
+        // Generate OpenAPI 3.x spec → serialize to JSON → parse back.
+        let spec = sample_spec();
+        let json = serde_json::to_string_pretty(&spec).unwrap();
+
+        let rust_code = openapi3_to_typeway(&json).unwrap();
+        assert!(rust_code.contains("type API = ("), "got:\n{rust_code}");
+        assert!(rust_code.contains("GetEndpoint"));
+        assert!(rust_code.contains("PostEndpoint"));
+    }
+}
