@@ -2200,12 +2200,6 @@ fn derive_typeway_codec_oneof_enum(
     })
 }
 
-/// Determine the protobuf wire type for a Rust type (for oneof encoding).
-fn wire_type_for_scalar_type(ty: &syn::Type) -> u8 {
-    let kind = classify_scalar(ty);
-    wire_type_for_kind(&kind)
-}
-
 /// Classify a Rust type for oneof codec generation.
 fn oneof_codec_kind(ty: &syn::Type) -> CodecKind {
     classify_scalar(ty)

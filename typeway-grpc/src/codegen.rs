@@ -3,7 +3,7 @@
 //! Given a [`ProtoFile`](crate::proto_parse::ProtoFile), generate Rust source
 //! code with typeway API types, structs, and path declarations.
 
-use crate::proto_parse::{ParsedMessage, ProtoFile};
+use crate::proto_parse::{ParsedEnum, ParsedMessage, ProtoFile};
 
 /// Generate typeway Rust source code from a parsed `.proto` file.
 ///
@@ -31,6 +31,12 @@ pub fn generate_typeway_from_proto(proto: &ProtoFile) -> String {
     // Generate Rust structs from proto messages.
     for msg in &proto.messages {
         output.push_str(&generate_struct(msg));
+        output.push_str("\n\n");
+    }
+
+    // Generate Rust enums from proto enums.
+    for e in &proto.enums {
+        output.push_str(&generate_enum(e));
         output.push_str("\n\n");
     }
 
@@ -139,6 +145,54 @@ fn generate_struct_impl(msg: &ParsedMessage, with_typeway_codec: bool) -> String
     }
     s.push('}');
     s
+}
+
+/// Generate a Rust enum from a parsed proto enum (serde-only).
+fn generate_enum(e: &ParsedEnum) -> String {
+    generate_enum_impl(e, false)
+}
+
+/// Generate a Rust enum from a parsed proto enum (with TypewayCodec).
+fn generate_enum_with_codec(e: &ParsedEnum) -> String {
+    generate_enum_impl(e, true)
+}
+
+fn generate_enum_impl(e: &ParsedEnum, with_typeway_codec: bool) -> String {
+    let mut s = String::new();
+    if with_typeway_codec {
+        s.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TypewayCodec, ToProtoType)]\n");
+    } else {
+        s.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]\n");
+    }
+    s.push_str(&format!("pub enum {} {{\n", e.name));
+    for variant in &e.variants {
+        let rust_name = screaming_snake_to_pascal(&variant.name);
+        if with_typeway_codec {
+            s.push_str(&format!("    #[proto(tag = {})]\n", variant.tag));
+        }
+        s.push_str(&format!("    {},\n", rust_name));
+    }
+    s.push('}');
+    s
+}
+
+/// Convert SCREAMING_SNAKE_CASE to PascalCase.
+///
+/// `ACTIVE` → `Active`, `NOT_FOUND` → `NotFound`, `UNKNOWN_STATUS` → `UnknownStatus`
+fn screaming_snake_to_pascal(s: &str) -> String {
+    s.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(c) => {
+                    let upper: String = c.to_uppercase().collect();
+                    upper + &chars.as_str().to_lowercase()
+                }
+                None => String::new(),
+            }
+        })
+        .collect()
 }
 
 /// Map a protobuf type name to a Rust type.
@@ -386,6 +440,12 @@ pub fn generate_typeway_from_proto_with_codec(proto: &ProtoFile) -> String {
     // Generate Rust structs with TypewayCodec derives.
     for msg in &proto.messages {
         output.push_str(&generate_struct_with_codec(msg));
+        output.push_str("\n\n");
+    }
+
+    // Generate Rust enums with TypewayCodec derives.
+    for e in &proto.enums {
+        output.push_str(&generate_enum_with_codec(e));
         output.push_str("\n\n");
     }
 
@@ -804,5 +864,77 @@ message ListUserResponse {
             "Expected HashMap in generated struct: {}",
             s
         );
+    }
+
+    // --- Enum codegen ---
+
+    #[test]
+    fn enum_codegen_serde_only() {
+        let e = ParsedEnum {
+            name: "Status".to_string(),
+            variants: vec![
+                crate::proto_parse::ParsedEnumVariant { name: "UNKNOWN".to_string(), tag: 0 },
+                crate::proto_parse::ParsedEnumVariant { name: "ACTIVE".to_string(), tag: 1 },
+                crate::proto_parse::ParsedEnumVariant { name: "INACTIVE".to_string(), tag: 2 },
+            ],
+        };
+        let s = generate_enum(&e);
+        assert!(s.contains("pub enum Status {"), "got: {s}");
+        assert!(s.contains("Unknown,"), "got: {s}");
+        assert!(s.contains("Active,"), "got: {s}");
+        assert!(s.contains("Inactive,"), "got: {s}");
+        assert!(s.contains("Serialize, Deserialize"));
+        assert!(!s.contains("TypewayCodec"));
+        assert!(!s.contains("#[proto(tag"));
+    }
+
+    #[test]
+    fn enum_codegen_with_codec() {
+        let e = ParsedEnum {
+            name: "Priority".to_string(),
+            variants: vec![
+                crate::proto_parse::ParsedEnumVariant { name: "UNSPECIFIED".to_string(), tag: 0 },
+                crate::proto_parse::ParsedEnumVariant { name: "LOW".to_string(), tag: 1 },
+                crate::proto_parse::ParsedEnumVariant { name: "HIGH".to_string(), tag: 2 },
+            ],
+        };
+        let s = generate_enum_with_codec(&e);
+        assert!(s.contains("pub enum Priority {"), "got: {s}");
+        assert!(s.contains("TypewayCodec"));
+        assert!(s.contains("ToProtoType"));
+        assert!(s.contains("#[proto(tag = 0)]"));
+        assert!(s.contains("#[proto(tag = 1)]"));
+        assert!(s.contains("#[proto(tag = 2)]"));
+        assert!(s.contains("Unspecified,"));
+        assert!(s.contains("Low,"));
+        assert!(s.contains("High,"));
+    }
+
+    #[test]
+    fn screaming_snake_to_pascal_conversion() {
+        assert_eq!(screaming_snake_to_pascal("ACTIVE"), "Active");
+        assert_eq!(screaming_snake_to_pascal("NOT_FOUND"), "NotFound");
+        assert_eq!(screaming_snake_to_pascal("UNKNOWN_STATUS"), "UnknownStatus");
+        assert_eq!(screaming_snake_to_pascal("OK"), "Ok");
+    }
+
+    #[test]
+    fn enum_in_full_proto_codegen() {
+        let source = r#"syntax = "proto3";
+package test.v1;
+enum Status {
+  UNKNOWN = 0;
+  ACTIVE = 1;
+}
+message User {
+  string name = 1;
+  Status status = 2;
+}
+"#;
+        let output = proto_to_typeway_with_codec(source).unwrap();
+        assert!(output.contains("pub enum Status {"), "Missing enum: {output}");
+        assert!(output.contains("pub struct User {"), "Missing struct: {output}");
+        assert!(output.contains("TypewayCodec"));
+        assert!(output.contains("ToProtoType"));
     }
 }

@@ -400,6 +400,7 @@ impl GrpcClient {
             } else {
                 // Try parsing the body as gRPC-framed data first, then as raw JSON.
                 let unframed = crate::framing::decode_grpc_frame(&body).unwrap_or_default();
+                #[allow(clippy::needless_borrow)]
                 crate::error_details::parse_rich_status(&unframed)
                     .or_else(|| crate::error_details::parse_rich_status(&body))
                     .map(|s| s.details)
@@ -604,8 +605,8 @@ impl GrpcClientPoolBuilder {
 }
 
 impl GrpcClientPool {
-    /// Create a new pool with default settings.
-    pub fn new() -> GrpcClientPoolBuilder {
+    /// Create a pool builder with default settings.
+    pub fn builder() -> GrpcClientPoolBuilder {
         GrpcClientPoolBuilder::default()
     }
 

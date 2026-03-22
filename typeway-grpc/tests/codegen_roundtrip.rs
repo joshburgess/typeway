@@ -237,6 +237,33 @@ message Outer {
 }
 
 #[test]
+fn enum_codegen_produces_rust_enum() {
+    let proto = r#"syntax = "proto3";
+package test.v1;
+enum Status {
+  UNKNOWN = 0;
+  ACTIVE = 1;
+  INACTIVE = 2;
+}
+message User {
+  string name = 1;
+  Status status = 2;
+}
+"#;
+    let output = proto_to_typeway_with_codec(proto).unwrap();
+    assert!(output.contains("pub enum Status {"));
+    assert!(output.contains("Unknown,"));
+    assert!(output.contains("Active,"));
+    assert!(output.contains("Inactive,"));
+    assert!(output.contains("#[proto(tag = 0)]"));
+    // Enum gets TypewayCodec + ToProtoType.
+    assert!(output.contains("TypewayCodec"), "Missing TypewayCodec in:\n{output}");
+    assert!(output.contains("pub enum Status {"), "Missing enum:\n{output}");
+    // Struct still generated.
+    assert!(output.contains("pub struct User {"));
+}
+
+#[test]
 fn empty_message_generates_empty_struct() {
     let proto = r#"syntax = "proto3";
 package test.v1;

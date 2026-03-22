@@ -47,6 +47,15 @@ enum Command {
         /// Print to stdout instead of writing a file.
         #[arg(long)]
         dry_run: bool,
+
+        /// Generate TypewayCodec + ToProtoType + BytesStr for high-performance
+        /// binary gRPC. Without this flag, generates serde-only types.
+        #[arg(long)]
+        codec: bool,
+
+        /// Additional directories to search for imported .proto files.
+        #[arg(long, short = 'I')]
+        include: Vec<PathBuf>,
     },
 
     /// Compare two .proto files and report breaking changes.
@@ -118,14 +127,26 @@ fn main() -> anyhow::Result<()> {
             file,
             output,
             dry_run,
+            codec,
+            include,
         } => {
             let source = std::fs::read_to_string(&file)
                 .map_err(|e| anyhow::anyhow!("failed to read {}: {}", file.display(), e))?;
 
-            let proto = typeway_grpc::proto_parse::parse_proto(&source)
-                .map_err(|e| anyhow::anyhow!("failed to parse proto: {}", e))?;
+            // Parse with import resolution if include dirs are provided.
+            let proto = if include.is_empty() {
+                typeway_grpc::proto_parse::parse_proto(&source)
+            } else {
+                let dirs: Vec<&str> = include.iter().map(|p| p.to_str().unwrap_or(".")).collect();
+                typeway_grpc::proto_parse::parse_proto_with_imports(&source, &dirs)
+            }
+            .map_err(|e| anyhow::anyhow!("failed to parse proto: {}", e))?;
 
-            let rust_code = typeway_grpc::codegen::generate_typeway_from_proto(&proto);
+            let rust_code = if codec {
+                typeway_grpc::codegen::generate_typeway_from_proto_with_codec(&proto)
+            } else {
+                typeway_grpc::codegen::generate_typeway_from_proto(&proto)
+            };
 
             if dry_run {
                 println!("{}", rust_code);
