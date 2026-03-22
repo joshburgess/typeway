@@ -1,0 +1,45 @@
+error[E0277]: the trait bound `NotAContentType: ContentTypeMarker` is not satisfied
+  --> tests/compile_fail/contenttype_missing_trait.rs:16:13
+   |
+16 |     let _ = Server::<API>::new((bind!(get_users),));
+   |             ^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `ContentTypeMarker` is not implemented for `NotAContentType`
+  --> tests/compile_fail/contenttype_missing_trait.rs:9:1
+   |
+ 9 | struct NotAContentType;
+   | ^^^^^^^^^^^^^^^^^^^^^^
+help: the following other types implement trait `ContentTypeMarker`
+  --> $WORKSPACE/typeway-server/src/typed.rs
+   |
+   | impl ContentTypeMarker for JsonContent {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `JsonContent`
+...
+   | impl ContentTypeMarker for FormContent {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `FormContent`
+   = note: required for `ContentType<NotAContentType, Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>>` to implement `ApiSpec`
+   = note: 1 redundant requirement hidden
+   = note: required for `(ContentType<NotAContentType, Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>>,)` to implement `ApiSpec`
+note: required by a bound in `typeway::Server`
+  --> $WORKSPACE/typeway-server/src/server.rs
+   |
+   | pub struct Server<A: ApiSpec> {
+   |                      ^^^^^^^ required by this bound in `Server`
+
+error[E0599]: the function or associated item `new` exists for struct `typeway::Server<(ContentType<NotAContentType, Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>>,)>`, but its trait bounds were not satisfied
+  --> tests/compile_fail/contenttype_missing_trait.rs:16:28
+   |
+ 9 | struct NotAContentType;
+   | ---------------------- doesn't satisfy `NotAContentType: ContentTypeMarker`
+...
+16 |     let _ = Server::<API>::new((bind!(get_users),));
+   |                            ^^^ function or associated item cannot be called due to unsatisfied trait bounds
+   |
+   = note: the following trait bounds were not satisfied:
+           `NotAContentType: ContentTypeMarker`
+           which is required by `(ContentType<NotAContentType, Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>>,): ApiSpec`
+note: the trait `ContentTypeMarker` must be implemented
+  --> $WORKSPACE/typeway-server/src/typed.rs
+   |
+   | pub trait ContentTypeMarker: Send + Sync + 'static {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -1,0 +1,22 @@
+error[E0277]: the trait bound `(Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>, Endpoint<Get, HCons<Lit<__lit_items>, HNil>, NoBody, std::string::String>): HasEndpoint<Endpoint<Get, HCons<Lit<__lit_missing>, HNil>, NoBody, std::string::String>, _>` is not satisfied
+  --> tests/compile_fail/has_endpoint_missing.rs:21:19
+   |
+21 |     _assert_has::<API, MissingEndpoint, _>();
+   |                   ^^^ unsatisfied trait bound
+   |
+   = help: the trait `HasEndpoint<Endpoint<Get, HCons<Lit<__lit_missing>, HNil>, NoBody, std::string::String>, _>` is not implemented for `(Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>, Endpoint<Get, HCons<Lit<__lit_items>, HNil>, NoBody, std::string::String>)`
+   = help: the following other types implement trait `HasEndpoint<E, Idx>`:
+             `(A, B)` implements `HasEndpoint<Endpoint, Here>`
+             `(A, B)` implements `HasEndpoint<Endpoint, There<Here>>`
+             `(A, B, C)` implements `HasEndpoint<Endpoint, Here>`
+             `(A, B, C)` implements `HasEndpoint<Endpoint, There<Here>>`
+             `(A, B, C)` implements `HasEndpoint<Endpoint, There<There<Here>>>`
+             `(A, B, C, D)` implements `HasEndpoint<Endpoint, Here>`
+             `(A, B, C, D)` implements `HasEndpoint<Endpoint, There<Here>>`
+             `(A, B, C, D)` implements `HasEndpoint<Endpoint, There<There<Here>>>`
+           and $N others
+note: required by a bound in `_assert_has`
+  --> tests/compile_fail/has_endpoint_missing.rs:19:23
+   |
+19 |     fn _assert_has<T: HasEndpoint<E, Idx>, E, Idx>() {}
+   |                       ^^^^^^^^^^^^^^^^^^^ required by this bound in `_assert_has`

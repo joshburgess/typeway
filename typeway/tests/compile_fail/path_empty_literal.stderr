@@ -1,0 +1,5 @@
+error: path literal cannot be empty
+ --> tests/compile_fail/path_empty_literal.rs:5:30
+  |
+5 | typeway_path!(type BadPath = "");
+  |                              ^^

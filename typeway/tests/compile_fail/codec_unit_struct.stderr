@@ -1,0 +1,5 @@
+error: TypewayCodec only supports structs with named fields
+ --> tests/compile_fail/codec_unit_struct.rs:6:8
+  |
+6 | struct Empty;
+  |        ^^^^^

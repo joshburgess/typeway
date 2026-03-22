@@ -1,0 +1,5 @@
+error: path literal cannot contain '/'; use separate segments
+ --> tests/compile_fail/path_slash_in_literal.rs:5:30
+  |
+5 | typeway_path!(type BadPath = "users/posts");
+  |                              ^^^^^^^^^^^^^

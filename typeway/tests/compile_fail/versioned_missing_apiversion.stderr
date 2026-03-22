@@ -1,0 +1,47 @@
+error[E0277]: the trait bound `NotAVersion: ApiVersion` is not satisfied
+  --> tests/compile_fail/versioned_missing_apiversion.rs:16:13
+   |
+16 |     let _ = Server::<API>::new((bind!(get_users),));
+   |             ^^^^^^^^^^^^^ unsatisfied trait bound
+   |
+help: the trait `ApiVersion` is not implemented for `NotAVersion`
+  --> tests/compile_fail/versioned_missing_apiversion.rs:9:1
+   |
+ 9 | struct NotAVersion;
+   | ^^^^^^^^^^^^^^^^^^
+   = help: the following other types implement trait `ApiSpec`:
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+             (A, B, C, D, E, F, G)
+             (A, B, C, D, E, F, G, H)
+             (A, B, C, D, E, F, G, H, I)
+           and $N others
+   = note: required for `Versioned<NotAVersion, Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>>` to implement `ApiSpec`
+   = note: 1 redundant requirement hidden
+   = note: required for `(Versioned<NotAVersion, Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>>,)` to implement `ApiSpec`
+note: required by a bound in `typeway::Server`
+  --> $WORKSPACE/typeway-server/src/server.rs
+   |
+   | pub struct Server<A: ApiSpec> {
+   |                      ^^^^^^^ required by this bound in `Server`
+
+error[E0599]: the function or associated item `new` exists for struct `typeway::Server<(Versioned<NotAVersion, Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>>,)>`, but its trait bounds were not satisfied
+  --> tests/compile_fail/versioned_missing_apiversion.rs:16:28
+   |
+ 9 | struct NotAVersion;
+   | ------------------ doesn't satisfy `NotAVersion: ApiVersion`
+...
+16 |     let _ = Server::<API>::new((bind!(get_users),));
+   |                            ^^^ function or associated item cannot be called due to unsatisfied trait bounds
+   |
+   = note: the following trait bounds were not satisfied:
+           `NotAVersion: ApiVersion`
+           which is required by `(Versioned<NotAVersion, Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>>,): ApiSpec`
+note: the trait `ApiVersion` must be implemented
+  --> $WORKSPACE/typeway-server/src/typed.rs
+   |
+   | pub trait ApiVersion: Send + Sync + 'static {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
