@@ -14,6 +14,7 @@ pub mod codegen_v2;
 pub mod codegen_v3;
 pub mod derive;
 pub mod spec;
+pub mod swagger_output;
 
 #[cfg(feature = "schemars")]
 pub use derive::from_schemars;
@@ -26,3 +27,4 @@ pub use spec::{
 };
 pub use codegen_v2::swagger_to_typeway;
 pub use codegen_v3::openapi3_to_typeway;
+pub use swagger_output::{to_swagger2, to_swagger2_json};
