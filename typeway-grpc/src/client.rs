@@ -53,6 +53,10 @@ pub struct GrpcClientConfig {
     pub timeout: Option<Duration>,
     /// Request interceptors applied in order before sending.
     pub interceptors: Vec<GrpcRequestInterceptor>,
+    /// Retry policy for transient failures. `None` means no retries.
+    pub retry: Option<GrpcRetryPolicy>,
+    /// Circuit breaker for fail-fast on unhealthy upstreams.
+    pub circuit_breaker: Option<CircuitBreaker>,
 }
 
 /// A function that modifies outgoing gRPC requests before they are sent.
@@ -65,6 +69,137 @@ impl Default for GrpcClientConfig {
             default_metadata: Vec::new(),
             timeout: Some(Duration::from_secs(30)),
             interceptors: Vec::new(),
+            retry: None,
+            circuit_breaker: None,
+        }
+    }
+}
+
+/// Retry policy for gRPC requests with exponential backoff and jitter.
+#[derive(Debug, Clone)]
+pub struct GrpcRetryPolicy {
+    /// Maximum retry attempts (default: 3).
+    pub max_retries: u32,
+    /// Initial backoff before first retry (default: 100ms).
+    pub initial_backoff: Duration,
+    /// Maximum backoff cap (default: 10s).
+    pub max_backoff: Duration,
+    /// Backoff multiplier per attempt (default: 2.0).
+    pub multiplier: f64,
+    /// gRPC codes that trigger a retry.
+    pub retry_on: Vec<GrpcCode>,
+}
+
+impl Default for GrpcRetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_retries: 3,
+            initial_backoff: Duration::from_millis(100),
+            max_backoff: Duration::from_secs(10),
+            multiplier: 2.0,
+            retry_on: vec![
+                GrpcCode::Unavailable,
+                GrpcCode::ResourceExhausted,
+                GrpcCode::DeadlineExceeded,
+            ],
+        }
+    }
+}
+
+impl GrpcRetryPolicy {
+    fn backoff_for(&self, attempt: u32) -> Duration {
+        let base = self.initial_backoff.as_millis() as f64
+            * self.multiplier.powi(attempt as i32);
+        let capped = base.min(self.max_backoff.as_millis() as f64);
+        let jitter = capped * 0.25 * pseudo_random_f64();
+        Duration::from_millis((capped + jitter) as u64)
+    }
+
+    fn should_retry(&self, code: GrpcCode) -> bool {
+        self.retry_on.contains(&code)
+    }
+}
+
+fn pseudo_random_f64() -> f64 {
+    use std::collections::hash_map::RandomState;
+    use std::hash::{BuildHasher, Hasher};
+    let mut hasher = RandomState::new().build_hasher();
+    hasher.write_u64(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64);
+    (hasher.finish() % 1000) as f64 / 1000.0
+}
+
+/// A circuit breaker that prevents cascading failures.
+///
+/// Three states: **Closed** (normal), **Open** (fail fast),
+/// **HalfOpen** (probe request allowed after reset timeout).
+#[derive(Clone)]
+pub struct CircuitBreaker {
+    state: Arc<std::sync::Mutex<CircuitBreakerState>>,
+    failure_threshold: u32,
+    reset_timeout: Duration,
+}
+
+#[derive(Debug)]
+struct CircuitBreakerState {
+    failures: u32,
+    state: BreakerState,
+    last_failure: Option<std::time::Instant>,
+}
+
+#[derive(Debug, PartialEq)]
+enum BreakerState { Closed, Open, HalfOpen }
+
+impl CircuitBreaker {
+    /// Create a circuit breaker.
+    ///
+    /// - `failure_threshold`: consecutive failures before opening
+    /// - `reset_timeout`: time before allowing a probe request
+    pub fn new(failure_threshold: u32, reset_timeout: Duration) -> Self {
+        CircuitBreaker {
+            state: Arc::new(std::sync::Mutex::new(CircuitBreakerState {
+                failures: 0,
+                state: BreakerState::Closed,
+                last_failure: None,
+            })),
+            failure_threshold,
+            reset_timeout,
+        }
+    }
+
+    /// Check if a request is allowed.
+    pub fn allow_request(&self) -> bool {
+        let mut s = self.state.lock().unwrap();
+        match s.state {
+            BreakerState::Closed | BreakerState::HalfOpen => true,
+            BreakerState::Open => {
+                if let Some(last) = s.last_failure {
+                    if last.elapsed() >= self.reset_timeout {
+                        s.state = BreakerState::HalfOpen;
+                        return true;
+                    }
+                }
+                false
+            }
+        }
+    }
+
+    /// Record a successful request (resets to Closed).
+    pub fn record_success(&self) {
+        let mut s = self.state.lock().unwrap();
+        s.failures = 0;
+        s.state = BreakerState::Closed;
+    }
+
+    /// Record a failed request (may transition to Open).
+    pub fn record_failure(&self) {
+        let mut s = self.state.lock().unwrap();
+        s.failures += 1;
+        s.last_failure = Some(std::time::Instant::now());
+        if s.failures >= self.failure_threshold {
+            s.state = BreakerState::Open;
         }
     }
 }
@@ -336,7 +471,78 @@ impl GrpcClient {
     }
 
     /// Send a gRPC request and return the raw response bytes.
+    ///
+    /// Applies retry policy and circuit breaker if configured.
     async fn send_request(
+        &self,
+        method: &str,
+        request: &serde_json::Value,
+    ) -> Result<Bytes, GrpcClientError> {
+        let max_attempts = self.config.retry.as_ref()
+            .map(|r| r.max_retries + 1)
+            .unwrap_or(1);
+
+        let mut last_err = None;
+
+        for attempt in 0..max_attempts {
+            // Circuit breaker check.
+            if let Some(ref cb) = self.config.circuit_breaker {
+                if !cb.allow_request() {
+                    return Err(GrpcClientError::Status {
+                        code: GrpcCode::Unavailable,
+                        message: "circuit breaker open".to_string(),
+                        details: Vec::new(),
+                    });
+                }
+            }
+
+            // Backoff before retry (not before first attempt).
+            if attempt > 0 {
+                if let Some(ref policy) = self.config.retry {
+                    tokio::time::sleep(policy.backoff_for(attempt - 1)).await;
+                }
+            }
+
+            match self.send_request_once(method, request).await {
+                Ok(body) => {
+                    if let Some(ref cb) = self.config.circuit_breaker {
+                        cb.record_success();
+                    }
+                    return Ok(body);
+                }
+                Err(e) => {
+                    if let Some(ref cb) = self.config.circuit_breaker {
+                        cb.record_failure();
+                    }
+
+                    // Check if we should retry.
+                    let should_retry = if let Some(ref policy) = self.config.retry {
+                        match &e {
+                            GrpcClientError::Status { code, .. } => policy.should_retry(*code),
+                            GrpcClientError::Transport(_) => true,
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    };
+
+                    if should_retry && attempt + 1 < max_attempts {
+                        last_err = Some(e);
+                        continue;
+                    }
+
+                    return Err(e);
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| GrpcClientError::Transport(
+            "all retry attempts exhausted".to_string(),
+        )))
+    }
+
+    /// Send a single gRPC request (no retry).
+    async fn send_request_once(
         &self,
         method: &str,
         request: &serde_json::Value,
@@ -347,11 +553,9 @@ impl GrpcClient {
             .join(&grpc_path)
             .map_err(|e| GrpcClientError::InvalidUrl(e.to_string()))?;
 
-        // Encode request body.
         let encoded = self.codec.encode(request)?;
         let framed = framing::encode_grpc_frame(&encoded);
 
-        // Build the HTTP/2 request.
         let mut req = self
             .inner
             .post(url)
@@ -359,25 +563,18 @@ impl GrpcClient {
             .header("te", "trailers")
             .body(framed);
 
-        // Apply default metadata.
         for (key, value) in &self.config.default_metadata {
             req = req.header(key.as_str(), value.as_str());
         }
-
-        // Apply timeout.
         if let Some(timeout) = self.config.timeout {
             req = req.timeout(timeout);
         }
-
-        // Apply interceptors.
         for interceptor in &self.config.interceptors {
             req = interceptor(req);
         }
 
-        // Send.
         let response = req.send().await?;
 
-        // Check gRPC status from headers or trailers.
         let grpc_status = response
             .headers()
             .get("grpc-status")
@@ -393,12 +590,10 @@ impl GrpcClient {
             .to_string();
 
         if grpc_status != 0 {
-            // Try to parse rich error details from the response body.
             let body = response.bytes().await.unwrap_or_default();
             let details = if body.is_empty() {
                 Vec::new()
             } else {
-                // Try parsing the body as gRPC-framed data first, then as raw JSON.
                 let unframed = crate::framing::decode_grpc_frame(&body).unwrap_or_default();
                 #[allow(clippy::needless_borrow)]
                 crate::error_details::parse_rich_status(&unframed)
@@ -413,7 +608,6 @@ impl GrpcClient {
             });
         }
 
-        // Collect response body.
         let body = response.bytes().await?;
         Ok(body)
     }

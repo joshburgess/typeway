@@ -61,11 +61,34 @@ enum GrpcRouteEntry {
     Standard {
         handler: BoxedHandler,
         method_descriptor: GrpcMethodDescriptor,
+        /// Per-RPC middleware applied before this handler.
+        middleware: Vec<GrpcMiddleware>,
     },
     /// Direct handler — bypasses extractors, decodes/encodes protobuf directly.
     #[cfg(feature = "protobuf")]
     Direct(crate::grpc_direct::DirectHandler),
 }
+
+/// Per-RPC middleware function.
+///
+/// Receives the request parts and body, can modify or reject the request.
+/// Returns `Ok((parts, body))` to continue, or `Err(response)` to short-circuit.
+pub type GrpcMiddleware = Arc<
+    dyn Fn(
+            http::request::Parts,
+            Bytes,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<
+                        Output = Result<
+                            (http::request::Parts, Bytes),
+                            http::Response<BoxBody>,
+                        >,
+                    > + Send,
+            >,
+        > + Send
+        + Sync,
+>;
 
 impl GrpcRouter {
     /// Build a `GrpcRouter` from the REST router and a service descriptor.
@@ -90,6 +113,7 @@ impl GrpcRouter {
                     GrpcRouteEntry::Standard {
                         handler,
                         method_descriptor: method.clone(),
+                        middleware: Vec::new(),
                     },
                 );
             } else {
@@ -118,6 +142,33 @@ impl GrpcRouter {
         handler: crate::grpc_direct::DirectHandler,
     ) {
         self.handlers.insert(grpc_path, GrpcRouteEntry::Direct(handler));
+    }
+
+    /// Register per-RPC middleware for a specific gRPC method.
+    ///
+    /// The middleware runs before the handler and can modify the request
+    /// or short-circuit with an error response.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// grpc_router.add_middleware(
+    ///     "/users.v1.UserService/CreateUser",
+    ///     Arc::new(|parts, body| Box::pin(async move {
+    ///         // Validate auth header
+    ///         if parts.headers.get("authorization").is_none() {
+    ///             return Err(unauthorized_response());
+    ///         }
+    ///         Ok((parts, body))
+    ///     })),
+    /// );
+    /// ```
+    pub fn add_middleware(&mut self, grpc_path: &str, middleware: GrpcMiddleware) {
+        if let Some(GrpcRouteEntry::Standard { middleware: mw, .. }) =
+            self.handlers.get_mut(grpc_path)
+        {
+            mw.push(middleware);
+        }
     }
 
     /// Look up a handler by gRPC method path.
@@ -646,9 +697,9 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                 }
 
                 // Standard handler: extractor pipeline.
-                let (method_desc, handler) = match entry {
-                    GrpcRouteEntry::Standard { handler, method_descriptor } => {
-                        (method_descriptor.clone(), handler.clone())
+                let (method_desc, handler, rpc_middleware) = match entry {
+                    GrpcRouteEntry::Standard { handler, method_descriptor, middleware } => {
+                        (method_descriptor.clone(), handler.clone(), middleware.clone())
                     }
                     #[cfg(feature = "protobuf")]
                     GrpcRouteEntry::Direct(_) => unreachable!(),
@@ -748,6 +799,19 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                         &message,
                         grpc_router.state_injector.as_ref(),
                     )
+                };
+
+                // Apply per-RPC middleware.
+                let (synthetic_parts, body_bytes) = {
+                    let mut parts = synthetic_parts;
+                    let mut body = body_bytes;
+                    for mw in &rpc_middleware {
+                        match mw(parts, body).await {
+                            Ok((p, b)) => { parts = p; body = b; }
+                            Err(resp) => return Ok(resp),
+                        }
+                    }
+                    (parts, body)
                 };
 
                 // Call the handler, with optional timeout.

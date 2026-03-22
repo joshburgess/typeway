@@ -8,6 +8,7 @@
 //! - **Phantom-typed wire formats** via [`ProtoField<T, E>`] — disambiguate `i32` encodings at the type level
 //! - **Format-agnostic extraction** via [`ProtoMessage`] — same type works for JSON and binary
 
+pub mod builder;
 pub mod codec;
 pub mod repeated;
 pub mod wire;

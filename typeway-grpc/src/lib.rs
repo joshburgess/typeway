@@ -116,8 +116,9 @@ pub use mapping::{build_message, ProtoField, ToProtoType};
 pub use multiplex::{is_grpc_request, GrpcMultiplexer};
 #[cfg(feature = "grpc-native")]
 pub use client::{
-    ClientStream as GrpcClientStream, GrpcClient, GrpcClientConfig, GrpcClientError,
-    GrpcClientPool, GrpcClientPoolBuilder, GrpcRequestInterceptor,
+    CircuitBreaker, ClientStream as GrpcClientStream, GrpcClient, GrpcClientConfig,
+    GrpcClientError, GrpcClientPool, GrpcClientPoolBuilder, GrpcRequestInterceptor,
+    GrpcRetryPolicy,
 };
 #[cfg(feature = "grpc-native")]
 pub use native_streaming::{

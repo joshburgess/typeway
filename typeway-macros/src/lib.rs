@@ -1912,6 +1912,258 @@ pub fn derive_typeway_codec(input: TokenStream) -> TokenStream {
     }
 }
 
+/// Derive a typestate builder for a struct.
+///
+/// Fields marked `#[required]` must be set before `.build()` is available.
+/// Optional fields (those not marked `#[required]`) can be set in any order.
+///
+/// ```ignore
+/// #[derive(TypestateBuilder)]
+/// struct User {
+///     #[required]
+///     id: u32,
+///     #[required]
+///     name: String,
+///     email: Option<String>,
+/// }
+///
+/// let user = User::builder().id(42).name("Alice".into()).build();
+/// ```
+#[proc_macro_derive(TypestateBuilder, attributes(required))]
+pub fn derive_typestate_builder(input: TokenStream) -> TokenStream {
+    let input = syn::parse_macro_input!(input as syn::DeriveInput);
+    match derive_typestate_builder_impl(input) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+fn derive_typestate_builder_impl(input: syn::DeriveInput) -> syn::Result<TokenStream2> {
+    let name = &input.ident;
+
+    let fields = match &input.data {
+        syn::Data::Struct(data) => match &data.fields {
+            syn::Fields::Named(named) => &named.named,
+            _ => return Err(syn::Error::new_spanned(name, "TypestateBuilder requires named fields")),
+        },
+        _ => return Err(syn::Error::new_spanned(name, "TypestateBuilder only supports structs")),
+    };
+
+    // Classify fields as required or optional.
+    let mut required_fields = Vec::new();
+    let mut optional_fields = Vec::new();
+
+    for field in fields.iter() {
+        let ident = field.ident.as_ref().unwrap();
+        let ty = &field.ty;
+        let is_required = field.attrs.iter().any(|a| a.path().is_ident("required"));
+        if is_required {
+            required_fields.push((ident.clone(), ty.clone()));
+        } else {
+            optional_fields.push((ident.clone(), ty.clone()));
+        }
+    }
+
+    // Generate type parameter names for required fields.
+    let req_type_params: Vec<Ident> = required_fields
+        .iter()
+        .map(|(ident, _)| {
+            Ident::new(&format!("__{}", ident.to_string().to_uppercase()), ident.span())
+        })
+        .collect();
+
+    let builder_name = Ident::new(&format!("{}Builder", name), name.span());
+
+    // Builder struct: carries Option<T> for each field + phantom type params.
+    let builder_fields: Vec<TokenStream2> = fields
+        .iter()
+        .map(|f| {
+            let ident = f.ident.as_ref().unwrap();
+            let ty = &f.ty;
+            quote! { #ident: ::core::option::Option<#ty>, }
+        })
+        .collect();
+
+    let phantom_fields: Vec<TokenStream2> = req_type_params
+        .iter()
+        .map(|p| quote! { #p: ::core::marker::PhantomData<#p>, })
+        .collect();
+
+    // Default builder: all fields None, all type params = Missing.
+    let missing_type_args: Vec<TokenStream2> = req_type_params
+        .iter()
+        .map(|_| quote! { ::typeway_protobuf::builder::Missing })
+        .collect();
+
+    let set_type = quote! { ::typeway_protobuf::builder::Set };
+
+    let field_none_inits: Vec<TokenStream2> = fields
+        .iter()
+        .map(|f| {
+            let ident = f.ident.as_ref().unwrap();
+            quote! { #ident: ::core::option::Option::None, }
+        })
+        .collect();
+
+    let phantom_none_inits: Vec<TokenStream2> = req_type_params
+        .iter()
+        .map(|p| quote! { #p: ::core::marker::PhantomData, })
+        .collect();
+
+    // Setter methods for required fields — each transitions one type param from Missing to Set.
+    let required_setters: Vec<TokenStream2> = required_fields
+        .iter()
+        .zip(req_type_params.iter())
+        .enumerate()
+        .map(|(idx, ((ident, ty), param))| {
+            // Build the return type: same type params but this one is Set.
+            let mut ret_params: Vec<TokenStream2> = req_type_params
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    if i == idx { set_type.clone() } else { quote! { #p } }
+                })
+                .collect();
+            let _ = &mut ret_params; // suppress unused
+
+            let ret_type_params: Vec<TokenStream2> = req_type_params
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    if i == idx { set_type.clone() } else { quote! { #p } }
+                })
+                .collect();
+
+            let other_params: Vec<&Ident> = req_type_params
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != idx)
+                .map(|(_, p)| p)
+                .collect();
+
+            // Copy all fields + phantoms, replacing this field's phantom.
+            let field_copies: Vec<TokenStream2> = fields
+                .iter()
+                .map(|f| {
+                    let fi = f.ident.as_ref().unwrap();
+                    if fi == ident {
+                        quote! { #fi: ::core::option::Option::Some(value), }
+                    } else {
+                        quote! { #fi: self.#fi, }
+                    }
+                })
+                .collect();
+
+            let phantom_copies: Vec<TokenStream2> = req_type_params
+                .iter()
+                .map(|p| quote! { #p: ::core::marker::PhantomData, })
+                .collect();
+
+            let _ = &other_params;
+            let _ = param;
+
+            quote! {
+                /// Set the `#ident` field (required).
+                pub fn #ident(self, value: #ty) -> #builder_name<#(#ret_type_params),*> {
+                    #builder_name {
+                        #(#field_copies)*
+                        #(#phantom_copies)*
+                    }
+                }
+            }
+        })
+        .collect();
+
+    // Setter methods for optional fields — available on any builder state.
+    let optional_setters: Vec<TokenStream2> = optional_fields
+        .iter()
+        .map(|(ident, ty)| {
+            // For Option<T> fields, accept T directly.
+            let inner_ty = is_option_type(ty);
+            let (param_ty, wrap) = if let Some(inner) = inner_ty {
+                (inner.clone(), quote! { ::core::option::Option::Some(::core::option::Option::Some(value)) })
+            } else {
+                (ty.clone(), quote! { ::core::option::Option::Some(value) })
+            };
+            quote! {
+                /// Set the `#ident` field (optional).
+                pub fn #ident(mut self, value: #param_ty) -> Self {
+                    self.#ident = #wrap;
+                    self
+                }
+            }
+        })
+        .collect();
+
+    // Build method: only available when all type params are Set.
+    let all_set: Vec<TokenStream2> = req_type_params
+        .iter()
+        .map(|_| set_type.clone())
+        .collect();
+
+    let build_fields: Vec<TokenStream2> = fields
+        .iter()
+        .map(|f| {
+            let ident = f.ident.as_ref().unwrap();
+            let is_required = f.attrs.iter().any(|a| a.path().is_ident("required"));
+            if is_required {
+                // Required field: unwrap is safe because the typestate guarantees it's set.
+                quote! { #ident: self.#ident.unwrap(), }
+            } else if is_option_type(&f.ty).is_some() {
+                // Optional<T> field: flatten Option<Option<T>> → Option<T>.
+                quote! { #ident: self.#ident.flatten(), }
+            } else {
+                // Non-optional, non-required: use default.
+                quote! { #ident: self.#ident.unwrap_or_default(), }
+            }
+        })
+        .collect();
+
+    let expanded = quote! {
+        /// Typestate builder for [`#name`].
+        pub struct #builder_name<#(#req_type_params = ::typeway_protobuf::builder::Missing),*> {
+            #(#builder_fields)*
+            #(#phantom_fields)*
+        }
+
+        impl #name {
+            /// Create a typestate builder. Required fields must be set before `.build()`.
+            pub fn builder() -> #builder_name<#(#missing_type_args),*> {
+                #builder_name {
+                    #(#field_none_inits)*
+                    #(#phantom_none_inits)*
+                }
+            }
+        }
+
+        impl<#(#req_type_params),*> #builder_name<#(#req_type_params),*> {
+            #(#optional_setters)*
+        }
+
+        impl<#(#req_type_params),*> #builder_name<#(#req_type_params),*> {
+            #(#required_setters)*
+        }
+
+        impl #builder_name<#(#all_set),*> {
+            /// Build the message. Only available when all required fields are set.
+            pub fn build(self) -> #name {
+                #name {
+                    #(#build_fields)*
+                }
+            }
+        }
+
+        impl ::typeway_protobuf::builder::HasBuilder for #name {
+            type Builder = #builder_name;
+            fn builder() -> Self::Builder {
+                #name::builder()
+            }
+        }
+    };
+
+    Ok(expanded)
+}
+
 fn derive_typeway_codec_impl(input: syn::DeriveInput) -> syn::Result<TokenStream2> {
     let name = &input.ident;
 
