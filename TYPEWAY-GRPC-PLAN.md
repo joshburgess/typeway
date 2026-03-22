@@ -146,7 +146,7 @@ typeway_grpc::build()
 
 The output is a set of type aliases — not opaque generated traits. You can extend, compose, or layer middleware on them like any other typeway API type.
 
-The proto parser is intentionally minimal: it handles proto3 syntax, services, RPCs, messages, and `map<K, V>` fields. It does not handle imports, enums, or `oneof`. For complex proto files with those features, the Tonic codegen bridge (`tonic-compat` feature) provides full compatibility.
+The proto parser handles proto3 syntax, services, RPCs, messages, `map<K, V>` fields, enums, and `import` statements. The `parse_proto_with_imports()` function resolves imports recursively from include directories with circular import detection. For complex proto files with `oneof`, the Tonic codegen bridge (`tonic-compat` feature) provides full compatibility.
 
 ## Typed Errors
 
@@ -181,7 +181,7 @@ match client.call("GetUser", &request).await {
 
 The `GrpcCode` enum is defined in typeway-grpc without depending on Tonic, matching the gRPC specification's integer values directly.
 
-**Caveat:** Structured error details (the `google.rpc.Status` detail payloads) are designed but not yet shipped. Currently, error detail is carried as string messages. The `error_details` module contains the groundwork, but full structured encoding is deferred.
+Structured error details (`google.rpc.Status` with typed detail payloads) are fully integrated. The `RichGrpcStatus` type carries `Vec<ErrorDetail>` with 9 standard detail types (BadRequest, RetryInfo, DebugInfo, ErrorInfo, etc.). The gRPC client automatically parses error details from responses via `GrpcClientError::rich_details()`.
 
 ## Streaming
 
@@ -291,7 +291,7 @@ Measured with Criterion, encoding Rust structs to protobuf binary:
 
 - These benchmarks use identical message schemas with Criterion. The prost types use `#[derive(prost::Message)]` — the same derive that prost users get in production.
 - The speedup comes from compile-time field layout knowledge eliminating runtime dispatch. For workloads where serialization is not the bottleneck, this will not matter.
-- `oneof` fields are not yet supported in TypewayCodec. Messages using `oneof` must use `BinaryCodec` with prost.
+- Enums and `oneof` (tagged enum) fields are supported in TypewayCodec. Simple enums encode as varints; tagged enums encode as protobuf oneofs with per-variant wire types.
 
 ## Architecture Diagram
 
@@ -423,18 +423,25 @@ Decode (protobuf binary → Rust struct):
 
 The gains over prost come from compile-time field layout knowledge — tag numbers, wire types, and buffer sizes are constants, not runtime values. The gap widens with message complexity because each additional field is one more branch prost evaluates at runtime that TypewayCodec resolves at compile time.
 
-## What's Missing
+## What's Shipped vs. What's Missing
 
-Being honest about the gaps:
+### Shipped
 
-- **Structured error details.** The `error_details` module exists but full `google.rpc.Status` detail encoding is not shipped. Errors carry string messages, not structured payloads.
-- **`oneof` support in TypewayCodec.** Messages with `oneof` fields must use `BinaryCodec` with prost.
-- **Enum support in proto parsing.** The proto parser handles messages but not enums or `oneof`.
-- **Import resolution.** The proto parser does not resolve imports across files.
-- **gRPC conformance testing.** We have extensive unit tests but have not run the official gRPC conformance test suite.
+- **Structured error details.** `RichGrpcStatus` with 9 standard `google.rpc.Status` detail types. Client auto-parses error details from responses.
+- **Enum + oneof support.** `#[derive(TypewayCodec)]` handles simple enums (varint) and tagged enums (oneof). Proto parser handles `enum` blocks.
+- **Import resolution.** `parse_proto_with_imports()` resolves imports recursively from include directories.
+- **Connection pooling.** `GrpcClientPool` shares HTTP/2 connections across multiple `GrpcClient` instances with configurable pool size and timeouts.
+- **Arena pooling.** `BufPool` provides thread-safe reusable encode buffers for zero-allocation steady-state encoding.
+- **GAT-based zero-copy views.** `MessageView` trait with `type View<'buf>` for borrowed decode without allocation.
+- **gRPC conformance testing.** Smoke test suite covering proto validation, framing, status codes, error details, and proto diffing.
+- **Proto-first codegen.** `.proto` → Rust types with TypewayCodec + ToProtoType + BytesStr, via library API or CLI (`typeway-grpc api-from-proto --codec`).
+
+### Remaining gaps
+
 - **Production use.** typeway-grpc has not been deployed in production. Tonic has. This matters.
-- **Connection pooling / load balancing.** The client uses reqwest directly. There is no built-in connection management, retry logic, or load balancing.
 - **Per-RPC middleware scoping.** Designed at the type level (`WithMiddleware<M, Endpoint>`) but not fully implemented at runtime.
+- **Official gRPC conformance suite.** We have our own smoke tests but have not run the official gRPC interop test suite.
+- **Load balancing / circuit breaking.** Connection pooling exists but there is no built-in retry logic, circuit breaker, or load balancer.
 
 ## Migration from Tonic
 

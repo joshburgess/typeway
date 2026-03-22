@@ -90,7 +90,7 @@ typeway = "0.1"
 | `tls` | no | HTTPS via tokio-rustls |
 | `ws` | no | WebSocket upgrade support |
 | `multipart` | no | Multipart form upload (file uploads) |
-| `grpc` | no | Native gRPC server + client, `.proto` generation, `#[derive(ToProtoType)]`, `#[derive(TypewayCodec)]`, `BinaryCodec`, `NativeGrpcClient`, server reflection, health check, gRPC-Web, service spec + docs, proto diff/validation CLI |
+| `grpc` | no | Native gRPC server + client, `.proto` generation + codegen (both directions), `#[derive(ToProtoType)]`, `#[derive(TypewayCodec)]` (structs + enums), `BytesStr` zero-copy, `BinaryCodec`, server reflection, health check, gRPC-Web, structured error details (`RichGrpcStatus`), connection pooling (`GrpcClientPool`), proto import resolution, proto diff/validation CLI |
 | `full` | no | server + client + openapi |
 
 ## Workspace Structure
@@ -102,8 +102,9 @@ typeway = "0.1"
 | `typeway-server` | Tower/Hyper server integration |
 | `typeway-client` | Type-safe HTTP client |
 | `typeway-openapi` | OpenAPI 3.1 spec derivation |
-| `typeway-macros` | Proc macros (`typeway_path!`, `#[handler]`, `#[api_description]`) |
-| `typeway-grpc` | Native gRPC dispatch: `.proto` generation, `#[derive(ToProtoType)]`, `#[derive(TypewayCodec)]`, REST+gRPC co-serving, type-safe client (`NativeGrpcClient`), `BinaryCodec` for standard interop, server reflection, health check, gRPC-Web, service spec/docs, proto diff/validation, `api-from-proto`/`spec-from-proto` CLI |
+| `typeway-macros` | Proc macros (`typeway_path!`, `#[handler]`, `#[derive(TypewayCodec)]`, `#[derive(ToProtoType)]`) |
+| `typeway-grpc` | gRPC: `.proto` ↔ Rust bidirectional codegen, REST+gRPC co-serving, streaming, client with connection pooling, server reflection, structured error details, proto diff/validation CLI |
+| `typeway-protobuf` | High-performance protobuf: `BytesStr` zero-copy, `EncodeBuf`/`BufPool` buffer pooling, `MessageView` GAT zero-copy decode, 12-54% faster than prost |
 
 ## What Makes Typeway Different
 

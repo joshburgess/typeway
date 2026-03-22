@@ -80,3 +80,18 @@ The codec is faster (12-54%), but the dispatch overhead absorbs the gain:
 | `Json<T>` | +6.7% | Yes | Default, maximum compatibility |
 | `Proto<T>` | +2.0% | Yes | Dual-protocol with good performance |
 | Direct | +0.8% | No (gRPC only) | Maximum throughput, gRPC-only services |
+
+## Additional optimizations
+
+Beyond the core codec benchmarks above, typeway-protobuf provides:
+
+- **`BufPool`** — thread-safe pool of reusable encode buffers. Eliminates
+  per-request allocation in steady state. Pre-allocate N buffers of M bytes
+  and borrow from the pool.
+- **`MessageView<'buf>`** — GAT-based zero-copy borrowed decode. Fields are
+  `&'buf str` slices into the input buffer, no allocation at all. For
+  read-heavy workloads where you inspect a few fields and discard the rest.
+- **`tw_decode_packed_varints`** — batch varint decode with inline 1-byte
+  and 2-byte fast paths for packed repeated fields.
+- **Enum support** — simple enums (varint) and tagged enums (oneof) with
+  per-variant wire type dispatch, all compile-time specialized.
