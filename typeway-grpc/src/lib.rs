@@ -106,9 +106,9 @@ pub use compression::{
 pub use diff::{diff_protos, ChangeKind, ProtoChange};
 pub use docs_page::generate_docs_html;
 pub use error_details::{
-    BadRequest, DebugInfo, ErrorDetail, ErrorInfo, FieldViolation, Help, HelpLink,
-    IntoRichGrpcStatus, LocalizedMessage, PreconditionFailure, PreconditionViolation, QuotaFailure,
-    QuotaViolation, ResourceInfo, RetryInfo, RichGrpcStatus,
+    parse_rich_status, BadRequest, DebugInfo, ErrorDetail, ErrorInfo, FieldViolation, Help,
+    HelpLink, IntoRichGrpcStatus, LocalizedMessage, PreconditionFailure, PreconditionViolation,
+    QuotaFailure, QuotaViolation, ResourceInfo, RetryInfo, RichGrpcStatus,
 };
 pub use framing::{decode_grpc_frame, decode_grpc_frames, encode_grpc_frame, FramingError};
 pub use health::{HealthService, HealthStatus};
@@ -117,7 +117,7 @@ pub use multiplex::{is_grpc_request, GrpcMultiplexer};
 #[cfg(feature = "grpc-native")]
 pub use client::{
     ClientStream as GrpcClientStream, GrpcClient, GrpcClientConfig, GrpcClientError,
-    GrpcRequestInterceptor,
+    GrpcClientPool, GrpcClientPoolBuilder, GrpcRequestInterceptor,
 };
 #[cfg(feature = "grpc-native")]
 pub use native_streaming::{

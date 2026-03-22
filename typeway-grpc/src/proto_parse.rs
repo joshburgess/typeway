@@ -1,9 +1,8 @@
 //! Simple `.proto` file parser for proto3 syntax.
 //!
-//! Extracts syntax, package, service/rpc definitions, and message definitions.
-//! This is intentionally minimal — no support for imports, enums, oneof,
-//! or options. Just the core proto3 subset needed for typeway interop,
-//! including `map<K, V>` fields.
+//! Extracts syntax, package, imports, service/rpc definitions, message
+//! definitions, and enum definitions. Supports `map<K, V>` fields and
+//! nested messages.
 
 /// A parsed `.proto` file.
 #[derive(Debug, Clone)]
@@ -12,10 +11,32 @@ pub struct ProtoFile {
     pub syntax: String,
     /// The package name (e.g., `"users.v1"`).
     pub package: String,
+    /// Import paths (e.g., `"google/protobuf/timestamp.proto"`).
+    pub imports: Vec<String>,
     /// Service definitions.
     pub services: Vec<ProtoService>,
     /// Message definitions.
     pub messages: Vec<ParsedMessage>,
+    /// Enum definitions.
+    pub enums: Vec<ParsedEnum>,
+}
+
+/// A parsed enum definition.
+#[derive(Debug, Clone)]
+pub struct ParsedEnum {
+    /// Enum name (PascalCase).
+    pub name: String,
+    /// Enum variants.
+    pub variants: Vec<ParsedEnumVariant>,
+}
+
+/// A single variant in a parsed enum.
+#[derive(Debug, Clone)]
+pub struct ParsedEnumVariant {
+    /// Variant name (SCREAMING_SNAKE_CASE).
+    pub name: String,
+    /// Tag number.
+    pub tag: u32,
 }
 
 /// A gRPC service definition.
@@ -87,8 +108,10 @@ pub struct ParsedField {
 pub fn parse_proto(source: &str) -> Result<ProtoFile, String> {
     let mut syntax = String::new();
     let mut package = String::new();
+    let mut imports = Vec::new();
     let mut services = Vec::new();
     let mut messages = Vec::new();
+    let mut enums = Vec::new();
 
     let lines: Vec<&str> = source.lines().collect();
     let mut i = 0;
@@ -97,7 +120,7 @@ pub fn parse_proto(source: &str) -> Result<ProtoFile, String> {
         let trimmed = lines[i].trim();
 
         // Skip empty lines and standalone comments at the top level.
-        if trimmed.is_empty() {
+        if trimmed.is_empty() || trimmed.starts_with("//") {
             i += 1;
             continue;
         }
@@ -112,6 +135,13 @@ pub fn parse_proto(source: &str) -> Result<ProtoFile, String> {
         // package foo.bar.v1;
         if trimmed.starts_with("package") {
             package = parse_package(trimmed)?;
+            i += 1;
+            continue;
+        }
+
+        // import "path/to/file.proto";
+        if trimmed.starts_with("import") {
+            imports.push(parse_import(trimmed)?);
             i += 1;
             continue;
         }
@@ -132,16 +162,158 @@ pub fn parse_proto(source: &str) -> Result<ProtoFile, String> {
             continue;
         }
 
-        // Skip comments and unknown lines at the top level.
+        // enum Name { ... }
+        if trimmed.starts_with("enum") {
+            let (parsed_enum, next) = parse_enum_block(&lines, i)?;
+            enums.push(parsed_enum);
+            i = next;
+            continue;
+        }
+
+        // Skip option, reserved, and other unknown lines.
         i += 1;
     }
 
     Ok(ProtoFile {
         syntax,
         package,
+        imports,
         services,
         messages,
+        enums,
     })
+}
+
+/// Parse `import "path/to/file.proto";` line.
+fn parse_import(line: &str) -> Result<String, String> {
+    let rest = line.trim_start_matches("import").trim();
+    // Handle `import public "..."` and `import weak "..."`.
+    let rest = rest
+        .trim_start_matches("public")
+        .trim_start_matches("weak")
+        .trim();
+    let path = rest
+        .trim_end_matches(';')
+        .trim()
+        .trim_matches('"');
+    if path.is_empty() {
+        return Err("empty import path".to_string());
+    }
+    Ok(path.to_string())
+}
+
+/// Parse an `enum Name { ... }` block.
+fn parse_enum_block(lines: &[&str], start: usize) -> Result<(ParsedEnum, usize), String> {
+    let header = lines[start].trim();
+    let name = extract_block_name(header, "enum")?;
+    let mut variants = Vec::new();
+    let mut i = start + 1;
+
+    while i < lines.len() {
+        let trimmed = lines[i].trim();
+
+        if trimmed == "}" {
+            return Ok((ParsedEnum { name, variants }, i + 1));
+        }
+
+        // Skip comments, empty lines, option, and reserved.
+        if trimmed.is_empty()
+            || trimmed.starts_with("//")
+            || trimmed.starts_with("option")
+            || trimmed.starts_with("reserved")
+        {
+            i += 1;
+            continue;
+        }
+
+        // Parse variant: NAME = TAG;
+        if let Some(variant) = parse_enum_variant(trimmed) {
+            variants.push(variant);
+        }
+
+        i += 1;
+    }
+
+    Err(format!("unclosed enum block '{}'", name))
+}
+
+/// Parse an enum variant line like `ACTIVE = 0;`.
+fn parse_enum_variant(line: &str) -> Option<ParsedEnumVariant> {
+    let line = line.split("//").next().unwrap_or(line).trim();
+    let line = line.trim_end_matches(';').trim();
+    let parts: Vec<&str> = line.split('=').collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let name = parts[0].trim().to_string();
+    let tag: u32 = parts[1].trim().parse().ok()?;
+    Some(ParsedEnumVariant { name, tag })
+}
+
+/// Parse a `.proto` file with imports resolved from the given include directories.
+///
+/// Reads imported `.proto` files recursively and merges their messages and enums
+/// into the returned [`ProtoFile`]. Circular imports are detected and skipped.
+///
+/// # Arguments
+///
+/// - `source` — The main `.proto` file content
+/// - `include_dirs` — Directories to search when resolving `import` paths
+///
+/// # Example
+///
+/// ```ignore
+/// let source = std::fs::read_to_string("service.proto").unwrap();
+/// let proto = parse_proto_with_imports(&source, &["proto/"])?;
+/// ```
+pub fn parse_proto_with_imports(
+    source: &str,
+    include_dirs: &[&str],
+) -> Result<ProtoFile, String> {
+    let mut seen = std::collections::HashSet::new();
+    parse_proto_recursive(source, include_dirs, &mut seen)
+}
+
+fn parse_proto_recursive(
+    source: &str,
+    include_dirs: &[&str],
+    seen: &mut std::collections::HashSet<String>,
+) -> Result<ProtoFile, String> {
+    let mut proto = parse_proto(source)?;
+
+    for import_path in proto.imports.clone() {
+        // Skip well-known types (google/protobuf/*) — they're built-in.
+        if import_path.starts_with("google/protobuf/") {
+            continue;
+        }
+
+        // Prevent circular imports.
+        if seen.contains(&import_path) {
+            continue;
+        }
+        seen.insert(import_path.clone());
+
+        // Search include directories for the file.
+        let mut found = false;
+        for dir in include_dirs {
+            let full_path = std::path::Path::new(dir).join(&import_path);
+            if let Ok(content) = std::fs::read_to_string(&full_path) {
+                let imported = parse_proto_recursive(&content, include_dirs, seen)?;
+                proto.messages.extend(imported.messages);
+                proto.enums.extend(imported.enums);
+                found = true;
+                break;
+            }
+        }
+
+        if !found {
+            // Non-fatal: imported file not found (might be a well-known type
+            // or a file that doesn't exist locally). Log and continue.
+            eprintln!("warning: imported proto not found: {import_path}");
+        }
+    }
+
+    Ok(proto)
 }
 
 /// Parse `syntax = "proto3";` line.
@@ -692,5 +864,94 @@ message Foo {
         assert!(field.is_map);
         assert!(!field.repeated);
         assert!(!field.optional);
+    }
+
+    // --- Import parsing ---
+
+    #[test]
+    fn parses_imports() {
+        let source = r#"syntax = "proto3";
+import "google/protobuf/timestamp.proto";
+import "other/service.proto";
+package test.v1;
+message Foo {
+  string name = 1;
+}
+"#;
+        let proto = parse_proto(source).unwrap();
+        assert_eq!(proto.imports.len(), 2);
+        assert_eq!(proto.imports[0], "google/protobuf/timestamp.proto");
+        assert_eq!(proto.imports[1], "other/service.proto");
+    }
+
+    #[test]
+    fn parses_public_import() {
+        let source = r#"syntax = "proto3";
+import public "shared/types.proto";
+package test.v1;
+"#;
+        let proto = parse_proto(source).unwrap();
+        assert_eq!(proto.imports.len(), 1);
+        assert_eq!(proto.imports[0], "shared/types.proto");
+    }
+
+    // --- Enum parsing ---
+
+    #[test]
+    fn parses_simple_enum() {
+        let source = r#"syntax = "proto3";
+package test.v1;
+enum Status {
+  UNKNOWN = 0;
+  ACTIVE = 1;
+  INACTIVE = 2;
+}
+"#;
+        let proto = parse_proto(source).unwrap();
+        assert_eq!(proto.enums.len(), 1);
+        assert_eq!(proto.enums[0].name, "Status");
+        assert_eq!(proto.enums[0].variants.len(), 3);
+        assert_eq!(proto.enums[0].variants[0].name, "UNKNOWN");
+        assert_eq!(proto.enums[0].variants[0].tag, 0);
+        assert_eq!(proto.enums[0].variants[1].name, "ACTIVE");
+        assert_eq!(proto.enums[0].variants[1].tag, 1);
+    }
+
+    #[test]
+    fn parses_enum_with_comments_and_options() {
+        let source = r#"syntax = "proto3";
+package test.v1;
+enum Priority {
+  option allow_alias = true;
+  // Default value
+  UNSPECIFIED = 0;
+  LOW = 1;
+  MEDIUM = 2;
+  HIGH = 3;
+}
+"#;
+        let proto = parse_proto(source).unwrap();
+        assert_eq!(proto.enums[0].variants.len(), 4);
+        assert_eq!(proto.enums[0].variants[3].name, "HIGH");
+        assert_eq!(proto.enums[0].variants[3].tag, 3);
+    }
+
+    #[test]
+    fn enum_alongside_messages() {
+        let source = r#"syntax = "proto3";
+package test.v1;
+enum Status {
+  ACTIVE = 0;
+  INACTIVE = 1;
+}
+message User {
+  string name = 1;
+  Status status = 2;
+}
+"#;
+        let proto = parse_proto(source).unwrap();
+        assert_eq!(proto.enums.len(), 1);
+        assert_eq!(proto.messages.len(), 1);
+        assert_eq!(proto.messages[0].fields[1].proto_type, "Status");
     }
 }

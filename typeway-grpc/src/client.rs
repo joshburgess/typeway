@@ -124,6 +124,8 @@ pub enum GrpcClientError {
     Status {
         code: GrpcCode,
         message: String,
+        /// Structured error details, if the server provided them.
+        details: Vec<crate::error_details::ErrorDetail>,
     },
     /// HTTP transport error.
     Transport(String),
@@ -135,10 +137,28 @@ pub enum GrpcClientError {
     Framing(String),
 }
 
+impl GrpcClientError {
+    /// Get the structured error details, if this is a `Status` error with details.
+    pub fn rich_details(&self) -> &[crate::error_details::ErrorDetail] {
+        match self {
+            Self::Status { details, .. } => details,
+            _ => &[],
+        }
+    }
+
+    /// Get the gRPC status code, if this is a `Status` error.
+    pub fn code(&self) -> Option<GrpcCode> {
+        match self {
+            Self::Status { code, .. } => Some(*code),
+            _ => None,
+        }
+    }
+}
+
 impl std::fmt::Display for GrpcClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Status { code, message } => {
+            Self::Status { code, message, .. } => {
                 write!(f, "gRPC error {}: {}", code.as_i32(), message)
             }
             Self::Transport(e) => write!(f, "transport error: {e}"),
@@ -373,9 +393,22 @@ impl GrpcClient {
             .to_string();
 
         if grpc_status != 0 {
+            // Try to parse rich error details from the response body.
+            let body = response.bytes().await.unwrap_or_default();
+            let details = if body.is_empty() {
+                Vec::new()
+            } else {
+                // Try parsing the body as gRPC-framed data first, then as raw JSON.
+                let unframed = crate::framing::decode_grpc_frame(&body).unwrap_or_default();
+                crate::error_details::parse_rich_status(&unframed)
+                    .or_else(|| crate::error_details::parse_rich_status(&body))
+                    .map(|s| s.details)
+                    .unwrap_or_default()
+            };
             return Err(GrpcClientError::Status {
                 code: GrpcCode::from_i32(grpc_status),
                 message: grpc_message,
+                details,
             });
         }
 
@@ -488,6 +521,127 @@ macro_rules! grpc_client {
     };
 }
 
+// ---------------------------------------------------------------------------
+// Connection pool
+// ---------------------------------------------------------------------------
+
+/// A shared HTTP/2 connection pool for creating multiple [`GrpcClient`] instances.
+///
+/// All clients created from the same pool share the underlying `reqwest::Client`
+/// and its HTTP/2 connection pool. This avoids creating a new TCP connection
+/// per client and enables HTTP/2 multiplexing across services.
+///
+/// # Example
+///
+/// ```ignore
+/// let pool = GrpcClientPool::new()
+///     .pool_max_idle_per_host(10)
+///     .connect_timeout(Duration::from_secs(5));
+///
+/// let users_client = pool.client("http://users:3000", "UserService", "users.v1")?;
+/// let orders_client = pool.client("http://orders:3000", "OrderService", "orders.v1")?;
+/// // Both share the same connection pool.
+/// ```
+pub struct GrpcClientPool {
+    inner: reqwest::Client,
+}
+
+/// Builder for [`GrpcClientPool`].
+pub struct GrpcClientPoolBuilder {
+    pool_max_idle_per_host: usize,
+    connect_timeout: Option<Duration>,
+    timeout: Option<Duration>,
+}
+
+impl Default for GrpcClientPoolBuilder {
+    fn default() -> Self {
+        Self {
+            pool_max_idle_per_host: 32,
+            connect_timeout: Some(Duration::from_secs(5)),
+            timeout: None,
+        }
+    }
+}
+
+impl GrpcClientPoolBuilder {
+    /// Maximum idle connections kept alive per host (default: 32).
+    pub fn pool_max_idle_per_host(mut self, max: usize) -> Self {
+        self.pool_max_idle_per_host = max;
+        self
+    }
+
+    /// Timeout for establishing a new connection (default: 5s).
+    pub fn connect_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = Some(timeout);
+        self
+    }
+
+    /// Overall request timeout (default: none — uses per-client config).
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Build the connection pool.
+    pub fn build(self) -> Result<GrpcClientPool, GrpcClientError> {
+        let mut builder = reqwest::Client::builder()
+            .http2_prior_knowledge()
+            .pool_max_idle_per_host(self.pool_max_idle_per_host);
+
+        if let Some(t) = self.connect_timeout {
+            builder = builder.connect_timeout(t);
+        }
+        if let Some(t) = self.timeout {
+            builder = builder.timeout(t);
+        }
+
+        let client = builder
+            .build()
+            .map_err(|e| GrpcClientError::Transport(e.to_string()))?;
+
+        Ok(GrpcClientPool { inner: client })
+    }
+}
+
+impl GrpcClientPool {
+    /// Create a new pool with default settings.
+    pub fn new() -> GrpcClientPoolBuilder {
+        GrpcClientPoolBuilder::default()
+    }
+
+    /// Create a [`GrpcClient`] that shares this pool's connections.
+    pub fn client(
+        &self,
+        base_url: &str,
+        service_name: &str,
+        package: &str,
+    ) -> Result<GrpcClient, GrpcClientError> {
+        GrpcClient::with_client(base_url, service_name, package, self.inner.clone())
+    }
+
+    /// Create a [`GrpcClient`] with a specific codec that shares this pool's connections.
+    pub fn client_with_codec(
+        &self,
+        base_url: &str,
+        service_name: &str,
+        package: &str,
+        codec: Arc<dyn GrpcCodec>,
+        config: GrpcClientConfig,
+    ) -> Result<GrpcClient, GrpcClientError> {
+        let base_url = url::Url::parse(base_url)
+            .map_err(|e| GrpcClientError::InvalidUrl(e.to_string()))?;
+        let service_path = format!("{package}.{service_name}");
+
+        Ok(GrpcClient {
+            inner: self.inner.clone(),
+            base_url,
+            service_path,
+            codec,
+            config,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -497,6 +651,7 @@ mod tests {
         let err = GrpcClientError::Status {
             code: GrpcCode::NotFound,
             message: "user not found".into(),
+            details: Vec::new(),
         };
         assert!(err.to_string().contains("5"));
         assert!(err.to_string().contains("user not found"));

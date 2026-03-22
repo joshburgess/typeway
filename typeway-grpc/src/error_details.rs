@@ -208,6 +208,34 @@ impl RichGrpcStatus {
     }
 }
 
+impl crate::status::IntoGrpcStatus for RichGrpcStatus {
+    fn into_grpc_status(&self) -> crate::status::GrpcStatus {
+        crate::status::GrpcStatus {
+            code: crate::GrpcCode::from_i32(self.code),
+            message: self.message.clone(),
+        }
+    }
+}
+
+/// Try to parse a [`RichGrpcStatus`] from a gRPC error response body.
+///
+/// The body should be a JSON-serialized `RichGrpcStatus`. If parsing
+/// fails, returns `None` — the caller should fall back to the basic
+/// `grpc-status` and `grpc-message` headers.
+///
+/// # Example
+///
+/// ```
+/// use typeway_grpc::error_details::parse_rich_status;
+///
+/// let body = br#"{"code":3,"message":"bad input","details":[]}"#;
+/// let status = parse_rich_status(body).unwrap();
+/// assert_eq!(status.code, 3);
+/// ```
+pub fn parse_rich_status(body: &[u8]) -> Option<RichGrpcStatus> {
+    serde_json::from_slice(body).ok()
+}
+
 /// A typed error detail payload.
 ///
 /// Each variant corresponds to a standard Google error detail type.
