@@ -18,5 +18,13 @@ bytes = "1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
+[[bin]]
+name = "typeway-orderbook"
+path = "src/main.rs"
+
+[[bin]]
+name = "typeway-orderbook-from-proto"
+path = "src/from_proto.rs"
+
 [lints]
 workspace = true

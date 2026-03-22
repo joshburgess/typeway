@@ -59,11 +59,31 @@ is decoded by slicing the input buffer — a refcount increment, not a
 heap allocation. For a service processing thousands of orders per second,
 this eliminates thousands of allocations per second.
 
-## Run
+## Two approaches — same result
+
+This example includes **two versions** of the same trading service:
+
+### Rust-first (`main.rs`)
+
+Types are defined by hand in Rust. You control every detail:
 
 ```bash
 cargo run -p typeway-orderbook
 ```
+
+### Proto-first (`from_proto.rs`)
+
+Types are generated from a `.proto` definition. At startup, the server
+prints the generated Rust code so you can see exactly what the codegen
+produces — `BytesStr` fields, `#[derive(TypewayCodec)]`, `#[proto(tag)]`
+attributes, all automatic:
+
+```bash
+cargo run -p typeway-orderbook --bin typeway-orderbook-from-proto
+```
+
+Both versions produce identical servers with identical performance.
+The difference is where your source of truth lives.
 
 ## Test
 
@@ -96,4 +116,5 @@ grpcurl -plaintext -d '{"order_id":"ORD-000001"}' \
 
 | File | Purpose |
 |------|---------|
-| `src/main.rs` | Order book server with all optimizations |
+| `src/main.rs` | Rust-first: hand-written types with all optimizations |
+| `src/from_proto.rs` | Proto-first: types generated from `.proto` definition |
