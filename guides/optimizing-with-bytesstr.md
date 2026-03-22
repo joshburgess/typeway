@@ -19,9 +19,16 @@ services, these allocations add up.
 - You need to read string fields without modifying them
 - Profiling shows protobuf decode as a hotspot
 
-## How to switch
+## Automatic with proto-first codegen
 
-Replace `String` with `BytesStr` on the fields you want to optimize:
+If you generate types from a `.proto` file using `proto_to_typeway_with_codec()`,
+**BytesStr is used automatically** for all `string` fields — no manual work needed.
+See the [proto-first codegen guide](proto-first-codegen.md).
+
+## Manual switch (Rust-first)
+
+If you define types by hand, replace `String` with `BytesStr` on the fields
+you want to optimize:
 
 ```rust
 use typeway_protobuf::BytesStr;
