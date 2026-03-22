@@ -1,0 +1,7 @@
+error[E0271]: type mismatch resolving `<Protected<AuthUser, Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, String>> as ProtectedEndpoint>::Auth == AdminUser`
+  --> tests/compile_fail/protected_wrong_auth_type.rs:36:33
+   |
+36 |     let _ = Server::<API>::new((bind_auth!(get_users),));
+   |                                 ^^^^^^^^^^^^^^^^^^^^^ expected `AdminUser`, found `AuthUser`
+   |
+   = note: this error originates in the macro `bind_auth` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,5 @@
+error: TypewayCodec only supports structs with named fields
+ --> tests/compile_fail/codec_tuple_struct.rs:6:8
+  |
+6 | struct Wrapper(u32, String);
+  |        ^^^^^^^

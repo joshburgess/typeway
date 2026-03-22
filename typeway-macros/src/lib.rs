@@ -2885,7 +2885,7 @@ fn gen_decode_optional_inner(ident: &Ident, ident_str: &str, kind: &CodecKind) -
             ]));
             offset += 8;
         },
-        CodecKind::LenString | CodecKind::LenBytesStr => quote! {
+        CodecKind::LenString => quote! {
             let (str_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
             offset += consumed;
             let str_len = str_len as usize;
@@ -2897,6 +2897,23 @@ fn gen_decode_optional_inner(ident: &Ident, ident_str: &str, kind: &CodecKind) -
                 ::core::str::from_utf8(slice)
                     .map_err(|_| ::typeway_protobuf::TypewayDecodeError::InvalidUtf8(#ident_str))?;
                 #ident = Some(unsafe { String::from_utf8_unchecked(slice.to_vec()) });
+            }
+            offset += str_len;
+        },
+        CodecKind::LenBytesStr => quote! {
+            let (str_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+            offset += consumed;
+            let str_len = str_len as usize;
+            if offset + str_len > bytes.len() {
+                return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
+            }
+            {
+                let slice = &bytes[offset..offset + str_len];
+                ::core::str::from_utf8(slice)
+                    .map_err(|_| ::typeway_protobuf::TypewayDecodeError::InvalidUtf8(#ident_str))?;
+                #ident = Some(::typeway_protobuf::BytesStr::from(
+                    unsafe { String::from_utf8_unchecked(slice.to_vec()) }
+                ));
             }
             offset += str_len;
         },
@@ -2936,7 +2953,7 @@ fn gen_decode_repeated_item(ident: &Ident, ident_str: &str, kind: &CodecKind) ->
             ]));
             offset += 8;
         },
-        CodecKind::LenString | CodecKind::LenBytesStr => quote! {
+        CodecKind::LenString => quote! {
             let (str_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
             offset += consumed;
             let str_len = str_len as usize;
@@ -2948,6 +2965,23 @@ fn gen_decode_repeated_item(ident: &Ident, ident_str: &str, kind: &CodecKind) ->
                 ::core::str::from_utf8(slice)
                     .map_err(|_| ::typeway_protobuf::TypewayDecodeError::InvalidUtf8(#ident_str))?;
                 #ident.push(unsafe { String::from_utf8_unchecked(slice.to_vec()) });
+            }
+            offset += str_len;
+        },
+        CodecKind::LenBytesStr => quote! {
+            let (str_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+            offset += consumed;
+            let str_len = str_len as usize;
+            if offset + str_len > bytes.len() {
+                return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof);
+            }
+            {
+                let slice = &bytes[offset..offset + str_len];
+                ::core::str::from_utf8(slice)
+                    .map_err(|_| ::typeway_protobuf::TypewayDecodeError::InvalidUtf8(#ident_str))?;
+                #ident.push(::typeway_protobuf::BytesStr::from(
+                    unsafe { String::from_utf8_unchecked(slice.to_vec()) }
+                ));
             }
             offset += str_len;
         },

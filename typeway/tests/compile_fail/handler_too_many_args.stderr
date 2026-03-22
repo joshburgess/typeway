@@ -1,0 +1,17 @@
+error[E0277]: `fn(typeway::Path<HCons<Lit<__lit_items>, HNil>>, typeway::State<Db>, typeway::Json<Item>) -> impl Future<Output = typeway::Json<Vec<Item>>> {get_items}` is not a valid handler for arguments `_`
+  --> tests/compile_fail/handler_too_many_args.rs:27:33
+   |
+27 |     let _ = Server::<API>::new((bind!(get_items),));
+   |                                 ^^^^^^^^^^^^^^^^ not a valid handler
+   |
+   = help: the trait `Handler<_>` is not implemented for fn item `fn(typeway::Path<HCons<Lit<__lit_items>, HNil>>, typeway::State<Db>, typeway::Json<Item>) -> impl Future<Output = typeway::Json<Vec<Item>>> {get_items}`
+   = note: handlers must be async functions whose arguments implement `FromRequestParts` or `FromRequest`
+note: required by a bound in `typeway::bind`
+  --> $WORKSPACE/typeway-server/src/handler_for.rs
+   |
+   | pub fn bind<E, H, Args>(handler: H) -> BoundHandler<E>
+   |        ---- required by a bound in this function
+...
+   |     H: Handler<Args>,
+   |        ^^^^^^^^^^^^^ required by this bound in `bind`
+   = note: this error originates in the macro `bind` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,22 @@
+error[E0277]: the trait bound `std::string::String: ApiSpec` is not satisfied
+  --> tests/compile_fail/non_apispec_in_tuple.rs:15:19
+   |
+15 |     _assert_api::<API>();
+   |                   ^^^ the trait `ApiSpec` is not implemented for `std::string::String`
+   |
+   = help: the following other types implement trait `ApiSpec`:
+             (A, B)
+             (A, B, C)
+             (A, B, C, D)
+             (A, B, C, D, E)
+             (A, B, C, D, E, F)
+             (A, B, C, D, E, F, G)
+             (A, B, C, D, E, F, G, H)
+             (A, B, C, D, E, F, G, H, I)
+           and $N others
+   = note: required for `(Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>, std::string::String)` to implement `ApiSpec`
+note: required by a bound in `_assert_api`
+  --> tests/compile_fail/non_apispec_in_tuple.rs:14:23
+   |
+14 |     fn _assert_api<T: typeway_core::ApiSpec>() {}
+   |                       ^^^^^^^^^^^^^^^^^^^^^ required by this bound in `_assert_api`

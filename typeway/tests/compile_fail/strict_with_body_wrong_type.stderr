@@ -1,0 +1,7 @@
+error[E0271]: type mismatch resolving `<Endpoint<Post, HCons<Lit<__lit_users>, HNil>, CreateUser, User> as HasResType>::Res == String`
+  --> tests/compile_fail/strict_with_body_wrong_type.rs:24:33
+   |
+24 |     let _ = Server::<API>::new((bind_strict!(create_user),));
+   |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^ expected `String`, found `User`
+   |
+   = note: this error originates in the macro `bind_strict` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -1,0 +1,5 @@
+error: TypewayCodec only supports structs (not enums or unions)
+ --> tests/compile_fail/codec_on_enum.rs:6:6
+  |
+6 | enum Status {
+  |      ^^^^^^
