@@ -63,10 +63,11 @@ fn serde_codegen_produces_valid_rust() {
     assert!(output.contains("pub struct PriceLevel {"));
     assert!(output.contains("pub struct OrderBookSnapshot {"));
 
-    // Fields correct.
+    // Fields correct (serde mode uses String).
     assert!(output.contains("pub symbol: String,"));
     assert!(output.contains("pub price: f64,"));
     assert!(output.contains("pub quantity: u32,"));
+    assert!(!output.contains("BytesStr"), "serde mode should not use BytesStr");
 
     // Repeated fields.
     assert!(output.contains("pub bids: Vec<PriceLevel>,"));
@@ -99,13 +100,22 @@ fn codec_codegen_produces_valid_rust() {
     assert!(output.contains("#[proto(tag = 3)]"));
     assert!(output.contains("#[proto(tag = 4)]"));
 
-    // Import for TypewayCodec.
+    // Imports.
     assert!(output.contains("use typeway_macros::TypewayCodec;"));
+    assert!(output.contains("use typeway_protobuf::BytesStr;"));
 
     // All structs present.
     assert!(output.contains("pub struct Order {"));
     assert!(output.contains("pub struct OrderBookSnapshot {"));
     assert!(output.contains("pub struct PriceLevel {"));
+
+    // String fields use BytesStr in codec mode.
+    assert!(output.contains("pub symbol: BytesStr,"), "Expected BytesStr for string fields");
+    assert!(output.contains("pub order_id: BytesStr,"));
+
+    // Non-string fields unchanged.
+    assert!(output.contains("pub price: f64,"));
+    assert!(output.contains("pub quantity: u32,"));
 
     // Repeated fields preserved.
     assert!(output.contains("pub bids: Vec<PriceLevel>,"));
@@ -138,7 +148,8 @@ message AllTypes {
 }
 "#;
     let output = proto_to_typeway_with_codec(proto).unwrap();
-    assert!(output.contains("pub str_field: String,"));
+    // Codec mode: string → BytesStr.
+    assert!(output.contains("pub str_field: BytesStr,"));
     assert!(output.contains("pub u32_field: u32,"));
     assert!(output.contains("pub u64_field: u64,"));
     assert!(output.contains("pub i32_field: i32,"));
@@ -161,8 +172,9 @@ message WithOptional {
 }
 "#;
     let output = proto_to_typeway_with_codec(proto).unwrap();
-    assert!(output.contains("pub name: String,"));
-    assert!(output.contains("pub nickname: Option<String>,"));
+    // Codec mode: string → BytesStr, optional string → Option<BytesStr>.
+    assert!(output.contains("pub name: BytesStr,"));
+    assert!(output.contains("pub nickname: Option<BytesStr>,"));
     assert!(output.contains("pub age: Option<u32>,"));
 }
 
@@ -182,7 +194,8 @@ message Nested {
 }
 "#;
     let output = proto_to_typeway_with_codec(proto).unwrap();
-    assert!(output.contains("pub tags: Vec<String>,"));
+    // Codec mode: repeated string → Vec<BytesStr>.
+    assert!(output.contains("pub tags: Vec<BytesStr>,"));
     assert!(output.contains("pub scores: Vec<u32>,"));
     assert!(output.contains("pub items: Vec<Nested>,"));
 }
@@ -198,8 +211,9 @@ message Config {
 }
 "#;
     let output = proto_to_typeway_with_codec(proto).unwrap();
-    assert!(output.contains("std::collections::HashMap<String, String>"));
-    assert!(output.contains("std::collections::HashMap<String, u32>"));
+    // Codec mode: map keys and values that are strings use BytesStr.
+    assert!(output.contains("std::collections::HashMap<BytesStr, BytesStr>"));
+    assert!(output.contains("std::collections::HashMap<BytesStr, u32>"));
 }
 
 #[test]

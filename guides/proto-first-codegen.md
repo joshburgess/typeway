@@ -88,13 +88,14 @@ fn main() {
 use typeway::prelude::*;
 use serde::{Serialize, Deserialize};
 use typeway_macros::TypewayCodec;
+use typeway_protobuf::BytesStr;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
 pub struct Order {
     #[proto(tag = 1)]
-    pub symbol: String,
+    pub symbol: BytesStr,    // zero-copy decode — automatic!
     #[proto(tag = 2)]
-    pub side: String,
+    pub side: BytesStr,
     #[proto(tag = 3)]
     pub price: f64,
     #[proto(tag = 4)]
@@ -104,9 +105,9 @@ pub struct Order {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
 pub struct OrderAck {
     #[proto(tag = 1)]
-    pub order_id: String,
+    pub order_id: BytesStr,
     #[proto(tag = 2)]
-    pub status: String,
+    pub status: BytesStr,
 }
 
 // ... more structs ...
@@ -159,28 +160,16 @@ async fn main() {
 | Function | Derives | Use when |
 |----------|---------|----------|
 | `proto_to_typeway()` | Serialize, Deserialize | JSON-only, simple REST |
-| `proto_to_typeway_with_codec()` | + TypewayCodec, Default | Binary gRPC, max performance |
+| `proto_to_typeway_with_codec()` | + TypewayCodec, Default, BytesStr | Binary gRPC, max performance |
 
-The `_with_codec` version generates `#[proto(tag = N)]` on every field
-and adds `TypewayCodec` to the derive list. This enables the fast binary
-protobuf path (12-54% faster than prost).
-
-## Upgrading String to BytesStr
-
-The codegen produces `String` fields by default. For maximum decode
-performance, manually change hot-path fields to `BytesStr`:
-
-```rust
-// Before (generated)
-pub symbol: String,
-
-// After (manual optimization)
-pub symbol: BytesStr,
-```
+The `_with_codec` version generates:
+- `#[derive(TypewayCodec)]` and `#[proto(tag = N)]` for fast binary protobuf
+- `BytesStr` instead of `String` for all `string` proto fields — **zero-copy
+  decode is automatic**, no manual optimization needed
 
 `BytesStr` eliminates allocation on decode — the decoder slices the
-input buffer instead of copying. The `#[derive(TypewayCodec)]` macro
-handles both types automatically.
+input buffer instead of copying (54% faster than prost on string-heavy
+messages).
 
 ## Round-trip: Rust-first → proto → codegen
 
