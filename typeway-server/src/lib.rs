@@ -61,7 +61,7 @@ pub use router::{Router, RouterService};
 pub use secure_headers::SecureHeadersLayer;
 pub use effects::{EffectfulLayeredServer, EffectfulServer};
 pub use server::{serve, LayeredServer, Server};
-pub use serves::Serves;
+pub use serves::{Serves, SubApi};
 
 #[cfg(feature = "grpc")]
 pub use grpc::{GrpcServer, LayeredGrpcServer};

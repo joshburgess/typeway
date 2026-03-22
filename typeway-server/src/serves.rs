@@ -317,3 +317,77 @@ impl<B, C, R: ApiSpec, H: Serves<R>> Serves<typeway_core::versioning::VersionedA
         <H as Serves<R>>::register(self, router)
     }
 }
+
+// ---------------------------------------------------------------------------
+// Nested API composition — for APIs with more than 22 endpoints.
+//
+// Use `SubApi<A, H>` to compose sub-APIs with their handlers:
+//
+//   type FullAPI = (UsersAPI, OrdersAPI);
+//   Server::<FullAPI>::new((
+//       SubApi::<UsersAPI, _>::new((bind!(get_users), bind!(create_user))),
+//       SubApi::<OrdersAPI, _>::new((bind!(get_orders),)),
+//   ))
+// ---------------------------------------------------------------------------
+
+/// A wrapper that pairs a sub-API with its handler tuple.
+///
+/// Allows composing APIs larger than 22 endpoints by nesting sub-APIs.
+///
+/// # Example
+///
+/// ```ignore
+/// type UsersAPI = (GetEndpoint<UsersPath, Vec<User>>, PostEndpoint<UsersPath, CreateUser, User>);
+/// type OrdersAPI = (GetEndpoint<OrdersPath, Vec<Order>>,);
+/// type FullAPI = (UsersAPI, OrdersAPI);
+///
+/// Server::<FullAPI>::new((
+///     SubApi::<UsersAPI, _>::new((bind!(list_users), bind!(create_user))),
+///     SubApi::<OrdersAPI, _>::new((bind!(list_orders),)),
+/// ))
+/// ```
+/// A wrapper that pairs a sub-API type with its handler tuple for
+/// nested API composition.
+pub struct SubApi<A: ApiSpec, H> {
+    handlers: H,
+    _api: std::marker::PhantomData<A>,
+}
+
+impl<A: ApiSpec, H> SubApi<A, H> {
+    pub fn new(handlers: H) -> Self {
+        SubApi {
+            handlers,
+            _api: std::marker::PhantomData,
+        }
+    }
+}
+
+impl<A: ApiSpec, H: Serves<A>> SubApi<A, H> {
+    /// Register all handlers from this sub-API into the router.
+    pub fn register_into(self, router: &mut Router) {
+        self.handlers.register(router);
+    }
+}
+
+// SubApi<A, H> implements Serves<A> — but we need to avoid the VersionedApi conflict.
+// Instead, we generate Serves impls for tuples of SubApi via a macro:
+
+macro_rules! impl_serves_for_subapi_tuple {
+    ($(($A:ident, $H:ident, $idx:tt)),+) => {
+        impl<$($A: ApiSpec, $H: Serves<$A>,)+> Serves<($($A,)+)> for ($(SubApi<$A, $H>,)+) {
+            fn register(self, router: &mut Router) {
+                $(self.$idx.register_into(router);)+
+            }
+        }
+    };
+}
+
+impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1));
+impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2));
+impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3));
+impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4));
+impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4), (A5, H5, 5));
+impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4), (A5, H5, 5), (A6, H6, 6));
+impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4), (A5, H5, 5), (A6, H6, 6), (A7, H7, 7));
+impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4), (A5, H5, 5), (A6, H6, 6), (A7, H7, 7), (A8, H8, 8));
+impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4), (A5, H5, 5), (A6, H6, 6), (A7, H7, 7), (A8, H8, 8), (A9, H9, 9));
