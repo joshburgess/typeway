@@ -87,10 +87,10 @@ fn main() {
 
 use typeway::prelude::*;
 use serde::{Serialize, Deserialize};
-use typeway_macros::TypewayCodec;
+use typeway_macros::{TypewayCodec, ToProtoType};
 use typeway_protobuf::BytesStr;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]
 pub struct Order {
     #[proto(tag = 1)]
     pub symbol: BytesStr,    // zero-copy decode — automatic!
@@ -102,7 +102,7 @@ pub struct Order {
     pub quantity: u32,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]
 pub struct OrderAck {
     #[proto(tag = 1)]
     pub order_id: BytesStr,
@@ -160,7 +160,7 @@ async fn main() {
 | Function | Derives | Use when |
 |----------|---------|----------|
 | `proto_to_typeway()` | Serialize, Deserialize | JSON-only, simple REST |
-| `proto_to_typeway_with_codec()` | + TypewayCodec, Default, BytesStr | Binary gRPC, max performance |
+| `proto_to_typeway_with_codec()` | + TypewayCodec, ToProtoType, Default, BytesStr | Binary gRPC, max performance |
 
 The `_with_codec` version generates:
 - `#[derive(TypewayCodec)]` and `#[proto(tag = N)]` for fast binary protobuf

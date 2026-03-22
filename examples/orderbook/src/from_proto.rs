@@ -10,7 +10,7 @@
 //! | Source of truth | Rust types | `.proto` file |
 //! | String type | `BytesStr` (manual) | `BytesStr` (automatic) |
 //! | Codec derive | `#[derive(TypewayCodec)]` (manual) | `#[derive(TypewayCodec)]` (generated) |
-//! | ToProtoType impls | Hand-written | Hand-written (could be generated) |
+//! | ToProtoType impls | Hand-written | `#[derive(ToProtoType)]` |
 //! | Performance | Identical | Identical |
 //!
 //! ## Run
@@ -35,9 +35,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, Mutex};
 
 use typeway_core::endpoint::*;
-use typeway_grpc::mapping::ToProtoType;
 use typeway_grpc::streaming::ServerStream;
-use typeway_macros::TypewayCodec;
+use typeway_macros::{ToProtoType, TypewayCodec};
 use typeway_protobuf::BytesStr;
 use typeway_server::*;
 
@@ -129,7 +128,7 @@ message PriceUpdate {
 // TypewayCodec derive, proto tags on every field.
 // =========================================================================
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]
 struct Order {
     #[proto(tag = 1)]
     symbol: BytesStr,
@@ -141,15 +140,7 @@ struct Order {
     quantity: u32,
 }
 
-impl ToProtoType for Order {
-    fn proto_type_name() -> &'static str { "Order" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message Order {\n  string symbol = 1;\n  string side = 2;\n  double price = 3;\n  uint32 quantity = 4;\n}".to_string())
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]
 struct OrderAck {
     #[proto(tag = 1)]
     order_id: BytesStr,
@@ -167,29 +158,13 @@ struct OrderAck {
     timestamp_ns: u64,
 }
 
-impl ToProtoType for OrderAck {
-    fn proto_type_name() -> &'static str { "OrderAck" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message OrderAck {\n  string order_id = 1;\n  string symbol = 2;\n  string side = 3;\n  double price = 4;\n  uint32 quantity = 5;\n  string status = 6;\n  uint64 timestamp_ns = 7;\n}".to_string())
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]
 struct CancelRequest {
     #[proto(tag = 1)]
     order_id: BytesStr,
 }
 
-impl ToProtoType for CancelRequest {
-    fn proto_type_name() -> &'static str { "CancelRequest" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message CancelRequest {\n  string order_id = 1;\n}".to_string())
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]
 struct CancelAck {
     #[proto(tag = 1)]
     order_id: BytesStr,
@@ -197,29 +172,13 @@ struct CancelAck {
     status: BytesStr,
 }
 
-impl ToProtoType for CancelAck {
-    fn proto_type_name() -> &'static str { "CancelAck" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message CancelAck {\n  string order_id = 1;\n  string status = 2;\n}".to_string())
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]
 struct SymbolQuery {
     #[proto(tag = 1)]
     symbol: BytesStr,
 }
 
-impl ToProtoType for SymbolQuery {
-    fn proto_type_name() -> &'static str { "SymbolQuery" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message SymbolQuery {\n  string symbol = 1;\n}".to_string())
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]
 struct OrderBookSnapshot {
     #[proto(tag = 1)]
     symbol: BytesStr,
@@ -233,15 +192,7 @@ struct OrderBookSnapshot {
     volume: u64,
 }
 
-impl ToProtoType for OrderBookSnapshot {
-    fn proto_type_name() -> &'static str { "OrderBookSnapshot" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message OrderBookSnapshot {\n  string symbol = 1;\n  repeated PriceLevel bids = 2;\n  repeated PriceLevel asks = 3;\n  double last_trade_price = 4;\n  uint64 volume = 5;\n}".to_string())
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]
 struct PriceLevel {
     #[proto(tag = 1)]
     price: f64,
@@ -251,30 +202,20 @@ struct PriceLevel {
     order_count: u32,
 }
 
-impl ToProtoType for PriceLevel {
-    fn proto_type_name() -> &'static str { "PriceLevel" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message PriceLevel {\n  double price = 1;\n  uint32 quantity = 2;\n  uint32 order_count = 3;\n}".to_string())
-    }
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, ToProtoType)]
 struct PriceUpdate {
+    #[proto(tag = 1)]
     symbol: String,
+    #[proto(tag = 2)]
     bid: f64,
+    #[proto(tag = 3)]
     ask: f64,
+    #[proto(tag = 4)]
     last: f64,
+    #[proto(tag = 5)]
     volume: u64,
+    #[proto(tag = 6)]
     timestamp_ns: u64,
-}
-
-impl ToProtoType for PriceUpdate {
-    fn proto_type_name() -> &'static str { "PriceUpdate" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message PriceUpdate {\n  string symbol = 1;\n  double bid = 2;\n  double ask = 3;\n  double last = 4;\n  uint64 volume = 5;\n  uint64 timestamp_ns = 6;\n}".to_string())
-    }
 }
 
 // =========================================================================

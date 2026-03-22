@@ -1923,11 +1923,292 @@ fn derive_typeway_codec_impl(input: syn::DeriveInput) -> syn::Result<TokenStream
                 "TypewayCodec only supports structs with named fields",
             )),
         },
+        syn::Data::Enum(data) => {
+            let is_simple = data.variants.iter().all(|v| v.fields.is_empty());
+            if is_simple {
+                derive_typeway_codec_simple_enum(name, data)
+            } else {
+                derive_typeway_codec_oneof_enum(name, data)
+            }
+        }
         _ => Err(syn::Error::new_spanned(
             name,
-            "TypewayCodec only supports structs (not enums or unions)",
+            "TypewayCodec does not support unions",
         )),
     }
+}
+
+/// Generate TypewayEncode/TypewayDecode for a simple (fieldless) enum.
+///
+/// Encodes as a varint (i32). Each variant maps to its proto tag value.
+/// Default variant (tag 0) is the first variant.
+fn derive_typeway_codec_simple_enum(
+    name: &Ident,
+    data: &syn::DataEnum,
+) -> syn::Result<TokenStream2> {
+    let mut variant_idents = Vec::new();
+    let mut variant_tags: Vec<u32> = Vec::new();
+
+    for (i, variant) in data.variants.iter().enumerate() {
+        let tag = extract_proto_tag(&variant.attrs).unwrap_or(i as u32);
+        variant_idents.push(&variant.ident);
+        variant_tags.push(tag);
+    }
+
+    let first_variant = &variant_idents[0];
+
+    // Encode: match variant → tag value, encode as varint.
+    let encode_arms: Vec<TokenStream2> = variant_idents
+        .iter()
+        .zip(variant_tags.iter())
+        .map(|(ident, tag)| {
+            let tag_u64 = *tag as u64;
+            quote! { #name::#ident => #tag_u64, }
+        })
+        .collect();
+
+    let len_arms: Vec<TokenStream2> = variant_idents
+        .iter()
+        .zip(variant_tags.iter())
+        .map(|(ident, tag)| {
+            let tag_u64 = *tag as u64;
+            quote! { #name::#ident => ::typeway_protobuf::tw_varint_len(#tag_u64), }
+        })
+        .collect();
+
+    // Decode: read varint, match tag → variant.
+    let decode_arms: Vec<TokenStream2> = variant_idents
+        .iter()
+        .zip(variant_tags.iter())
+        .map(|(ident, tag)| {
+            let tag_u32 = *tag;
+            quote! { #tag_u32 => #name::#ident, }
+        })
+        .collect();
+
+    Ok(quote! {
+        impl ::typeway_protobuf::TypewayEncode for #name {
+            fn encoded_len(&self) -> usize {
+                match self {
+                    #(#len_arms)*
+                }
+            }
+
+            fn encode_to(&self, buf: &mut ::std::vec::Vec<u8>) {
+                let val: u64 = match self {
+                    #(#encode_arms)*
+                };
+                ::typeway_protobuf::tw_encode_varint(buf, val);
+            }
+        }
+
+        impl ::typeway_protobuf::TypewayDecode for #name {
+            fn typeway_decode(
+                bytes: &[u8],
+            ) -> ::core::result::Result<Self, ::typeway_protobuf::TypewayDecodeError> {
+                if bytes.is_empty() {
+                    return Ok(#name::#first_variant);
+                }
+                let (val, _consumed) = ::typeway_protobuf::tw_decode_varint(bytes)?;
+                let val = val as u32;
+                Ok(match val {
+                    #(#decode_arms)*
+                    _ => #name::#first_variant,
+                })
+            }
+        }
+    })
+}
+
+/// Generate TypewayEncode/TypewayDecode for a tagged enum (protobuf oneof).
+///
+/// Each variant is encoded as a tagged field in a message: tag + wire_type + value.
+/// Only one variant is present at a time.
+fn derive_typeway_codec_oneof_enum(
+    name: &Ident,
+    data: &syn::DataEnum,
+) -> syn::Result<TokenStream2> {
+    let mut variant_idents = Vec::new();
+    let mut variant_tags: Vec<u32> = Vec::new();
+    let mut variant_types: Vec<syn::Type> = Vec::new();
+
+    for (i, variant) in data.variants.iter().enumerate() {
+        let tag = extract_proto_tag(&variant.attrs).unwrap_or((i + 1) as u32);
+        variant_idents.push(&variant.ident);
+        variant_tags.push(tag);
+
+        match &variant.fields {
+            syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                variant_types.push(fields.unnamed[0].ty.clone());
+            }
+            syn::Fields::Unnamed(_) => {
+                return Err(syn::Error::new_spanned(
+                    &variant.ident,
+                    "TypewayCodec oneof variants must have exactly one field",
+                ));
+            }
+            syn::Fields::Named(_) => {
+                return Err(syn::Error::new_spanned(
+                    &variant.ident,
+                    "TypewayCodec oneof variants must use tuple syntax, e.g., Variant(Type)",
+                ));
+            }
+            syn::Fields::Unit => {
+                return Err(syn::Error::new_spanned(
+                    &variant.ident,
+                    "oneof variants must have a field; use a simple enum for fieldless variants",
+                ));
+            }
+        }
+    }
+
+    // Encode, encoded_len, decode arms — dispatch on CodecKind for correctness.
+    let mut encode_arms = Vec::new();
+    let mut len_arms = Vec::new();
+    let mut decode_arms = Vec::new();
+
+    for ((ident, tag), ty) in variant_idents.iter().zip(variant_tags.iter()).zip(variant_types.iter()) {
+        let kind = oneof_codec_kind(ty);
+        let wt = wire_type_for_kind(&kind);
+        let tp = emit_tag_push(*tag, wt);
+        let tag_len = if *tag < 16 { 1usize } else if *tag < 2048 { 2 } else { 3 };
+
+        let (enc, len_expr, dec) = match &kind {
+            CodecKind::Varint => (
+                quote! { #name::#ident(ref val) => { #tp ::typeway_protobuf::tw_encode_varint(buf, *val as u64); } },
+                quote! { #name::#ident(ref val) => { #tag_len + ::typeway_protobuf::tw_varint_len(*val as u64) } },
+                quote! { #tag => { let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?; offset += consumed; result = #name::#ident(val as _); } },
+            ),
+            CodecKind::Bool => (
+                quote! { #name::#ident(ref val) => { #tp buf.push(if *val { 1 } else { 0 }); } },
+                quote! { #name::#ident(_) => { #tag_len + 1 } },
+                quote! { #tag => { let (val, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?; offset += consumed; result = #name::#ident(val != 0); } },
+            ),
+            CodecKind::Fixed32 => (
+                quote! { #name::#ident(ref val) => { #tp buf.extend_from_slice(&val.to_le_bytes()); } },
+                quote! { #name::#ident(_) => { #tag_len + 4 } },
+                quote! { #tag => {
+                    if offset + 4 > bytes.len() { return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof); }
+                    let val = f32::from_le_bytes([bytes[offset], bytes[offset+1], bytes[offset+2], bytes[offset+3]]);
+                    offset += 4; result = #name::#ident(val);
+                } },
+            ),
+            CodecKind::Fixed64 => (
+                quote! { #name::#ident(ref val) => { #tp buf.extend_from_slice(&val.to_le_bytes()); } },
+                quote! { #name::#ident(_) => { #tag_len + 8 } },
+                quote! { #tag => {
+                    if offset + 8 > bytes.len() { return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof); }
+                    let val = f64::from_le_bytes([bytes[offset], bytes[offset+1], bytes[offset+2], bytes[offset+3], bytes[offset+4], bytes[offset+5], bytes[offset+6], bytes[offset+7]]);
+                    offset += 8; result = #name::#ident(val);
+                } },
+            ),
+            CodecKind::LenString => (
+                quote! { #name::#ident(ref val) => { #tp ::typeway_protobuf::tw_encode_varint(buf, val.len() as u64); buf.extend_from_slice(val.as_bytes()); } },
+                quote! { #name::#ident(ref val) => { #tag_len + ::typeway_protobuf::tw_varint_len(val.len() as u64) + val.len() } },
+                quote! { #tag => {
+                    let (str_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                    offset += consumed; let str_len = str_len as usize;
+                    if offset + str_len > bytes.len() { return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof); }
+                    let slice = &bytes[offset..offset + str_len];
+                    ::core::str::from_utf8(slice).map_err(|_| ::typeway_protobuf::TypewayDecodeError::InvalidUtf8("oneof"))?;
+                    result = #name::#ident(unsafe { String::from_utf8_unchecked(slice.to_vec()) });
+                    offset += str_len;
+                } },
+            ),
+            CodecKind::LenBytesStr => (
+                quote! { #name::#ident(ref val) => { #tp ::typeway_protobuf::tw_encode_varint(buf, val.len() as u64); buf.extend_from_slice(val.as_bytes()); } },
+                quote! { #name::#ident(ref val) => { #tag_len + ::typeway_protobuf::tw_varint_len(val.len() as u64) + val.len() } },
+                quote! { #tag => {
+                    let (str_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                    offset += consumed; let str_len = str_len as usize;
+                    if offset + str_len > bytes.len() { return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof); }
+                    let slice = &bytes[offset..offset + str_len];
+                    ::core::str::from_utf8(slice).map_err(|_| ::typeway_protobuf::TypewayDecodeError::InvalidUtf8("oneof"))?;
+                    result = #name::#ident(::typeway_protobuf::BytesStr::from(unsafe { String::from_utf8_unchecked(slice.to_vec()) }));
+                    offset += str_len;
+                } },
+            ),
+            // Message type (nested struct implementing TypewayEncode/TypewayDecode)
+            _ => (
+                quote! { #name::#ident(ref val) => {
+                    #tp
+                    let nested = ::typeway_protobuf::TypewayEncode::encode_to_vec(val);
+                    ::typeway_protobuf::tw_encode_varint(buf, nested.len() as u64);
+                    buf.extend_from_slice(&nested);
+                } },
+                quote! { #name::#ident(ref val) => {
+                    let nested_len = ::typeway_protobuf::TypewayEncode::encoded_len(val);
+                    #tag_len + ::typeway_protobuf::tw_varint_len(nested_len as u64) + nested_len
+                } },
+                quote! { #tag => {
+                    let (msg_len, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                    offset += consumed; let msg_len = msg_len as usize;
+                    if offset + msg_len > bytes.len() { return Err(::typeway_protobuf::TypewayDecodeError::UnexpectedEof); }
+                    result = #name::#ident(::typeway_protobuf::TypewayDecode::typeway_decode(&bytes[offset..offset+msg_len])?);
+                    offset += msg_len;
+                } },
+            ),
+        };
+
+        encode_arms.push(enc);
+        len_arms.push(len_expr);
+        decode_arms.push(dec);
+    }
+
+    let first_variant = &variant_idents[0];
+    let first_type = &variant_types[0];
+
+    Ok(quote! {
+        impl ::typeway_protobuf::TypewayEncode for #name {
+            fn encoded_len(&self) -> usize {
+                match self {
+                    #(#len_arms)*
+                }
+            }
+
+            fn encode_to(&self, buf: &mut ::std::vec::Vec<u8>) {
+                match self {
+                    #(#encode_arms)*
+                }
+            }
+        }
+
+        impl ::typeway_protobuf::TypewayDecode for #name {
+            fn typeway_decode(
+                bytes: &[u8],
+            ) -> ::core::result::Result<Self, ::typeway_protobuf::TypewayDecodeError> {
+                let mut result = #name::#first_variant(
+                    <#first_type as ::core::default::Default>::default()
+                );
+                let mut offset: usize = 0;
+                while offset < bytes.len() {
+                    let (tag_wire, consumed) = ::typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                    offset += consumed;
+                    let field_number = (tag_wire >> 3) as u32;
+                    let wire_type = (tag_wire & 0x07) as u8;
+                    match field_number {
+                        #(#decode_arms)*
+                        _ => {
+                            let skipped = ::typeway_protobuf::tw_skip_wire_value(&bytes[offset..], wire_type)?;
+                            offset += skipped;
+                        }
+                    }
+                }
+                Ok(result)
+            }
+        }
+    })
+}
+
+/// Determine the protobuf wire type for a Rust type (for oneof encoding).
+fn wire_type_for_scalar_type(ty: &syn::Type) -> u8 {
+    let kind = classify_scalar(ty);
+    wire_type_for_kind(&kind)
+}
+
+/// Classify a Rust type for oneof codec generation.
+fn oneof_codec_kind(ty: &syn::Type) -> CodecKind {
+    classify_scalar(ty)
 }
 
 /// Information about a single field for codec generation.

@@ -90,7 +90,7 @@ pub fn generate_typeway_from_proto(proto: &ProtoFile) -> String {
 /// generates `#[derive(Debug, Clone, Serialize, Deserialize)]`.
 ///
 /// When true (via [`generate_typeway_from_proto_with_codec`]), generates
-/// `#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]`
+/// `#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]`
 /// with `#[proto(tag = N)]` attributes on each field for high-performance
 /// binary protobuf encoding.
 fn generate_struct(msg: &ParsedMessage) -> String {
@@ -106,7 +106,7 @@ fn generate_struct_impl(msg: &ParsedMessage, with_typeway_codec: bool) -> String
     // Use a sanitized name (replace dots from nested message flattening).
     let struct_name = msg.name.replace('.', "_");
     if with_typeway_codec {
-        s.push_str("#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]\n");
+        s.push_str("#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]\n");
     } else {
         s.push_str("#[derive(Debug, Clone, Serialize, Deserialize)]\n");
     }
@@ -351,7 +351,7 @@ fn request_type_name(proto_type: &str) -> String {
 /// Generate typeway Rust source code with `#[derive(TypewayCodec)]` support.
 ///
 /// Like [`generate_typeway_from_proto`], but the generated structs include:
-/// - `#[derive(TypewayCodec)]` for high-performance binary protobuf
+/// - `#[derive(TypewayCodec, ToProtoType)]` for codec + proto introspection
 /// - `#[derive(Default)]` (required by TypewayCodec)
 /// - `#[proto(tag = N)]` on each field
 ///
@@ -380,7 +380,7 @@ pub fn generate_typeway_from_proto_with_codec(proto: &ProtoFile) -> String {
     // Use statements — include TypewayCodec and BytesStr.
     output.push_str("use typeway::prelude::*;\n");
     output.push_str("use serde::{Serialize, Deserialize};\n");
-    output.push_str("use typeway_macros::TypewayCodec;\n");
+    output.push_str("use typeway_macros::{TypewayCodec, ToProtoType};\n");
     output.push_str("use typeway_protobuf::BytesStr;\n\n");
 
     // Generate Rust structs with TypewayCodec derives.
@@ -671,7 +671,7 @@ message ListUserResponse {
         let proto = parse_proto(SAMPLE_PROTO).unwrap();
         let output = generate_typeway_from_proto_with_codec(&proto);
         assert!(
-            output.contains("#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec)]"),
+            output.contains("#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]"),
             "Expected TypewayCodec derive in output:\n{output}"
         );
     }
@@ -686,12 +686,13 @@ message ListUserResponse {
     }
 
     #[test]
+    #[test]
     fn codec_imports_typeway_macros_and_bytesstr() {
         let proto = parse_proto(SAMPLE_PROTO).unwrap();
         let output = generate_typeway_from_proto_with_codec(&proto);
         assert!(
-            output.contains("use typeway_macros::TypewayCodec;"),
-            "Missing TypewayCodec import"
+            output.contains("use typeway_macros::{TypewayCodec, ToProtoType};"),
+            "Missing TypewayCodec/ToProtoType import"
         );
         assert!(
             output.contains("use typeway_protobuf::BytesStr;"),

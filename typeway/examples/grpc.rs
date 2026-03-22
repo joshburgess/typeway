@@ -18,32 +18,19 @@ use typeway::prelude::*;
 // 1. Define path types
 typeway_path!(type UsersPath = "users");
 
-// 2. Define domain types with protobuf support
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+// 2. Define domain types — derive handles everything
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, ToProtoType)]
 struct User {
+    #[proto(tag = 1)]
     id: u32,
+    #[proto(tag = 2)]
     name: String,
 }
 
-impl ToProtoType for User {
-    fn proto_type_name() -> &'static str { "User" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message User {\n  uint32 id = 1;\n  string name = 2;\n}".to_string())
-    }
-}
-
-#[derive(Debug, serde::Deserialize)]
+#[derive(Debug, serde::Deserialize, ToProtoType)]
 struct CreateUser {
+    #[proto(tag = 1)]
     name: String,
-}
-
-impl ToProtoType for CreateUser {
-    fn proto_type_name() -> &'static str { "CreateUser" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message CreateUser {\n  string name = 1;\n}".to_string())
-    }
 }
 
 // 3. Define the API as a type

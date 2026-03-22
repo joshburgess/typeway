@@ -282,3 +282,102 @@ fn encoded_len_matches_actual_nested() {
     };
     assert_eq!(val.encoded_len(), val.encode_to_vec().len());
 }
+
+// =========================================================================
+// Simple enum (protobuf enum — varint encoded)
+// =========================================================================
+
+#[derive(TypewayCodec, Debug, PartialEq, Clone)]
+enum Status {
+    #[proto(tag = 0)]
+    Active,
+    #[proto(tag = 1)]
+    Inactive,
+    #[proto(tag = 2)]
+    Suspended,
+}
+
+#[test]
+fn simple_enum_roundtrip() {
+    for val in [Status::Active, Status::Inactive, Status::Suspended] {
+        let encoded = val.encode_to_vec();
+        let decoded = Status::typeway_decode(&encoded).unwrap();
+        assert_eq!(val, decoded);
+    }
+}
+
+#[test]
+fn simple_enum_default_is_first_variant() {
+    let decoded = Status::typeway_decode(&[]).unwrap();
+    assert_eq!(decoded, Status::Active);
+}
+
+#[test]
+fn simple_enum_unknown_tag_returns_default() {
+    // Unknown tag 99 → falls back to first variant.
+    let mut buf = Vec::new();
+    tw_encode_varint(&mut buf, 99);
+    let decoded = Status::typeway_decode(&buf).unwrap();
+    assert_eq!(decoded, Status::Active);
+}
+
+// =========================================================================
+// Tagged enum (protobuf oneof — message encoded)
+// =========================================================================
+
+#[derive(TypewayCodec, Debug, PartialEq, Clone)]
+enum Value {
+    #[proto(tag = 1)]
+    Text(String),
+    #[proto(tag = 2)]
+    Number(u32),
+    #[proto(tag = 3)]
+    Flag(bool),
+}
+
+#[test]
+fn oneof_text_roundtrip() {
+    let val = Value::Text("hello".into());
+    let encoded = val.encode_to_vec();
+    let decoded = Value::typeway_decode(&encoded).unwrap();
+    assert_eq!(val, decoded);
+}
+
+#[test]
+fn oneof_number_roundtrip() {
+    let val = Value::Number(42);
+    let encoded = val.encode_to_vec();
+    let decoded = Value::typeway_decode(&encoded).unwrap();
+    assert_eq!(val, decoded);
+}
+
+#[test]
+fn oneof_bool_roundtrip() {
+    let val = Value::Flag(true);
+    let encoded = val.encode_to_vec();
+    let decoded = Value::typeway_decode(&encoded).unwrap();
+    assert_eq!(val, decoded);
+}
+
+#[test]
+fn oneof_encoded_len_matches() {
+    for val in [Value::Text("test".into()), Value::Number(999), Value::Flag(false)] {
+        assert_eq!(val.encoded_len(), val.encode_to_vec().len());
+    }
+}
+
+#[test]
+fn oneof_nested_message_roundtrip() {
+    #[derive(TypewayCodec, Debug, PartialEq, Clone)]
+    enum Event {
+        #[proto(tag = 1)]
+        Created(Simple),
+        #[proto(tag = 2)]
+        Deleted(Simple),
+    }
+
+    let val = Event::Created(Simple { name: "test".into(), age: 5, active: true });
+    let encoded = val.encode_to_vec();
+    let decoded = Event::typeway_decode(&encoded).unwrap();
+    assert_eq!(val, decoded);
+}

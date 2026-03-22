@@ -90,8 +90,9 @@ fn serde_codegen_produces_valid_rust() {
 fn codec_codegen_produces_valid_rust() {
     let output = proto_to_typeway_with_codec(SAMPLE_PROTO).unwrap();
 
-    // TypewayCodec derives.
+    // TypewayCodec + ToProtoType derives.
     assert!(output.contains("TypewayCodec"));
+    assert!(output.contains("ToProtoType"));
     assert!(output.contains("Default"));
 
     // Proto tag attributes.
@@ -101,7 +102,7 @@ fn codec_codegen_produces_valid_rust() {
     assert!(output.contains("#[proto(tag = 4)]"));
 
     // Imports.
-    assert!(output.contains("use typeway_macros::TypewayCodec;"));
+    assert!(output.contains("use typeway_macros::{TypewayCodec, ToProtoType};"));
     assert!(output.contains("use typeway_protobuf::BytesStr;"));
 
     // All structs present.

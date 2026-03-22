@@ -50,8 +50,8 @@ use tokio::sync::Mutex;
 
 use typeway_core::endpoint::*;
 use typeway_core::path::{Capture, HCons, HNil, Lit, LitSegment};
-use typeway_grpc::mapping::ToProtoType;
 use typeway_grpc::streaming::ServerStream;
+use typeway_macros::ToProtoType;
 use typeway_server::*;
 
 // =========================================================================
@@ -98,7 +98,7 @@ type SensorFeedPath = HCons<Lit<__lit_sensors>, HCons<Lit<__lit_feed>, HNil>>;
 // =========================================================================
 
 /// A registered sensor device.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToProtoType)]
 struct Sensor {
     id: u32,
     name: String,
@@ -106,32 +106,16 @@ struct Sensor {
     online: bool,
 }
 
-impl ToProtoType for Sensor {
-    fn proto_type_name() -> &'static str { "Sensor" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message Sensor {\n  uint32 id = 1;\n  string name = 2;\n  string location = 3;\n  bool online = 4;\n}".to_string())
-    }
-}
-
 /// A sensor reading — submitted by devices, consumed by dashboards.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToProtoType)]
 struct SensorReading {
     temperature: f64,
     humidity: f64,
     battery_pct: u32,
 }
 
-impl ToProtoType for SensorReading {
-    fn proto_type_name() -> &'static str { "SensorReading" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message SensorReading {\n  double temperature = 1;\n  double humidity = 2;\n  uint32 battery_pct = 3;\n}".to_string())
-    }
-}
-
 /// Acknowledged reading with timestamp.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToProtoType)]
 struct ReadingAck {
     sensor_id: u32,
     reading_number: u64,
@@ -141,28 +125,12 @@ struct ReadingAck {
     timestamp: String,
 }
 
-impl ToProtoType for ReadingAck {
-    fn proto_type_name() -> &'static str { "ReadingAck" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message ReadingAck {\n  uint32 sensor_id = 1;\n  uint64 reading_number = 2;\n  double temperature = 3;\n  double humidity = 4;\n  uint32 battery_pct = 5;\n  string timestamp = 6;\n}".to_string())
-    }
-}
-
 /// Gateway status — aggregate stats.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ToProtoType)]
 struct GatewayStatus {
     sensors_online: usize,
     total_readings: u64,
     version: String,
-}
-
-impl ToProtoType for GatewayStatus {
-    fn proto_type_name() -> &'static str { "GatewayStatus" }
-    fn is_message() -> bool { true }
-    fn message_definition() -> Option<String> {
-        Some("message GatewayStatus {\n  uint32 sensors_online = 1;\n  uint64 total_readings = 2;\n  string version = 3;\n}".to_string())
-    }
 }
 
 // =========================================================================

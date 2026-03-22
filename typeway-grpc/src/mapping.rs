@@ -136,6 +136,12 @@ impl ToProtoType for bool {
     }
 }
 
+impl ToProtoType for typeway_protobuf::BytesStr {
+    fn proto_type_name() -> &'static str {
+        "string"
+    }
+}
+
 impl ToProtoType for Vec<u8> {
     fn proto_type_name() -> &'static str {
         "bytes"
