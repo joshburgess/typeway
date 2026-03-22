@@ -94,7 +94,10 @@ pub mod web;
 pub use codec::{CodecError as GrpcCodecError, CodecErrorKind, GrpcCodec, JsonCodec};
 #[cfg(feature = "proto-binary")]
 pub use codec::{BinaryCodec, CodecDirection};
-pub use codegen::generate_typeway_from_proto;
+pub use codegen::{
+    generate_typeway_from_proto, generate_typeway_from_proto_with_codec, proto_to_typeway,
+    proto_to_typeway_with_codec,
+};
 #[cfg(feature = "compression")]
 pub use compression::{
     compress, decode_frame_with_decompression, decompress, encode_compressed_frame,
