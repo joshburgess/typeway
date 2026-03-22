@@ -1,0 +1,38 @@
+warning: unused import: `typeway_core::effects::*`
+ --> tests/compile_fail/effects_wrong_provide.rs:4:5
+  |
+4 | use typeway_core::effects::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+error[E0277]: effect `typeway::AuthRequired` has not been provided
+  --> tests/compile_fail/effects_wrong_provide.rs:19:10
+   |
+19 |         .ready();
+   |          ^^^^^ this effect list does not contain `typeway::AuthRequired`
+   |
+   = help: the trait `HasEffect<typeway::AuthRequired, _>` is not implemented for `ENil`
+   = note: call `.provide::<typeway::AuthRequired>()` on the EffectfulServer to discharge this requirement
+help: the following other types implement trait `HasEffect<E, Idx>`
+  --> $WORKSPACE/typeway-core/src/effects.rs
+   |
+   |   impl<E: Effect, Tail> HasEffect<E, EHere> for ECons<E, Tail> {}
+   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ECons<E, Tail>` implements `HasEffect<E, EHere>`
+...
+   | / impl<E: Effect, Head: Effect, Tail, Idx> HasEffect<E, EThere<Idx>> for ECons<Head, Tail>
+   | | where
+   | |     Tail: HasEffect<E, Idx>,
+   | |____________________________^ `ECons<Head, Tail>` implements `HasEffect<E, EThere<Idx>>`
+   = note: required for `ECons<typeway::CorsRequired, ENil>` to implement `HasEffect<typeway::AuthRequired, EThere<_>>`
+   = note: required for `typeway::Requires<typeway::AuthRequired, Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>>` to implement `AllProvided<ECons<typeway::CorsRequired, ENil>, (EThere<_>, ())>`
+   = note: 1 redundant requirement hidden
+   = note: required for `(typeway::Requires<typeway::AuthRequired, Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>>,)` to implement `AllProvided<ECons<typeway::CorsRequired, ENil>, ((EThere<_>, ()),)>`
+note: required by a bound in `EffectfulServer::<A, P>::ready`
+  --> $WORKSPACE/typeway-server/src/effects.rs
+   |
+   |     pub fn ready<Idx>(self) -> crate::server::Server<A>
+   |            ----- required by a bound in this associated function
+   |     where
+   |         A: AllProvided<P, Idx>,
+   |            ^^^^^^^^^^^^^^^^^^^ required by this bound in `EffectfulServer::<A, P>::ready`
