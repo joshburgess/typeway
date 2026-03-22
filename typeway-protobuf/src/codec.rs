@@ -296,6 +296,42 @@ pub fn tw_decode_varint(bytes: &[u8]) -> Result<(u64, usize), TypewayDecodeError
     Err(TypewayDecodeError::UnexpectedEof)
 }
 
+/// Batch-decode packed varint values from a contiguous byte slice.
+///
+/// Optimized for the common case of small values (1-2 bytes each).
+/// Pre-allocates the output vector and uses branchless single-byte
+/// fast paths for maximum throughput.
+///
+/// Returns the decoded values. The entire `packed` slice is consumed.
+#[inline]
+#[doc(hidden)]
+pub fn tw_decode_packed_varints(packed: &[u8]) -> Result<Vec<u64>, TypewayDecodeError> {
+    // Pre-size estimate: at least 1 value per 2 bytes (average).
+    let mut result = Vec::with_capacity(packed.len() / 2 + 1);
+    let mut offset = 0;
+
+    while offset < packed.len() {
+        let b = packed[offset];
+        if b < 0x80 {
+            // Single byte — most common case for field tags and small integers.
+            result.push(b as u64);
+            offset += 1;
+        } else if offset + 1 < packed.len() && packed[offset + 1] < 0x80 {
+            // Two bytes — second most common.
+            let val = ((b & 0x7F) as u64) | ((packed[offset + 1] as u64) << 7);
+            result.push(val);
+            offset += 2;
+        } else {
+            // General case: delegate to tw_decode_varint.
+            let (val, consumed) = tw_decode_varint(&packed[offset..])?;
+            result.push(val);
+            offset += consumed;
+        }
+    }
+
+    Ok(result)
+}
+
 /// ZigZag decode an unsigned integer to signed (for sint32/sint64).
 #[inline]
 #[doc(hidden)]

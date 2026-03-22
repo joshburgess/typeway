@@ -342,6 +342,207 @@ impl Default for EncodeBuf {
     }
 }
 
+// ---------------------------------------------------------------------------
+// BufPool — thread-local encode buffer pool
+// ---------------------------------------------------------------------------
+
+/// A thread-local pool of reusable encode buffers.
+///
+/// Avoids allocation when encoding many messages concurrently. Each call
+/// to [`BufPool::get`] borrows a buffer from the pool; the buffer is
+/// returned automatically when the guard is dropped.
+///
+/// # Example
+///
+/// ```ignore
+/// use typeway_protobuf::BufPool;
+///
+/// let pool = BufPool::new(4, 4096); // 4 buffers, 4KB each
+///
+/// // In a request handler:
+/// let mut buf = pool.get();
+/// let bytes = buf.encode(&message);
+/// send(bytes);
+/// // buf is returned to the pool on drop
+/// ```
+pub struct BufPool {
+    bufs: std::sync::Mutex<Vec<Vec<u8>>>,
+    default_capacity: usize,
+}
+
+/// A guard that borrows a buffer from a [`BufPool`].
+///
+/// The buffer is returned to the pool when this guard is dropped.
+pub struct PooledBuf<'a> {
+    buf: Option<Vec<u8>>,
+    pool: &'a BufPool,
+}
+
+impl BufPool {
+    /// Create a new pool with `count` pre-allocated buffers of `capacity` bytes each.
+    pub fn new(count: usize, capacity: usize) -> Self {
+        let bufs = (0..count)
+            .map(|_| Vec::with_capacity(capacity))
+            .collect();
+        BufPool {
+            bufs: std::sync::Mutex::new(bufs),
+            default_capacity: capacity,
+        }
+    }
+
+    /// Borrow a buffer from the pool.
+    ///
+    /// If the pool is empty, allocates a new buffer. The buffer is
+    /// returned to the pool when the [`PooledBuf`] guard is dropped.
+    pub fn get(&self) -> PooledBuf<'_> {
+        let buf = self
+            .bufs
+            .lock()
+            .unwrap()
+            .pop()
+            .unwrap_or_else(|| Vec::with_capacity(self.default_capacity));
+        PooledBuf {
+            buf: Some(buf),
+            pool: self,
+        }
+    }
+
+    fn return_buf(&self, mut buf: Vec<u8>) {
+        buf.clear();
+        self.bufs.lock().unwrap().push(buf);
+    }
+}
+
+impl<'a> PooledBuf<'a> {
+    /// Encode a message into this pooled buffer.
+    pub fn encode<T: TypewayEncode>(&mut self, msg: &T) -> &[u8] {
+        let buf = self.buf.as_mut().unwrap();
+        buf.clear();
+        buf.reserve(msg.encoded_len());
+        msg.encode_to(buf);
+        buf
+    }
+
+    /// Encode a message and return owned `Bytes`.
+    pub fn encode_to_bytes<T: TypewayEncode>(&mut self, msg: &T) -> Bytes {
+        let buf = self.buf.as_mut().unwrap();
+        buf.clear();
+        buf.reserve(msg.encoded_len());
+        msg.encode_to(buf);
+        Bytes::copy_from_slice(buf)
+    }
+}
+
+impl<'a> Drop for PooledBuf<'a> {
+    fn drop(&mut self) {
+        if let Some(buf) = self.buf.take() {
+            self.pool.return_buf(buf);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MessageView — GAT-based zero-copy borrowed decode
+// ---------------------------------------------------------------------------
+
+/// Zero-copy borrowed decode using Generic Associated Types.
+///
+/// Unlike [`TypewayDecode`] which produces owned types (allocating strings
+/// and vectors), `MessageView` produces a borrowed view into the input
+/// buffer. No allocation occurs — every field is a slice of the original bytes.
+///
+/// # Example
+///
+/// ```ignore
+/// #[derive(MessageView)]
+/// struct UserView<'buf> {
+///     name: &'buf str,
+///     email: &'buf str,
+///     id: u32,
+/// }
+///
+/// let bytes = encode_user();
+/// let view = User::view_from(&bytes)?;
+/// println!("{} <{}>", view.name, view.email);
+/// // No allocation — name and email are slices of `bytes`.
+/// ```
+///
+/// This is the Cap'n Proto / FlatBuffers approach: parse on access,
+/// not on receive. For read-heavy workloads where you inspect a few
+/// fields and discard the rest, this can be dramatically faster.
+pub trait MessageView: Sized {
+    /// The borrowed view type. Lifetime `'buf` ties the view to the
+    /// input buffer, ensuring the view cannot outlive the data.
+    type View<'buf>
+    where
+        Self: 'buf;
+
+    /// Create a zero-copy view from a byte buffer.
+    ///
+    /// The returned view borrows from `buf` — no allocation occurs.
+    /// Fields are decoded lazily or eagerly depending on the implementation.
+    fn view_from(buf: &[u8]) -> Result<Self::View<'_>, TypewayDecodeError>;
+}
+
+/// A borrowed string field in a [`MessageView`].
+///
+/// This is a validated `&str` slice into the protobuf buffer.
+/// Zero allocation, zero copy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewStr<'buf> {
+    inner: &'buf str,
+}
+
+impl<'buf> ViewStr<'buf> {
+    /// Create a ViewStr from a byte slice, validating UTF-8.
+    pub fn from_bytes(bytes: &'buf [u8]) -> Result<Self, TypewayDecodeError> {
+        let s = std::str::from_utf8(bytes)
+            .map_err(|_| TypewayDecodeError::InvalidUtf8("ViewStr"))?;
+        Ok(ViewStr { inner: s })
+    }
+
+    /// Get the string slice.
+    pub fn as_str(&self) -> &'buf str {
+        self.inner
+    }
+}
+
+impl<'buf> std::ops::Deref for ViewStr<'buf> {
+    type Target = str;
+    fn deref(&self) -> &str {
+        self.inner
+    }
+}
+
+impl<'buf> std::fmt::Display for ViewStr<'buf> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.inner)
+    }
+}
+
+/// A borrowed bytes field in a [`MessageView`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ViewBytes<'buf> {
+    inner: &'buf [u8],
+}
+
+impl<'buf> ViewBytes<'buf> {
+    pub fn from_slice(bytes: &'buf [u8]) -> Self {
+        ViewBytes { inner: bytes }
+    }
+
+    pub fn as_slice(&self) -> &'buf [u8] {
+        self.inner
+    }
+}
+
+impl<'buf> std::ops::Deref for ViewBytes<'buf> {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        self.inner
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
