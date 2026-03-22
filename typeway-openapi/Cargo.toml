@@ -11,6 +11,7 @@ schemars = ["dep:schemars"]
 typeway-core = { path = "../typeway-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 indexmap = { version = "2", features = ["serde"] }
 http = "1"
 schemars = { version = "0.8", optional = true }

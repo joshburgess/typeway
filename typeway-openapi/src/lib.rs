@@ -1,8 +1,17 @@
-//! `typeway-openapi` — OpenAPI 3.1 spec derivation from Wayward API types.
+//! `typeway-openapi` — OpenAPI spec generation and codegen.
 //!
-//! Walks an API type at startup and produces an OpenAPI specification.
-//! No annotations required beyond what's already in the types.
+//! Two directions:
+//!
+//! - **Rust → OpenAPI**: Walk an API type and produce an OpenAPI spec
+//!   (via [`ApiToSpec`]).
+//! - **OpenAPI → Rust**: Parse an OpenAPI spec (2.x or 3.x) and generate
+//!   typeway Rust code (via [`codegen_v2`] and [`codegen_v3`]).
 
+pub mod codegen_common;
+#[allow(dead_code)]
+pub mod codegen_v2;
+#[allow(dead_code)]
+pub mod codegen_v3;
 pub mod derive;
 pub mod spec;
 
@@ -15,3 +24,5 @@ pub use derive::{
 pub use spec::{
     Components, OpenApiSpec, SecurityRequirement, SecurityScheme,
 };
+pub use codegen_v2::swagger_to_typeway;
+pub use codegen_v3::openapi3_to_typeway;
