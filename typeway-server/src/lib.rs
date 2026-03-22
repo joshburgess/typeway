@@ -24,6 +24,7 @@ pub mod handler;
 pub mod handler_for;
 #[cfg(feature = "multipart")]
 pub mod multipart;
+pub mod mount;
 pub mod negotiate;
 #[cfg(feature = "openapi")]
 pub mod openapi;
@@ -61,6 +62,7 @@ pub use router::{Router, RouterService};
 pub use secure_headers::SecureHeadersLayer;
 pub use effects::{EffectfulLayeredServer, EffectfulServer};
 pub use server::{serve, LayeredServer, Server};
+pub use mount::ServerBuilder;
 pub use serves::{Serves, SubApi};
 
 #[cfg(feature = "grpc")]
