@@ -236,15 +236,15 @@ async fn start_typeway_direct_server() -> u16 {
     );
 
     // Build multiplexer manually with the direct handler.
-    let multiplexer = typeway_server::grpc_dispatch::GrpcMultiplexer {
-        rest: typeway_server::RouterService::new(std::sync::Arc::new(typeway_server::Router::new())),
-        grpc_router: std::sync::Arc::new(grpc_router),
-        reflection: std::sync::Arc::new(typeway_grpc::ReflectionService::from_api::<DirectAPI>("BenchService", "bench.v1")),
-        health: typeway_grpc::HealthService::new(),
-        reflection_enabled: false,
-        grpc_spec_json: None,
-        grpc_docs_html: None,
-    };
+    let multiplexer = typeway_server::grpc_dispatch::GrpcMultiplexer::new(
+        typeway_server::RouterService::new(std::sync::Arc::new(typeway_server::Router::new())),
+        std::sync::Arc::new(grpc_router),
+        std::sync::Arc::new(typeway_grpc::ReflectionService::from_api::<DirectAPI>("BenchService", "bench.v1")),
+        typeway_grpc::HealthService::new(),
+        false,
+        None,
+        None,
+    );
 
     tokio::spawn(async move {
         loop {

@@ -109,8 +109,6 @@ impl BytesStr {
     ///
     /// # Safety
     /// The caller must guarantee the bytes are valid UTF-8.
-    /// # Safety
-    /// The caller must guarantee the bytes are valid UTF-8.
     #[doc(hidden)]
     pub unsafe fn from_utf8_unchecked(bytes: Bytes) -> Self {
         BytesStr { inner: bytes }
@@ -197,6 +195,30 @@ impl PartialEq<str> for BytesStr {
 impl PartialEq<&str> for BytesStr {
     fn eq(&self, other: &&str) -> bool {
         &**self == *other
+    }
+}
+
+impl PartialEq<String> for BytesStr {
+    fn eq(&self, other: &String) -> bool {
+        &**self == other.as_str()
+    }
+}
+
+impl PartialEq<BytesStr> for str {
+    fn eq(&self, other: &BytesStr) -> bool {
+        self == &**other
+    }
+}
+
+impl PartialEq<BytesStr> for &str {
+    fn eq(&self, other: &BytesStr) -> bool {
+        *self == &**other
+    }
+}
+
+impl PartialEq<BytesStr> for String {
+    fn eq(&self, other: &BytesStr) -> bool {
+        self.as_str() == &**other
     }
 }
 

@@ -81,15 +81,15 @@ async fn start_direct_server() -> u16 {
         direct,
     );
 
-    let multiplexer = typeway_server::grpc_dispatch::GrpcMultiplexer {
-        rest: RouterService::new(Arc::new(Router::new())),
-        grpc_router: Arc::new(grpc_router),
-        reflection: Arc::new(typeway_grpc::ReflectionService::from_api::<ItemAPI>("ItemService", "test.v1")),
-        health: typeway_grpc::HealthService::new(),
-        reflection_enabled: false,
-        grpc_spec_json: None,
-        grpc_docs_html: None,
-    };
+    let multiplexer = typeway_server::grpc_dispatch::GrpcMultiplexer::new(
+        RouterService::new(Arc::new(Router::new())),
+        Arc::new(grpc_router),
+        Arc::new(typeway_grpc::ReflectionService::from_api::<ItemAPI>("ItemService", "test.v1")),
+        typeway_grpc::HealthService::new(),
+        false,
+        None,
+        None,
+    );
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();

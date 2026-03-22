@@ -315,18 +315,47 @@ fn json_value_to_string(val: &serde_json::Value) -> String {
 /// applied via [`GrpcServer::layer`](crate::grpc::GrpcServer::layer).
 #[derive(Clone)]
 pub struct GrpcMultiplexer {
-    pub rest: RouterService,
-    pub grpc_router: Arc<GrpcRouter>,
-    pub reflection: Arc<ReflectionService>,
-    pub health: HealthService,
-    pub reflection_enabled: bool,
-    pub grpc_spec_json: Option<Arc<String>>,
-    pub grpc_docs_html: Option<Arc<String>>,
+    pub(crate) rest: RouterService,
+    pub(crate) grpc_router: Arc<GrpcRouter>,
+    pub(crate) reflection: Arc<ReflectionService>,
+    pub(crate) health: HealthService,
+    pub(crate) reflection_enabled: bool,
+    pub(crate) grpc_spec_json: Option<Arc<String>>,
+    pub(crate) grpc_docs_html: Option<Arc<String>>,
     /// Transcoder for binary protobuf support. When set, the native dispatch
     /// auto-detects `application/grpc` (binary) vs `application/grpc+json`
     /// and transcodes accordingly.
     #[cfg(feature = "grpc-proto-binary")]
     pub(crate) transcoder: Option<Arc<typeway_grpc::transcode::ProtoTranscoder>>,
+}
+
+impl GrpcMultiplexer {
+    /// Construct a new `GrpcMultiplexer` from its components.
+    ///
+    /// Prefer [`GrpcServer::build`](crate::grpc::GrpcServer::build) for
+    /// production use. This constructor is available for benchmarks and tests
+    /// that need fine-grained control.
+    pub fn new(
+        rest: RouterService,
+        grpc_router: Arc<GrpcRouter>,
+        reflection: Arc<ReflectionService>,
+        health: HealthService,
+        reflection_enabled: bool,
+        grpc_spec_json: Option<Arc<String>>,
+        grpc_docs_html: Option<Arc<String>>,
+    ) -> Self {
+        Self {
+            rest,
+            grpc_router,
+            reflection,
+            health,
+            reflection_enabled,
+            grpc_spec_json,
+            grpc_docs_html,
+            #[cfg(feature = "grpc-proto-binary")]
+            transcoder: None,
+        }
+    }
 }
 
 /// Build a gRPC JSON response with OK status (for built-in services).

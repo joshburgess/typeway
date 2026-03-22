@@ -186,6 +186,7 @@ impl Router {
     ///
     /// Used by the native gRPC server to build its own dispatch table
     /// from the already-registered REST handlers.
+    #[cfg(feature = "grpc")]
     pub(crate) fn find_handler_by_pattern(
         &self,
         method: &http::Method,
@@ -202,6 +203,7 @@ impl Router {
     }
 
     /// Get a clone of the state injector, if one is set.
+    #[cfg(feature = "grpc")]
     pub(crate) fn state_injector(&self) -> Option<StateInjector> {
         self.inner.read().unwrap().state_injector.clone()
     }
