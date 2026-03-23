@@ -7,3 +7,27 @@ message SimpleTest {
   uint32 id = 2;
   bool active = 3;
 }
+
+message WithNested {
+  string title = 1;
+  SimpleTest author = 2;
+}
+
+message WithRepeated {
+  repeated int32 values = 1;
+  repeated string tags = 2;
+}
+
+message WithNegative {
+  int32 temperature = 1;
+  sint32 altitude = 2;
+}
+
+message WithFloats {
+  float score = 1;
+  double precise = 2;
+}
+
+message WithMap {
+  map<string, int32> scores = 1;
+}
