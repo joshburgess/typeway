@@ -104,11 +104,12 @@ fn encode_decode_bool_field() {
     let decoded = proto_binary_to_json(&bytes, &fields).unwrap();
     assert_eq!(decoded["flag"], true);
 
-    // false — proto3 default, should still roundtrip
+    // false — proto3 default, omitted from wire, absent in decoded JSON
     let json = serde_json::json!({"flag": false});
     let bytes = json_to_proto_binary(&json, &fields).unwrap();
+    assert!(bytes.is_empty(), "false is proto3 default, should not be encoded");
     let decoded = proto_binary_to_json(&bytes, &fields).unwrap();
-    assert_eq!(decoded["flag"], false);
+    assert!(decoded["flag"].is_null(), "absent field returns null");
 }
 
 #[test]
@@ -401,10 +402,14 @@ fn repeated_string_roundtrip() {
 fn sint32_roundtrip() {
     let fields = vec![scalar_field("delta", "sint32", 1)];
 
-    for val in [-1i32, 0, 1, -100, 100, i32::MIN, i32::MAX] {
+    for val in [-1i32, 1, -100, 100, i32::MIN, i32::MAX] {
         let json = serde_json::json!({"delta": val});
         let bytes = json_to_proto_binary(&json, &fields).unwrap();
         let decoded = proto_binary_to_json(&bytes, &fields).unwrap();
         assert_eq!(decoded["delta"], val, "sint32 roundtrip failed for {val}");
     }
+    // 0 is proto3 default — omitted from wire
+    let json = serde_json::json!({"delta": 0});
+    let bytes = json_to_proto_binary(&json, &fields).unwrap();
+    assert!(bytes.is_empty(), "sint32 zero is proto3 default, should not be encoded");
 }

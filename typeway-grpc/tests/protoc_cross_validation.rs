@@ -334,14 +334,10 @@ fn protoc_encode_typeway_decode_repeated() {
 
     let json = proto_binary_to_json(&bytes, &fields).unwrap();
 
-    // NOTE: protoc encodes repeated int32 as packed (single length-delimited
-    // blob). typeway's decoder may not fully unpack this, returning fewer
-    // elements. This documents the current behavior.
     let values = json["values"].as_array().expect("values not array");
-    assert!(
-        !values.is_empty(),
-        "should decode at least some values"
-    );
+    assert_eq!(values.len(), 2, "should unpack both packed int32 values");
+    assert_eq!(values[0], 100);
+    assert_eq!(values[1], 200);
 
     let tags = json["tags"].as_array().expect("tags not array");
     assert_eq!(tags.len(), 3, "string repeated fields are not packed");
@@ -428,22 +424,12 @@ fn typeway_encode_protoc_decode_map() {
 
     let bytes = json_to_proto_binary(&json, &fields).unwrap();
 
-    // NOTE: Map encoding compatibility depends on typeway encoding map
-    // entries as repeated submessages with field 1 = key, field 2 = value.
-    // If protoc can't decode it, the encoding format may differ.
-    match protoc_decode("test.WithMap", &bytes) {
-        Some(text) => {
-            assert!(text.contains("alice"), "missing alice in: {text}");
-            assert!(text.contains("bob"), "missing bob in: {text}");
-        }
-        None => {
-            // Map encoding not protoc-compatible — document as known limitation
-            eprintln!(
-                "NOTE: typeway map encoding not protoc-compatible ({} bytes produced)",
-                bytes.len()
-            );
-        }
-    }
+    let text = protoc_decode("test.WithMap", &bytes).expect("protoc --decode failed for map");
+
+    assert!(text.contains("alice"), "missing alice in: {text}");
+    assert!(text.contains("bob"), "missing bob in: {text}");
+    assert!(text.contains("100"), "missing score 100 in: {text}");
+    assert!(text.contains("85"), "missing score 85 in: {text}");
 }
 
 // ---------------------------------------------------------------------------
@@ -474,14 +460,12 @@ fn default_values_produce_empty_encoding() {
 
     let bytes = json_to_proto_binary(&json, &fields).unwrap();
 
-    // typeway encodes defaults — protoc should still accept them
-    // (encoding defaults is valid proto3, just not canonical)
-    if !bytes.is_empty() {
-        let text = protoc_decode("test.SimpleTest", &bytes)
-            .expect("protoc should accept non-canonical default encoding");
-        // protoc may show the defaults or may omit them
-        let _ = text; // accepted without error = wire-compatible
-    }
+    // Proto3: all defaults should produce empty encoding
+    assert!(
+        bytes.is_empty(),
+        "expected empty encoding for defaults, got {} bytes",
+        bytes.len()
+    );
 }
 
 // ---------------------------------------------------------------------------

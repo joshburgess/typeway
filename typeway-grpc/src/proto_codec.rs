@@ -159,6 +159,25 @@ pub fn wire_type_for(proto_type: &str) -> u8 {
     }
 }
 
+/// Return `true` if a JSON value is the proto3 default for the given type.
+///
+/// Proto3 default values: 0 for numeric types, `false` for bool,
+/// `""` for string, empty for bytes. Default values should not be
+/// encoded on the wire.
+fn is_proto3_default(value: &serde_json::Value, proto_type: &str) -> bool {
+    match proto_type {
+        "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64"
+        | "fixed32" | "fixed64" | "sfixed32" | "sfixed64" | "enum" => {
+            value.as_i64() == Some(0) || value.as_u64() == Some(0) || value.as_f64() == Some(0.0)
+        }
+        "float" | "double" => value.as_f64() == Some(0.0),
+        "bool" => value.as_bool() == Some(false),
+        "string" => value.as_str() == Some(""),
+        "bytes" => value.as_str() == Some(""),
+        _ => false, // message types: never skip
+    }
+}
+
 /// Return `true` if the proto type name refers to a scalar (non-message) type.
 pub fn is_scalar_type(proto_type: &str) -> bool {
     matches!(
@@ -373,7 +392,50 @@ pub fn json_to_proto_binary(
             continue;
         }
 
-        if field.repeated {
+        // Proto3: skip default values (0, false, "", empty bytes).
+        if !field.repeated && !field.is_map && is_proto3_default(value, &field.proto_type) {
+            continue;
+        }
+
+        if field.is_map {
+            // Proto3 map: encode as repeated submessages with field 1 = key, field 2 = value.
+            if let Some(obj) = value.as_object() {
+                let key_type = field.map_key_type.as_deref().unwrap_or("string");
+                let val_type = field.map_value_type.as_deref().unwrap_or("string");
+                for (k, v) in obj {
+                    let mut entry_buf = Vec::new();
+                    // Encode key as field 1
+                    let key_field = ProtoFieldDef {
+                        name: "key".into(),
+                        proto_type: key_type.into(),
+                        tag: 1,
+                        repeated: false,
+                        is_map: false,
+                        map_key_type: None,
+                        map_value_type: None,
+                        nested_fields: None,
+                    };
+                    encode_field(&mut entry_buf, &key_field, &serde_json::json!(k))?;
+                    // Encode value as field 2
+                    let val_field = ProtoFieldDef {
+                        name: "value".into(),
+                        proto_type: val_type.into(),
+                        tag: 2,
+                        repeated: false,
+                        is_map: false,
+                        map_key_type: None,
+                        map_value_type: None,
+                        nested_fields: None,
+                    };
+                    encode_field(&mut entry_buf, &val_field, v)?;
+                    // Write as length-delimited submessage
+                    let tag_value = ((field.tag as u64) << 3) | 2;
+                    encode_varint(&mut buf, tag_value);
+                    encode_varint(&mut buf, entry_buf.len() as u64);
+                    buf.extend_from_slice(&entry_buf);
+                }
+            }
+        } else if field.repeated {
             if let Some(arr) = value.as_array() {
                 for item in arr {
                     encode_field(&mut buf, field, item)?;
@@ -608,19 +670,33 @@ pub fn proto_binary_to_json(
         let field = fields.iter().find(|f| f.tag == field_number);
 
         if let Some(field) = field {
-            let json_value = wire_value_to_json(
-                &wire_val,
-                &field.proto_type,
-                field.nested_fields.as_deref(),
-            )?;
-
-            if field.repeated {
-                repeated_fields
-                    .entry(field.name.clone())
-                    .or_default()
-                    .push(json_value);
+            // Handle packed repeated fields: a repeated scalar field may arrive
+            // as a single length-delimited blob containing concatenated values.
+            if field.repeated && matches!(wire_val, WireValue::LengthDelimited(_))
+                && is_packable_type(&field.proto_type)
+            {
+                if let WireValue::LengthDelimited(ref data) = wire_val {
+                    let unpacked = unpack_scalars(data, &field.proto_type)?;
+                    repeated_fields
+                        .entry(field.name.clone())
+                        .or_default()
+                        .extend(unpacked);
+                }
             } else {
-                map.insert(field.name.clone(), json_value);
+                let json_value = wire_value_to_json(
+                    &wire_val,
+                    &field.proto_type,
+                    field.nested_fields.as_deref(),
+                )?;
+
+                if field.repeated {
+                    repeated_fields
+                        .entry(field.name.clone())
+                        .or_default()
+                        .push(json_value);
+                } else {
+                    map.insert(field.name.clone(), json_value);
+                }
             }
         }
         // Unknown fields are silently skipped (proto3 forward compatibility).
@@ -632,6 +708,58 @@ pub fn proto_binary_to_json(
     }
 
     Ok(serde_json::Value::Object(map))
+}
+
+/// Return `true` if the proto type can appear in packed encoding.
+fn is_packable_type(proto_type: &str) -> bool {
+    matches!(
+        proto_type,
+        "int32" | "int64" | "uint32" | "uint64"
+            | "sint32" | "sint64" | "bool" | "enum"
+            | "fixed32" | "sfixed32" | "float"
+            | "fixed64" | "sfixed64" | "double"
+    )
+}
+
+/// Unpack a packed repeated scalar field from a length-delimited blob.
+fn unpack_scalars(data: &[u8], proto_type: &str) -> Result<Vec<serde_json::Value>, CodecError> {
+    let mut results = Vec::new();
+    let mut offset = 0;
+    while offset < data.len() {
+        match proto_type {
+            "int32" | "int64" | "uint32" | "uint64"
+            | "sint32" | "sint64" | "bool" | "enum" => {
+                let (val, consumed) = decode_varint(&data[offset..])?;
+                offset += consumed;
+                let wv = WireValue::Varint(val);
+                results.push(wire_value_to_json(&wv, proto_type, None)?);
+            }
+            "fixed32" | "sfixed32" | "float" => {
+                if offset + 4 > data.len() {
+                    return Err(CodecError::UnexpectedEof);
+                }
+                let mut arr = [0u8; 4];
+                arr.copy_from_slice(&data[offset..offset + 4]);
+                offset += 4;
+                let wv = WireValue::Fixed32(arr);
+                results.push(wire_value_to_json(&wv, proto_type, None)?);
+            }
+            "fixed64" | "sfixed64" | "double" => {
+                if offset + 8 > data.len() {
+                    return Err(CodecError::UnexpectedEof);
+                }
+                let mut arr = [0u8; 8];
+                arr.copy_from_slice(&data[offset..offset + 8]);
+                offset += 8;
+                let wv = WireValue::Fixed64(arr);
+                results.push(wire_value_to_json(&wv, proto_type, None)?);
+            }
+            _ => return Err(CodecError::EncodingFailed(
+                format!("cannot unpack type: {proto_type}"),
+            )),
+        }
+    }
+    Ok(results)
 }
 
 // ---------------------------------------------------------------------------
@@ -863,12 +991,12 @@ mod tests {
             scalar_field("name", "string", 2),
             scalar_field("active", "bool", 3),
         ];
-        let json = serde_json::json!({"id": 99, "name": "Bob", "active": false});
+        let json = serde_json::json!({"id": 99, "name": "Bob", "active": true});
         let bytes = json_to_proto_binary(&json, &fields).unwrap();
         let decoded = proto_binary_to_json(&bytes, &fields).unwrap();
         assert_eq!(decoded["id"], 99);
         assert_eq!(decoded["name"], "Bob");
-        assert_eq!(decoded["active"], false);
+        assert_eq!(decoded["active"], true);
     }
 
     #[test]
