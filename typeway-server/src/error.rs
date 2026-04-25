@@ -162,10 +162,8 @@ impl typeway_openapi::ErrorResponses for JsonError {
             "error".to_string(),
             Schema {
                 schema_type: Some("object".into()),
-                format: None,
-                items: None,
                 properties: Some(error_props),
-                description: None,
+                ..Default::default()
             },
         );
 
@@ -174,10 +172,9 @@ impl typeway_openapi::ErrorResponses for JsonError {
             MediaType {
                 schema: Some(Schema {
                     schema_type: Some("object".into()),
-                    format: None,
-                    items: None,
                     properties: Some(properties),
                     description: Some("JSON error response".into()),
+                    ..Default::default()
                 }),
                 example: None,
             },

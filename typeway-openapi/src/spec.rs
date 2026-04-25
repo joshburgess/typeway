@@ -169,18 +169,36 @@ pub struct MediaType {
 }
 
 /// A simplified JSON Schema representation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Schema {
-    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none", default)]
     pub schema_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub format: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub items: Option<Box<Schema>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub properties: Option<IndexMap<String, Schema>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]
     pub description: Option<String>,
+    /// `oneOf` variants, used to represent Rust enum sum types.
+    #[serde(rename = "oneOf", skip_serializing_if = "Option::is_none", default)]
+    pub one_of: Option<Vec<Schema>>,
+    /// String enumeration values, used for unit-only Rust enums.
+    #[serde(rename = "enum", skip_serializing_if = "Option::is_none", default)]
+    pub enum_values: Option<Vec<serde_json::Value>>,
+    /// Discriminator hint for tagged unions (`oneOf` schemas).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub discriminator: Option<Discriminator>,
+}
+
+/// OpenAPI 3 discriminator object for tagged `oneOf` unions.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Discriminator {
+    #[serde(rename = "propertyName")]
+    pub property_name: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub mapping: Option<IndexMap<String, String>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -271,10 +289,7 @@ impl Schema {
     pub fn string() -> Self {
         Schema {
             schema_type: Some("string".into()),
-            format: None,
-            items: None,
-            properties: None,
-            description: None,
+            ..Default::default()
         }
     }
 
@@ -282,9 +297,7 @@ impl Schema {
         Schema {
             schema_type: Some("integer".into()),
             format: Some("int32".into()),
-            items: None,
-            properties: None,
-            description: None,
+            ..Default::default()
         }
     }
 
@@ -292,49 +305,65 @@ impl Schema {
         Schema {
             schema_type: Some("integer".into()),
             format: Some("int64".into()),
-            items: None,
-            properties: None,
-            description: None,
+            ..Default::default()
         }
     }
 
     pub fn number() -> Self {
         Schema {
             schema_type: Some("number".into()),
-            format: None,
-            items: None,
-            properties: None,
-            description: None,
+            ..Default::default()
         }
     }
 
     pub fn boolean() -> Self {
         Schema {
             schema_type: Some("boolean".into()),
-            format: None,
-            items: None,
-            properties: None,
-            description: None,
+            ..Default::default()
         }
     }
 
     pub fn array(items: Schema) -> Self {
         Schema {
             schema_type: Some("array".into()),
-            format: None,
             items: Some(Box::new(items)),
-            properties: None,
-            description: None,
+            ..Default::default()
         }
     }
 
     pub fn object() -> Self {
         Schema {
             schema_type: Some("object".into()),
-            format: None,
-            items: None,
-            properties: None,
-            description: None,
+            ..Default::default()
+        }
+    }
+
+    /// Construct a string-valued enum schema.
+    ///
+    /// Used for Rust enums where every variant is a unit variant. The
+    /// generated schema is `{"type": "string", "enum": [...]}`.
+    pub fn string_enum<S: Into<String>>(values: impl IntoIterator<Item = S>) -> Self {
+        Schema {
+            schema_type: Some("string".into()),
+            enum_values: Some(
+                values
+                    .into_iter()
+                    .map(|s| serde_json::Value::String(s.into()))
+                    .collect(),
+            ),
+            ..Default::default()
+        }
+    }
+
+    /// Construct a `oneOf` union schema for tagged sum types.
+    ///
+    /// `discriminator` is set when the variants share a common tag property
+    /// (e.g. serde's internally tagged or adjacently tagged representations).
+    pub fn one_of(variants: Vec<Schema>, discriminator: Option<Discriminator>) -> Self {
+        Schema {
+            one_of: Some(variants),
+            discriminator,
+            ..Default::default()
         }
     }
 
@@ -358,10 +387,9 @@ impl Schema {
         }
         Schema {
             schema_type: Some("object".to_string()),
-            format: None,
-            items: None,
             properties: Some(props),
             description: description.map(|s| s.to_string()),
+            ..Default::default()
         }
     }
 

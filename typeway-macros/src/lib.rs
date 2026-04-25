@@ -1269,16 +1269,17 @@ fn derive_typeway_schema_impl(input: syn::DeriveInput) -> syn::Result<TokenStrea
     let name = &input.ident;
     let name_str = name.to_string();
 
-    // Extract struct-level doc comment.
+    // Extract container-level doc comment.
     let struct_doc = extract_doc_string(&input.attrs);
 
     // Check for #[serde(rename_all = "...")].
     let rename_all = extract_serde_rename_all(&input.attrs);
 
-    // Get the struct fields.
-    let fields = match &input.data {
+    let schema_body = match &input.data {
         syn::Data::Struct(data) => match &data.fields {
-            syn::Fields::Named(named) => &named.named,
+            syn::Fields::Named(named) => {
+                derive_struct_schema(&named.named, &rename_all, &struct_doc)
+            }
             _ => {
                 return Err(syn::Error::new_spanned(
                     name,
@@ -1286,26 +1287,48 @@ fn derive_typeway_schema_impl(input: syn::DeriveInput) -> syn::Result<TokenStrea
                 ));
             }
         },
+        syn::Data::Enum(data) => {
+            derive_enum_schema(name, data, &input.attrs, &rename_all, &struct_doc)?
+        }
         _ => {
             return Err(syn::Error::new_spanned(
                 name,
-                "TypewaySchema only supports structs",
+                "TypewaySchema supports structs and enums",
             ));
         }
     };
 
-    // Generate property entries as (name_str, schema) pairs.
+    let expanded = quote! {
+        impl ::typeway_openapi::ToSchema for #name {
+            fn schema() -> ::typeway_openapi::spec::Schema {
+                use ::typeway_openapi::spec::Schema as __Schema;
+                #schema_body
+            }
+
+            fn type_name() -> &'static str {
+                #name_str
+            }
+        }
+    };
+
+    Ok(expanded)
+}
+
+fn derive_struct_schema(
+    fields: &syn::punctuated::Punctuated<syn::Field, syn::Token![,]>,
+    rename_all: &Option<String>,
+    struct_doc: &Option<String>,
+) -> TokenStream2 {
     let property_entries: Vec<TokenStream2> = fields
         .iter()
         .map(|field| {
             let field_ident = field.ident.as_ref().unwrap();
             let field_type = &field.ty;
 
-            // Determine the serialized field name.
             let field_name_str =
                 if let Some(rename) = extract_serde_field_rename(&field.attrs) {
                     rename
-                } else if let Some(ref strategy) = rename_all {
+                } else if let Some(strategy) = rename_all {
                     apply_rename_strategy(&field_ident.to_string(), strategy)
                 } else {
                     field_ident.to_string()
@@ -1330,23 +1353,278 @@ fn derive_typeway_schema_impl(input: syn::DeriveInput) -> syn::Result<TokenStrea
         None => quote! { None },
     };
 
-    let expanded = quote! {
-        impl ::typeway_openapi::ToSchema for #name {
-            fn schema() -> ::typeway_openapi::spec::Schema {
-                use ::typeway_openapi::spec::Schema as __Schema;
-                __Schema::object_with_properties(
-                    vec![#(#property_entries),*],
-                    #struct_description,
-                )
-            }
+    quote! {
+        __Schema::object_with_properties(
+            vec![#(#property_entries),*],
+            #struct_description,
+        )
+    }
+}
 
-            fn type_name() -> &'static str {
-                #name_str
+#[derive(Default)]
+struct EnumTagging {
+    tag: Option<String>,
+    content: Option<String>,
+    untagged: bool,
+}
+
+fn extract_serde_enum_tagging(attrs: &[syn::Attribute]) -> EnumTagging {
+    let mut t = EnumTagging::default();
+    for attr in attrs {
+        if !attr.path().is_ident("serde") {
+            continue;
+        }
+        let _ = attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("tag") {
+                let value = meta.value()?;
+                let lit: LitStr = value.parse()?;
+                t.tag = Some(lit.value());
+            } else if meta.path.is_ident("content") {
+                let value = meta.value()?;
+                let lit: LitStr = value.parse()?;
+                t.content = Some(lit.value());
+            } else if meta.path.is_ident("untagged") {
+                t.untagged = true;
             }
+            Ok(())
+        });
+    }
+    t
+}
+
+fn derive_enum_schema(
+    name: &syn::Ident,
+    data: &syn::DataEnum,
+    attrs: &[syn::Attribute],
+    rename_all: &Option<String>,
+    struct_doc: &Option<String>,
+) -> syn::Result<TokenStream2> {
+    let tagging = extract_serde_enum_tagging(attrs);
+
+    // Collect each variant's serialized name plus its kind.
+    let variants: Vec<(String, &syn::Variant)> = data
+        .variants
+        .iter()
+        .map(|v| {
+            let serialized = if let Some(rename) =
+                extract_serde_field_rename(&v.attrs)
+            {
+                rename
+            } else if let Some(strategy) = rename_all {
+                apply_rename_strategy(&v.ident.to_string(), strategy)
+            } else {
+                v.ident.to_string()
+            };
+            (serialized, v)
+        })
+        .collect();
+
+    let all_unit = variants.iter().all(|(_, v)| matches!(v.fields, syn::Fields::Unit));
+
+    let description_setter = match struct_doc {
+        Some(doc) => quote! { __sch.description = Some(#doc.to_string()); },
+        None => quote! {},
+    };
+
+    // All-unit + plain (no tag/content/untagged) → string enum.
+    if all_unit && tagging.tag.is_none() && !tagging.untagged {
+        let names = variants.iter().map(|(n, _)| n.clone()).collect::<Vec<_>>();
+        return Ok(quote! {{
+            let mut __sch = __Schema::string_enum(vec![#(#names),*]);
+            #description_setter
+            __sch
+        }});
+    }
+
+    // General oneOf path.
+    let variant_schemas: Vec<TokenStream2> = variants
+        .iter()
+        .map(|(serialized, v)| build_variant_schema(serialized, v, &tagging))
+        .collect::<syn::Result<Vec<_>>>()?;
+
+    let discriminator = match (&tagging.tag, tagging.untagged) {
+        (Some(tag), false) => {
+            quote! {
+                Some(::typeway_openapi::spec::Discriminator {
+                    property_name: #tag.to_string(),
+                    mapping: None,
+                })
+            }
+        }
+        _ => quote! { None },
+    };
+
+    let _ = name;
+
+    Ok(quote! {{
+        let mut __sch = __Schema::one_of(
+            vec![#(#variant_schemas),*],
+            #discriminator,
+        );
+        #description_setter
+        __sch
+    }})
+}
+
+fn build_variant_schema(
+    serialized: &str,
+    v: &syn::Variant,
+    tagging: &EnumTagging,
+) -> syn::Result<TokenStream2> {
+    let variant_doc = extract_doc_string(&v.attrs);
+    let desc_setter = match &variant_doc {
+        Some(doc) => quote! { __vsch.description = Some(#doc.to_string()); },
+        None => quote! {},
+    };
+
+    // Build a Schema expression for the bare variant payload.
+    let payload_schema = bare_payload_schema(&v.fields)?;
+
+    let body = match (&tagging.tag, &tagging.content, tagging.untagged, &v.fields) {
+        // Untagged: just emit the payload schema.
+        (_, _, true, _) => quote! { #payload_schema },
+
+        // Adjacently tagged: { <tag>: <name>, <content>: <payload> } (or just tag for unit).
+        (Some(tag), Some(_), false, syn::Fields::Unit) => {
+            quote! {{
+                let __tag_schema = __Schema::string_enum(vec![#serialized]);
+                __Schema::object_with_properties(
+                    vec![(#tag, __tag_schema)],
+                    None,
+                )
+            }}
+        }
+        (Some(tag), Some(content), false, _) => {
+            quote! {{
+                let __tag_schema = __Schema::string_enum(vec![#serialized]);
+                __Schema::object_with_properties(
+                    vec![
+                        (#tag, __tag_schema),
+                        (#content, #payload_schema),
+                    ],
+                    None,
+                )
+            }}
+        }
+
+        // Internally tagged: merge tag into the payload object's properties.
+        (Some(tag), None, false, syn::Fields::Unit) => {
+            quote! {{
+                let __tag_schema = __Schema::string_enum(vec![#serialized]);
+                __Schema::object_with_properties(
+                    vec![(#tag, __tag_schema)],
+                    None,
+                )
+            }}
+        }
+        (Some(tag), None, false, syn::Fields::Named(_)) => {
+            // Build the object from named fields plus the tag property.
+            let named_entries = named_field_entries(&v.fields)?;
+            quote! {{
+                let __tag_schema = __Schema::string_enum(vec![#serialized]);
+                let mut __entries: Vec<(&str, __Schema)> = vec![(#tag, __tag_schema)];
+                #(__entries.push(#named_entries);)*
+                __Schema::object_with_properties(__entries, None)
+            }}
+        }
+        (Some(_), None, false, _) => {
+            // Internal tagging on tuple/newtype variants is not representable as a
+            // single tag-merged object. Fall back to the bare payload schema.
+            quote! { #payload_schema }
+        }
+
+        // Externally tagged (default).
+        (None, _, false, syn::Fields::Unit) => {
+            // Serde serializes unit variants as bare strings: "Foo"
+            quote! { __Schema::string_enum(vec![#serialized]) }
+        }
+        (None, _, false, _) => {
+            // {"<variant>": <payload>}
+            quote! {{
+                __Schema::object_with_properties(
+                    vec![(#serialized, #payload_schema)],
+                    None,
+                )
+            }}
         }
     };
 
-    Ok(expanded)
+    Ok(quote! {{
+        let mut __vsch: __Schema = #body;
+        #desc_setter
+        __vsch
+    }})
+}
+
+fn bare_payload_schema(fields: &syn::Fields) -> syn::Result<TokenStream2> {
+    Ok(match fields {
+        syn::Fields::Unit => quote! { __Schema::object() },
+        syn::Fields::Unnamed(unnamed) if unnamed.unnamed.len() == 1 => {
+            let ty = &unnamed.unnamed.first().unwrap().ty;
+            quote! { <#ty as ::typeway_openapi::ToSchema>::schema() }
+        }
+        syn::Fields::Unnamed(unnamed) => {
+            // Tuple variant: array of mixed types is not expressible cleanly;
+            // emit an array schema whose items are the first element's schema.
+            // This is a reasonable approximation that documents the shape.
+            let first_ty = &unnamed.unnamed.first().unwrap().ty;
+            quote! {
+                __Schema::array(<#first_ty as ::typeway_openapi::ToSchema>::schema())
+            }
+        }
+        syn::Fields::Named(named) => {
+            let entries: Vec<TokenStream2> = named
+                .named
+                .iter()
+                .map(|field| {
+                    let field_ident = field.ident.as_ref().unwrap();
+                    let field_type = &field.ty;
+                    let field_name = if let Some(rename) =
+                        extract_serde_field_rename(&field.attrs)
+                    {
+                        rename
+                    } else {
+                        field_ident.to_string()
+                    };
+                    quote! {
+                        (#field_name, <#field_type as ::typeway_openapi::ToSchema>::schema())
+                    }
+                })
+                .collect();
+            quote! {
+                __Schema::object_with_properties(vec![#(#entries),*], None)
+            }
+        }
+    })
+}
+
+fn named_field_entries(fields: &syn::Fields) -> syn::Result<Vec<TokenStream2>> {
+    let named = match fields {
+        syn::Fields::Named(named) => &named.named,
+        _ => {
+            return Err(syn::Error::new_spanned(
+                fields,
+                "expected named fields",
+            ));
+        }
+    };
+    Ok(named
+        .iter()
+        .map(|field| {
+            let field_ident = field.ident.as_ref().unwrap();
+            let field_type = &field.ty;
+            let field_name = if let Some(rename) =
+                extract_serde_field_rename(&field.attrs)
+            {
+                rename
+            } else {
+                field_ident.to_string()
+            };
+            quote! {
+                (#field_name, <#field_type as ::typeway_openapi::ToSchema>::schema())
+            }
+        })
+        .collect())
 }
 
 /// Extract the combined doc comment string from `#[doc = "..."]` attributes.
@@ -1827,11 +2105,14 @@ fn is_map_type(ty: &syn::Type) -> Option<(syn::Type, syn::Type)> {
 
 /// Apply a serde rename strategy to a snake_case field name.
 fn apply_rename_strategy(name: &str, strategy: &str) -> String {
+    // Normalize input (which may be snake_case from struct fields or PascalCase
+    // from enum variants) to a snake_case canonical form, then transform.
+    let snake = to_snake_case(name);
     match strategy {
         "camelCase" => {
             let mut result = String::new();
             let mut capitalize_next = false;
-            for c in name.chars() {
+            for c in snake.chars() {
                 if c == '_' {
                     capitalize_next = true;
                 } else if capitalize_next {
@@ -1843,8 +2124,8 @@ fn apply_rename_strategy(name: &str, strategy: &str) -> String {
             }
             result
         }
-        "snake_case" => name.to_string(),
-        "PascalCase" => name
+        "snake_case" => snake,
+        "PascalCase" => snake
             .split('_')
             .map(|w| {
                 let mut c = w.chars();
@@ -1854,8 +2135,10 @@ fn apply_rename_strategy(name: &str, strategy: &str) -> String {
                 }
             })
             .collect(),
-        "SCREAMING_SNAKE_CASE" => name.to_uppercase(),
-        "kebab-case" => name.replace('_', "-"),
+        "SCREAMING_SNAKE_CASE" => snake.to_uppercase(),
+        "kebab-case" => snake.replace('_', "-"),
+        "lowercase" => snake.replace('_', ""),
+        "UPPERCASE" => snake.replace('_', "").to_uppercase(),
         _ => name.to_string(),
     }
 }

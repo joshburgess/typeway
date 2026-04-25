@@ -146,7 +146,7 @@ fn convert_operation(op: &Operation) -> SwaggerOperation {
             let schema_val = media
                 .schema
                 .as_ref()
-                .map(|s| serde_json::to_value(s).unwrap_or_default())
+                .map(|s| sanitize_for_swagger2(serde_json::to_value(s).unwrap_or_default()))
                 .unwrap_or(serde_json::json!({"type": "object"}));
 
             parameters.push(serde_json::json!({
@@ -165,7 +165,7 @@ fn convert_operation(op: &Operation) -> SwaggerOperation {
             .content
             .get("application/json")
             .and_then(|m| m.schema.as_ref())
-            .map(|s| serde_json::to_value(s).unwrap_or_default());
+            .map(|s| sanitize_for_swagger2(serde_json::to_value(s).unwrap_or_default()));
 
         responses.insert(
             code.clone(),
@@ -191,6 +191,66 @@ fn convert_operation(op: &Operation) -> SwaggerOperation {
 pub fn to_swagger2_json(spec: &OpenApiSpec) -> String {
     let swagger = to_swagger2(spec);
     serde_json::to_string_pretty(&swagger).unwrap_or_default()
+}
+
+/// Recursively rewrite a JSON schema value into Swagger 2.0-friendly form.
+///
+/// Swagger 2.0 lacks `oneOf` and uses a different `discriminator` shape.
+/// This function:
+///
+/// - Walks `oneOf` arrays and rewrites the parent schema to `type: object`
+///   with the variants preserved under the `x-oneOf` vendor extension.
+/// - Converts an OpenAPI 3 `discriminator` object into the Swagger 2 string
+///   form (`discriminator: "<propertyName>"`).
+/// - Leaves `enum`, `type`, `format`, `properties`, and `items` intact.
+fn sanitize_for_swagger2(value: serde_json::Value) -> serde_json::Value {
+    use serde_json::Value;
+    match value {
+        Value::Object(mut obj) => {
+            // Recurse into nested schemas first.
+            if let Some(items) = obj.remove("items") {
+                obj.insert("items".to_string(), sanitize_for_swagger2(items));
+            }
+            if let Some(props) = obj.remove("properties") {
+                if let Value::Object(map) = props {
+                    let rewritten: serde_json::Map<String, Value> = map
+                        .into_iter()
+                        .map(|(k, v)| (k, sanitize_for_swagger2(v)))
+                        .collect();
+                    obj.insert("properties".to_string(), Value::Object(rewritten));
+                }
+            }
+
+            if let Some(one_of) = obj.remove("oneOf") {
+                if let Value::Array(variants) = one_of {
+                    let sanitized: Vec<Value> = variants
+                        .into_iter()
+                        .map(sanitize_for_swagger2)
+                        .collect();
+                    obj.entry("type".to_string())
+                        .or_insert_with(|| Value::String("object".to_string()));
+                    obj.insert("x-oneOf".to_string(), Value::Array(sanitized));
+                }
+            }
+
+            if let Some(disc) = obj.remove("discriminator") {
+                if let Value::Object(map) = disc {
+                    if let Some(name) = map.get("propertyName").and_then(|v| v.as_str()) {
+                        obj.insert(
+                            "discriminator".to_string(),
+                            Value::String(name.to_string()),
+                        );
+                    }
+                }
+            }
+
+            Value::Object(obj)
+        }
+        Value::Array(items) => {
+            Value::Array(items.into_iter().map(sanitize_for_swagger2).collect())
+        }
+        other => other,
+    }
 }
 
 #[cfg(test)]

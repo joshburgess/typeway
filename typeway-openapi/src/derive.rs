@@ -304,6 +304,7 @@ fn convert_schemars_schema(value: &serde_json::Value) -> Schema {
         items,
         properties,
         description,
+        ..Default::default()
     }
 }
 
