@@ -18,7 +18,7 @@ help: the trait `IntoResponse` is not implemented for `NotAResponse`
             JsonError
             NegotiatedResponse<T, Formats>
             Result<T, E>
-            String
+            SseResponse<S>
           and $N others
 note: required by a bound in `__check_response`
  --> tests/handler/fail_bad_return.rs:5:1

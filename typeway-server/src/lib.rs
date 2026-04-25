@@ -35,6 +35,7 @@ pub mod secure_headers;
 pub mod router;
 pub mod server;
 pub mod serves;
+pub mod sse;
 #[cfg(feature = "tls")]
 pub mod tls;
 pub mod typed;
@@ -58,6 +59,7 @@ pub use negotiate::{
     RenderAsXml, TextFormat, XmlFormat,
 };
 pub use response::{IntoResponse, Json};
+pub use sse::{keep_alive, SseEvent, SseResponse};
 pub use router::{Router, RouterService};
 pub use secure_headers::SecureHeadersLayer;
 pub use effects::{EffectfulLayeredServer, EffectfulServer};
