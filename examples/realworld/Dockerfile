@@ -12,21 +12,21 @@ FROM rust:1.83-slim AS rust-build
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY ../../Cargo.toml ../../Cargo.lock ./
-COPY ../../wayward-core wayward-core/
-COPY ../../wayward-server wayward-server/
-COPY ../../wayward-client wayward-client/
-COPY ../../wayward-openapi wayward-openapi/
-COPY ../../wayward-macros wayward-macros/
-COPY ../../wayward wayward/
+COPY ../../typeway-core typeway-core/
+COPY ../../typeway-server typeway-server/
+COPY ../../typeway-client typeway-client/
+COPY ../../typeway-openapi typeway-openapi/
+COPY ../../typeway-macros typeway-macros/
+COPY ../../typeway typeway/
 COPY ../../spike spike/
 COPY ../../examples/realworld examples/realworld/
-RUN cargo build -p wayward-realworld --release
+RUN cargo build -p typeway-realworld --release
 
 # Stage 3: Runtime
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
-COPY --from=rust-build /app/target/release/wayward-realworld .
+COPY --from=rust-build /app/target/release/typeway-realworld .
 COPY --from=elm-build /app/frontend/public/ frontend/public/
 
 ENV FRONTEND_DIR=/app/frontend/public
@@ -37,4 +37,4 @@ ENV DATABASE_USER=postgres
 ENV DATABASE_PASSWORD=postgres
 
 EXPOSE 4000
-CMD ["./wayward-realworld"]
+CMD ["./typeway-realworld"]

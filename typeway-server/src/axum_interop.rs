@@ -56,7 +56,7 @@ impl<A: ApiSpec> From<Server<A>> for axum::Router {
 impl<A: ApiSpec> Server<A> {
     /// Embed an Axum [`Router`](axum::Router) as a fallback for unmatched routes.
     ///
-    /// Wayward routes are checked first. If no wayward route matches, the
+    /// Typeway routes are checked first. If no typeway route matches, the
     /// request is forwarded to the Axum router. This is the reverse of
     /// [`into_axum_router`](Server::into_axum_router).
     ///

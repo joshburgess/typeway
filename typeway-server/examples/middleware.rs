@@ -33,7 +33,7 @@ async fn slow() -> &'static str {
 async fn main() {
     let server = Server::<API>::new((bind::<_, _, _>(hello), bind::<_, _, _>(slow)));
 
-    println!("Wayward middleware example on http://127.0.0.1:3000");
+    println!("Typeway middleware example on http://127.0.0.1:3000");
     println!("  GET /hello - fast response");
     println!("  GET /slow  - 5s delay (will timeout after 2s)");
     println!();

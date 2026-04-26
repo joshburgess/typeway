@@ -7,7 +7,7 @@ use bytes::Bytes;
 use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt, Empty, Full, StreamBody};
 
-/// The response body type used by wayward handlers.
+/// The response body type used by typeway handlers.
 ///
 /// This is a type-erased body that can wrap buffered data (`Full<Bytes>`),
 /// streaming data, or an empty body. It implements `http_body::Body`.

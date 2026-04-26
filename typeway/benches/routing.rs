@@ -1,4 +1,4 @@
-//! Benchmarks for wayward routing, handler dispatch, and comparison with axum.
+//! Benchmarks for typeway routing, handler dispatch, and comparison with axum.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use http::Request;
@@ -7,7 +7,7 @@ use tower::ServiceExt;
 use typeway::prelude::*;
 
 // ---------------------------------------------------------------------------
-// Wayward setup
+// Typeway setup
 // ---------------------------------------------------------------------------
 
 typeway_path!(type HelloPath = "hello");
@@ -58,7 +58,7 @@ type Api10 = (
     GetEndpoint<P10, String>,
 );
 
-fn make_wayward_10() -> axum::Router {
+fn make_typeway_10() -> axum::Router {
     let server = Server::<Api10>::new((
         bind::<_, _, _>(noop),
         bind::<_, _, _>(noop),
@@ -156,13 +156,13 @@ fn bench_route_matching(c: &mut Criterion) {
         });
     });
 
-    // --- Wayward 10 routes (via axum adapter for fair comparison) ---
+    // --- Typeway 10 routes (via axum adapter for fair comparison) ---
 
-    let wayward10 = make_wayward_10();
+    let typeway10 = make_typeway_10();
 
-    group.bench_function("wayward/10_routes/first", |b| {
+    group.bench_function("typeway/10_routes/first", |b| {
         b.to_async(&rt).iter(|| {
-            let svc = wayward10.clone();
+            let svc = typeway10.clone();
             async move {
                 let resp = svc.oneshot(axum_get("/hello")).await.unwrap();
                 black_box(resp);
@@ -170,9 +170,9 @@ fn bench_route_matching(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("wayward/10_routes/last", |b| {
+    group.bench_function("typeway/10_routes/last", |b| {
         b.to_async(&rt).iter(|| {
-            let svc = wayward10.clone();
+            let svc = typeway10.clone();
             async move {
                 let resp = svc.oneshot(axum_get("/health")).await.unwrap();
                 black_box(resp);
@@ -180,9 +180,9 @@ fn bench_route_matching(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("wayward/10_routes/capture", |b| {
+    group.bench_function("typeway/10_routes/capture", |b| {
         b.to_async(&rt).iter(|| {
-            let svc = wayward10.clone();
+            let svc = typeway10.clone();
             async move {
                 let resp = svc.oneshot(axum_get("/users/42")).await.unwrap();
                 black_box(resp);
@@ -190,9 +190,9 @@ fn bench_route_matching(c: &mut Criterion) {
         });
     });
 
-    group.bench_function("wayward/10_routes/miss", |b| {
+    group.bench_function("typeway/10_routes/miss", |b| {
         b.to_async(&rt).iter(|| {
-            let svc = wayward10.clone();
+            let svc = typeway10.clone();
             async move {
                 let resp = svc.oneshot(axum_get("/nonexistent")).await.unwrap();
                 black_box(resp);

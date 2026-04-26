@@ -1,4 +1,4 @@
-//! Full CRUD API example using the wayward facade crate.
+//! Full CRUD API example using the typeway facade crate.
 //!
 //! Run: cargo run -p typeway --features full --example users_api
 //! Test: curl http://localhost:3000/users
@@ -110,7 +110,7 @@ async fn main() {
     ))
     .with_state(state);
 
-    println!("Wayward Users API running on http://0.0.0.0:3000");
+    println!("Typeway Users API running on http://0.0.0.0:3000");
     println!("  GET    /users      - list all users");
     println!("  GET    /users/:id  - get user by id");
     println!("  POST   /users      - create user");

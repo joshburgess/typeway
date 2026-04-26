@@ -10,7 +10,7 @@ typeway_path!(type HelloPath = "hello");
 type API = (GetEndpoint<HelloPath, String>,);
 
 async fn hello() -> &'static str {
-    "Hello from Wayward!"
+    "Hello from Typeway!"
 }
 
 #[tokio::main]

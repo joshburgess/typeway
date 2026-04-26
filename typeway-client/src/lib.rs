@@ -1,4 +1,4 @@
-//! `typeway-client` — type-safe HTTP client derived from Wayward API types.
+//! `typeway-client` — type-safe HTTP client derived from Typeway API types.
 //!
 //! The client calls endpoints using the same types as the server. If the
 //! server's API type changes, the client fails to compile until updated.

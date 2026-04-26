@@ -1,4 +1,4 @@
-//! Traits for deriving OpenAPI specs from Wayward API types.
+//! Traits for deriving OpenAPI specs from Typeway API types.
 //!
 //! [`EndpointToOperation`] converts a single endpoint to an OpenAPI operation.
 //! [`ApiToSpec`] converts an entire API type (tuple of endpoints) to a full spec.

@@ -126,7 +126,7 @@ fn collect_marker_defs(
 /// ```
 #[proc_macro]
 pub fn typeway_path(input: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(input as WaywardPathInput);
+    let input = syn::parse_macro_input!(input as TypewayPathInput);
     let name = &input.name;
     let vis = &input.vis;
     let mod_name = format_ident!("__wp_{}", name);
@@ -148,13 +148,13 @@ pub fn typeway_path(input: TokenStream) -> TokenStream {
     .into()
 }
 
-struct WaywardPathInput {
+struct TypewayPathInput {
     vis: syn::Visibility,
     name: Ident,
     segments: Vec<PathSegment>,
 }
 
-impl Parse for WaywardPathInput {
+impl Parse for TypewayPathInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let vis: syn::Visibility = input.parse()?;
         input.parse::<Token![type]>()?;
@@ -164,7 +164,7 @@ impl Parse for WaywardPathInput {
         if input.peek(Token![;]) {
             input.parse::<Token![;]>()?;
         }
-        Ok(WaywardPathInput {
+        Ok(TypewayPathInput {
             vis,
             name,
             segments,
@@ -196,7 +196,7 @@ impl Parse for WaywardPathInput {
 /// - Response type follows `=>`
 #[proc_macro]
 pub fn typeway_api(input: TokenStream) -> TokenStream {
-    let input = syn::parse_macro_input!(input as WaywardApiInput);
+    let input = syn::parse_macro_input!(input as TypewayApiInput);
     let name = &input.name;
     let vis = &input.vis;
     let mod_name = format_ident!("__wa_{}", name);
@@ -254,13 +254,13 @@ struct ApiRoute {
     response: Type,
 }
 
-struct WaywardApiInput {
+struct TypewayApiInput {
     vis: syn::Visibility,
     name: Ident,
     routes: Vec<ApiRoute>,
 }
 
-impl Parse for WaywardApiInput {
+impl Parse for TypewayApiInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let vis: syn::Visibility = input.parse()?;
         input.parse::<Token![type]>()?;
@@ -282,7 +282,7 @@ impl Parse for WaywardApiInput {
             input.parse::<Token![;]>()?;
         }
 
-        Ok(WaywardApiInput { vis, name, routes })
+        Ok(TypewayApiInput { vis, name, routes })
     }
 }
 
@@ -399,7 +399,7 @@ pub fn handler(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 
     let fn_name = &func.sig.ident;
-    let check_mod = format_ident!("__wayward_check_{}", fn_name);
+    let check_mod = format_ident!("__typeway_check_{}", fn_name);
 
     // Collect typed arguments (skip self).
     let typed_args: Vec<&syn::PatType> = func

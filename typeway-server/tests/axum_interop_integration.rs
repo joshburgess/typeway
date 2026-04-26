@@ -15,7 +15,7 @@ typeway_path!(type HelloPath = "hello");
 type API = (GetEndpoint<HelloPath, String>,);
 
 async fn hello() -> &'static str {
-    "Hello from Wayward!"
+    "Hello from Typeway!"
 }
 
 async fn start_mixed_server() -> u16 {
@@ -48,13 +48,13 @@ async fn axum_native_route_works() {
 }
 
 #[tokio::test]
-async fn wayward_nested_route_works() {
+async fn typeway_nested_route_works() {
     let port = start_mixed_server().await;
     let resp = reqwest::get(format!("http://127.0.0.1:{port}/api/hello"))
         .await
         .unwrap();
     assert_eq!(resp.status(), 200);
-    assert_eq!(resp.text().await.unwrap(), "Hello from Wayward!");
+    assert_eq!(resp.text().await.unwrap(), "Hello from Typeway!");
 }
 
 #[tokio::test]
@@ -66,9 +66,9 @@ async fn unknown_route_returns_404() {
     assert_eq!(resp.status(), 404);
 }
 
-// --- Reverse direction: Axum fallback inside wayward ---
+// --- Reverse direction: Axum fallback inside typeway ---
 
-async fn start_wayward_with_axum_fallback() -> u16 {
+async fn start_typeway_with_axum_fallback() -> u16 {
     let axum_routes = axum::Router::new()
         .route("/health", axum::routing::get(|| async { "ok from axum" }))
         .route("/info", axum::routing::get(|| async { "axum info" }));
@@ -98,18 +98,18 @@ async fn start_wayward_with_axum_fallback() -> u16 {
 }
 
 #[tokio::test]
-async fn wayward_route_with_axum_fallback() {
-    let port = start_wayward_with_axum_fallback().await;
+async fn typeway_route_with_axum_fallback() {
+    let port = start_typeway_with_axum_fallback().await;
     let resp = reqwest::get(format!("http://127.0.0.1:{port}/hello"))
         .await
         .unwrap();
     assert_eq!(resp.status(), 200);
-    assert_eq!(resp.text().await.unwrap(), "Hello from Wayward!");
+    assert_eq!(resp.text().await.unwrap(), "Hello from Typeway!");
 }
 
 #[tokio::test]
 async fn axum_fallback_route_works() {
-    let port = start_wayward_with_axum_fallback().await;
+    let port = start_typeway_with_axum_fallback().await;
     let resp = reqwest::get(format!("http://127.0.0.1:{port}/health"))
         .await
         .unwrap();
@@ -119,7 +119,7 @@ async fn axum_fallback_route_works() {
 
 #[tokio::test]
 async fn axum_fallback_second_route() {
-    let port = start_wayward_with_axum_fallback().await;
+    let port = start_typeway_with_axum_fallback().await;
     let resp = reqwest::get(format!("http://127.0.0.1:{port}/info"))
         .await
         .unwrap();

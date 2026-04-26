@@ -317,7 +317,7 @@ impl Router {
         self.inner.write().state_injector = Some(injector);
     }
 
-    /// Set a fallback service for requests that don't match any wayward route.
+    /// Set a fallback service for requests that don't match any typeway route.
     pub(crate) fn set_fallback(&self, fallback: FallbackService) {
         self.inner.write().fallback = Some(fallback);
     }

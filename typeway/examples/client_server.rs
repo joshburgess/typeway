@@ -17,7 +17,7 @@ type API = (GetEndpoint<HelloPath, String>, GetEndpoint<AddPath, String>);
 // Handlers return Json<T> (sets content-type), but the endpoint's Res is T
 // (what the client gets after JSON deserialization).
 async fn hello() -> Json<String> {
-    Json("Hello from Wayward!".to_string())
+    Json("Hello from Typeway!".to_string())
 }
 
 async fn add(path: Path<AddPath>) -> Json<String> {

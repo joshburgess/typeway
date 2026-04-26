@@ -384,7 +384,7 @@ impl<A: ApiSpec> Server<A> {
         router.set_fallback(fallback);
     }
 
-    /// Set a fallback Tower service for requests that don't match any wayward route.
+    /// Set a fallback Tower service for requests that don't match any typeway route.
     ///
     /// This enables embedding an Axum router (or any Tower service) inside
     /// a typeway server — the reverse of `into_axum_router()`.
