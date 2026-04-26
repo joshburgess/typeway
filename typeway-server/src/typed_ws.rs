@@ -15,11 +15,11 @@
 //! // Protocol: send greeting, receive name, send welcome, end.
 //! type Greet = Send<String, Recv<String, Send<String, End>>>;
 //!
-//! async fn greet_handler(ws: TypedWebSocket<Greet>) {
-//!     let ws = ws.send("Hello! What is your name?".to_string()).await.unwrap();
-//!     let (name, ws) = ws.recv().await.unwrap();
-//!     let ws = ws.send(format!("Welcome, {name}!")).await.unwrap();
-//!     ws.close().await.unwrap();
+//! async fn greet_handler(ws: TypedWebSocket<Greet>) -> Result<(), WebSocketError> {
+//!     let ws = ws.send("Hello! What is your name?".to_string()).await?;
+//!     let (name, ws) = ws.recv().await?;
+//!     let ws = ws.send(format!("Welcome, {name}!")).await?;
+//!     ws.close().await
 //! }
 //! ```
 

@@ -112,9 +112,9 @@ impl WebSocketUpgrade {
     ///
     /// async fn handler(upgrade: WebSocketUpgrade) -> http::Response<BoxBody> {
     ///     upgrade.on_upgrade_typed::<Greet, _, _>(|ws| async move {
-    ///         let ws = ws.send("hello".to_string()).await.unwrap();
-    ///         let (_reply, ws) = ws.recv().await.unwrap();
-    ///         ws.close().await.unwrap();
+    ///         let ws = ws.send("hello".to_string()).await?;
+    ///         let (_reply, ws) = ws.recv().await?;
+    ///         ws.close().await
     ///     })
     /// }
     /// ```

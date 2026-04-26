@@ -33,12 +33,12 @@ Session type primitives:
 ```rust
 use typeway_server::typed_ws::TypedWebSocket;
 
-async fn greet(ws: TypedWebSocket<GreetProtocol>) {
+async fn greet(ws: TypedWebSocket<GreetProtocol>) -> Result<(), WebSocketError> {
     // Each operation consumes `ws` and returns the channel in the next state.
-    let ws = ws.send("Hello! What is your name?".to_string()).await.unwrap();
-    let (name, ws) = ws.recv().await.unwrap();
-    let ws = ws.send(format!("Welcome, {name}!")).await.unwrap();
-    ws.close().await.unwrap();
+    let ws = ws.send("Hello! What is your name?".to_string()).await?;
+    let (name, ws) = ws.recv().await?;
+    let ws = ws.send(format!("Welcome, {name}!")).await?;
+    ws.close().await
 }
 ```
 
@@ -57,16 +57,16 @@ type ChatProtocol = Offer<
     Recv<u32, End>,       // right branch: server receives a number
 >;
 
-async fn chat(ws: TypedWebSocket<ChatProtocol>) {
-    match ws.offer().await.unwrap() {
+async fn chat(ws: TypedWebSocket<ChatProtocol>) -> Result<(), WebSocketError> {
+    match ws.offer().await? {
         Either::Left(ws) => {
-            let ws = ws.send("you chose left".to_string()).await.unwrap();
-            ws.close().await.unwrap();
+            let ws = ws.send("you chose left".to_string()).await?;
+            ws.close().await
         }
         Either::Right(ws) => {
-            let (number, ws) = ws.recv().await.unwrap();
+            let (number, ws) = ws.recv().await?;
             println!("received: {number}");
-            ws.close().await.unwrap();
+            ws.close().await
         }
     }
 }
@@ -80,11 +80,11 @@ Use `Rec` and `Var` for loops:
 // Echo server: receive a message, send it back, repeat forever.
 type EchoProtocol = Rec<Recv<String, Send<String, Var>>>;
 
-async fn echo(ws: TypedWebSocket<EchoProtocol>) {
+async fn echo(ws: TypedWebSocket<EchoProtocol>) -> Result<(), WebSocketError> {
     let mut ws = ws.enter(); // enter the Rec
     loop {
-        let (msg, next) = ws.recv().await.unwrap();
-        let next = next.send(msg).await.unwrap();
+        let (msg, next) = ws.recv().await?;
+        let next = next.send(msg).await?;
         ws = next.recurse(); // jump back to Rec
     }
 }
@@ -99,9 +99,9 @@ use typeway_server::ws::WebSocketUpgrade;
 
 async fn ws_endpoint(upgrade: WebSocketUpgrade) -> impl IntoResponse {
     upgrade.on_upgrade_typed::<GreetProtocol, _, _>(|ws| async move {
-        let ws = ws.send("hello".to_string()).await.unwrap();
-        let (reply, ws) = ws.recv().await.unwrap();
-        ws.close().await.unwrap();
+        let ws = ws.send("hello".to_string()).await?;
+        let (reply, ws) = ws.recv().await?;
+        ws.close().await
     })
 }
 ```

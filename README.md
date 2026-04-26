@@ -290,11 +290,11 @@ Write a handler that the compiler forces to follow the protocol:
 ```rust
 use typeway_server::typed_ws::TypedWebSocket;
 
-async fn greet_handler(ws: TypedWebSocket<GreetProtocol>) {
-    let ws = ws.send("Hello! What is your name?".into()).await.unwrap();
-    let (name, ws) = ws.recv().await.unwrap();
-    let ws = ws.send(format!("Welcome, {name}!")).await.unwrap();
-    ws.close().await.unwrap();
+async fn greet_handler(ws: TypedWebSocket<GreetProtocol>) -> Result<(), WebSocketError> {
+    let ws = ws.send("Hello! What is your name?".into()).await?;
+    let (name, ws) = ws.recv().await?;
+    let ws = ws.send(format!("Welcome, {name}!")).await?;
+    ws.close().await
 }
 ```
 
