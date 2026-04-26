@@ -51,7 +51,7 @@ pub use effects::{EffectfulLayeredServer, EffectfulServer};
 pub use error::JsonError;
 pub use extract::{
     Cookie, CookieJar, Extension, FromRequest, FromRequestParts, Header, NamedCookie, NamedHeader,
-    Path, PathSegments, Query, State,
+    Path, PathPrefixOffset, Query, State,
 };
 pub use handler::{into_boxed_handler, BoxedHandler, Handler, ResponseFuture};
 pub use handler_for::{bind, BindableEndpoint, BoundHandler};

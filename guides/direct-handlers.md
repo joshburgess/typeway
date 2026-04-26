@@ -1,8 +1,9 @@
 # Direct gRPC Handlers for Maximum Throughput
 
 typeway's default handler path (`Json<T>` or `Proto<T>`) shares handlers
-between REST and gRPC. This adds ~1-2 µs of dispatch overhead per request
-(content-type detection, extractor pipeline, HTTP parts construction).
+between REST and gRPC. This adds a few hundred nanoseconds of dispatch
+overhead per request (content-type detection, extractor pipeline, HTTP
+parts construction).
 
 For gRPC-only microservices where every microsecond matters, **direct
 handlers** bypass this pipeline entirely.

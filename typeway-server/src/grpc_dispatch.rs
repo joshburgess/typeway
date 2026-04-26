@@ -36,7 +36,6 @@ use typeway_grpc::status::{http_to_grpc_code, GrpcCode, GrpcStatus};
 use typeway_grpc::trailer_body::GrpcBody;
 
 use crate::body::{body_from_bytes, BoxBody};
-use crate::extract::PathSegments;
 use crate::handler::BoxedHandler;
 use crate::router::{Router, RouterService};
 
@@ -186,8 +185,8 @@ fn build_synthetic_request_raw(
     state_injector: Option<&StateInjector>,
 ) -> http::request::Parts {
     // Lightweight: reuse original parts directly, just inject state.
-    // No header cloning, no URI rebuilding, no path segment construction.
-    // Proto<T> doesn't need PathSegments — it extracts from the body.
+    // No header cloning, no URI rebuilding. Proto<T> extracts from the body,
+    // and Path<T> reads from `parts.uri.path()` directly with no offset.
     let mut parts = original_parts;
 
     // Inject state.
@@ -253,14 +252,9 @@ fn build_synthetic_request(
     // Copy extensions from original request.
     parts.extensions = original_parts.extensions.clone();
 
-    // Build PathSegments for the Path<T> extractor.
-    let path_str = parts.uri.path().to_string();
-    let segments: Vec<String> = path_str
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect();
-    parts.extensions.insert(PathSegments(Arc::new(segments)));
+    // The synthetic request's URI carries the gRPC `/package.Service/Method`
+    // path. `Path<T>` reads `parts.uri.path()` directly with no offset, so
+    // there's nothing additional to inject here.
 
     // Inject state if available.
     if let Some(injector) = state_injector {

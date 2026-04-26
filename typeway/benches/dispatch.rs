@@ -9,15 +9,12 @@
 //! Each benchmark compares against a "bare" baseline — a direct async fn call
 //! with no framework overhead.
 
-use std::sync::Arc;
-
 use bytes::Bytes;
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 #[allow(unused_imports)]
 use typeway_core::*;
 use typeway_macros::*;
-use typeway_server::extract::PathSegments;
 use typeway_server::handler::WithBody;
 use typeway_server::*;
 
@@ -71,20 +68,14 @@ async fn bare_json_body(body: Json<CreateBody>) -> String {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Build mock request Parts with path segments and state in extensions.
+/// Build mock request Parts with optional state in extensions. `Path<T>`
+/// reads `parts.uri.path()` on demand, so no path-segments setup is needed.
 fn mock_parts(path: &str, state: Option<AppState>) -> http::request::Parts {
     let (mut parts, _) = http::Request::builder()
         .uri(path)
         .body(())
         .unwrap()
         .into_parts();
-
-    let segments: Vec<String> = path
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect();
-    parts.extensions.insert(PathSegments(Arc::new(segments)));
 
     if let Some(s) = state {
         parts.extensions.insert(s);

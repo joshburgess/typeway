@@ -630,44 +630,46 @@ Type-level frameworks invite skepticism about runtime cost. Typeway's type erasu
 
 ### Dispatch Overhead
 
-Typeway stores handlers as type-erased closures (`Box<dyn Fn(Parts, Bytes) -> Pin<Box<dyn Future>>>`). This is the cost of putting heterogeneous handlers in a single router. Here's what that costs:
+Typeway stores handlers as type-erased closures (`Box<dyn Fn(Parts, Bytes) -> Pin<Box<dyn Future>>>`). This is the cost of putting heterogeneous handlers in a single router. Numbers below are from the in-tree `dispatch` benchmark on an Apple Silicon laptop. Absolute values vary with hardware, but ratios and ordering are stable.
 
 | Benchmark | Time | What it measures |
 |-----------|------|------------------|
-| Direct async fn (no framework) | 0.79 ns | Baseline, raw function call |
-| BoxedHandler dispatch | 878 ns | Two heap allocs (closure box + future box) + virtual call |
-| + Path extractor | +290 ns | `FromStr::parse` + `Extensions::get` |
-| + State extractor | +310 ns | `Extensions::get` + `Clone` |
-| + Path + State together | +610 ns | Multiple extractors compose linearly |
-| + JSON body parse (16 B) | +230 ns | `serde_json::from_slice` on pre-collected bytes |
-| Bytes::clone (any size) | 14 ns | O(1), reference counted, no copy |
+| Direct async fn (no framework) | ~2 ns | Baseline, raw function call |
+| BoxedHandler dispatch | ~160 ns | Two heap allocs (closure box + future box) + virtual call |
+| + Path extractor | +70 ns | `FromStr::parse` + on-demand path split (no allocation) |
+| + State extractor | +105 ns | `Extensions::get` + `Clone` |
+| + Path + State together | +165 ns | Multiple extractors compose linearly |
+| + JSON body parse (16 B) | +70 ns | `serde_json::from_slice` on pre-collected bytes |
+| Bytes::clone (any size) | ~4 ns | O(1), reference counted, no copy |
 
-The **878 ns dispatch floor** is the framework's fixed cost per request. Everything else, extractors, serialization, your handler logic, adds on top linearly.
+The **~160 ns dispatch floor** is the framework's fixed cost per request. Everything else (extractors, serialization, your handler logic) adds on top linearly.
 
 ### What This Means in Practice
 
-A typical JSON API handler that queries a database and returns a response takes **1–100 ms**. The 878 ns dispatch overhead is **0.001–0.09%** of that. You cannot measure it in production.
+A typical JSON API handler that queries a database and returns a response takes **1-100 ms**. The ~160 ns dispatch overhead is **<0.001-0.016%** of that. You cannot measure it in production.
 
-The extractor costs (~300 ns each) are dominated by `TypeId`-keyed hashmap lookups in `http::Extensions`. These are the same lookups Axum performs, typeway doesn't add extra indirection beyond what any extractor-based framework does.
+The extractor costs are dominated by `TypeId`-keyed lookups in `http::Extensions` and (for `State`) a `Clone`. `Path<T>` reads the URI path directly and splits it into a stack-resident `SmallVec`, so it allocates nothing.
 
-Body bytes are reference-counted (`Bytes`), so passing the pre-collected body to handlers costs 14 ns regardless of payload size. There is no copy.
+Body bytes are reference-counted (`Bytes`), so passing the pre-collected body to handlers costs ~4 ns regardless of payload size. There is no copy.
 
 ### Where Typeway Is Slower Than Axum
 
-Typeway's router uses a linear scan with method indexing and first-segment prefix rejection. Axum uses a radix trie (`matchit`). For 10 routes, typeway is ~30% slower at route matching:
+Typeway dispatches through a per-method radix trie (`matchit`, the same crate axum uses) with a linear fallback for patterns that conflict structurally. For 10 routes, typeway is roughly 12-17% slower than axum on hits:
 
 | Scenario (10 routes) | Axum | Typeway | Ratio |
 |----------------------|------|---------|-------|
-| First route match | 1.41 µs | 1.90 µs | 1.35x |
-| Last route match | 1.43 µs | 1.93 µs | 1.35x |
-| Path with captures | 1.66 µs | 2.12 µs | 1.28x |
-| No match (404) | 0.98 µs | 1.50 µs | 1.53x |
+| First route match | 454 ns | 531 ns | 1.17x |
+| Last route match | 452 ns | 531 ns | 1.17x |
+| Path with captures | 512 ns | 572 ns | 1.12x |
+| No match (404) | 317 ns | 463 ns | 1.46x |
 
-This gap comes from two sources: (1) linear scan vs trie for route matching, and (2) the Axum adapter layer in the benchmark adds body type conversion overhead. For APIs with fewer than ~100 routes, the linear scan is fast enough that the difference is invisible in end-to-end latency. The method index ensures that only routes with the matching HTTP method are checked, so a 50-route API with 10 GETs and 40 POSTs only scans 10 entries for a GET request.
+(Numbers from `cargo bench --bench routing -p typeway --features "server,axum-interop"` on the same machine. Rerun locally to compare on your hardware.)
+
+The remaining gap comes mostly from typeway's `RwLock`-guarded router (so config can be added after the router is shared) and from the per-route `match_fn` step that validates typed captures (e.g. confirming that `{}` parses as `u32`, which the trie alone can't check). Axum's matcher doesn't do typed validation, that work moves into the handler. For typical APIs the difference is invisible in end-to-end latency.
 
 ### The Trade-Off
 
-Typeway trades ~1 µs of dispatch overhead for compile-time guarantees that eliminate entire categories of runtime bugs: missing handlers, mismatched types between server and client, drifted OpenAPI specs. For any API where correctness matters more than shaving microseconds off an already-sub-millisecond overhead, this is a good trade.
+Typeway trades a few hundred nanoseconds of dispatch overhead for compile-time guarantees that eliminate entire categories of runtime bugs: missing handlers, mismatched types between server and client, drifted OpenAPI specs. For any API where correctness matters more than shaving nanoseconds off an already-sub-millisecond overhead, this is a good trade.
 
 ## Comparison
 

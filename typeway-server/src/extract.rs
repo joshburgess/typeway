@@ -5,8 +5,6 @@
 //! metadata like path captures, headers, query strings) or [`FromRequest`]
 //! (for the request body).
 
-use std::sync::Arc;
-
 use bytes::Bytes;
 use http::request::Parts;
 use http::StatusCode;
@@ -62,8 +60,10 @@ pub trait FromRequest: Sized + Send {
 
 /// Extracts typed path captures from the URL.
 ///
-/// The path segments are stored in request extensions by the router
-/// before the handler is called.
+/// The extractor reads `parts.uri.path()` directly and splits it on demand,
+/// so there's no per-request `Vec<String>` allocation. When the router has
+/// a configured prefix, the byte length of that prefix is stored in
+/// extensions as [`PathPrefixOffset`] so this extractor can skip past it.
 ///
 /// # Example
 ///
@@ -74,9 +74,13 @@ pub trait FromRequest: Sized + Send {
 /// ```
 pub struct Path<P: PathSpec>(pub P::Captures);
 
-/// Raw path segments stored in request extensions by the router.
-#[derive(Clone)]
-pub struct PathSegments(pub Arc<Vec<String>>);
+/// Byte offset into `parts.uri.path()` where the post-prefix path begins.
+///
+/// Inserted into request extensions by the router only when a prefix is
+/// configured. Absent (treated as `0`) for the no-prefix case so we don't
+/// touch the extensions map on the hot path.
+#[derive(Copy, Clone)]
+pub struct PathPrefixOffset(pub usize);
 
 impl<P> FromRequestParts for Path<P>
 where
@@ -86,15 +90,19 @@ where
     type Error = (StatusCode, String);
 
     fn from_request_parts(parts: &Parts) -> Result<Self, Self::Error> {
-        let segments = parts.extensions.get::<PathSegments>().ok_or_else(|| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "missing path segments in request extensions".to_string(),
-            )
-        })?;
-
-        let seg_refs: Vec<&str> = segments.0.iter().map(|s| s.as_str()).collect();
-        P::extract(&seg_refs).map(Path).ok_or_else(|| {
+        let full_path = parts.uri.path();
+        let offset = parts
+            .extensions
+            .get::<PathPrefixOffset>()
+            .map_or(0, |o| o.0);
+        let path = if offset <= full_path.len() {
+            &full_path[offset..]
+        } else {
+            ""
+        };
+        let segs: smallvec::SmallVec<[&str; 8]> =
+            path.split('/').filter(|s| !s.is_empty()).collect();
+        P::extract(&segs).map(Path).ok_or_else(|| {
             (
                 StatusCode::BAD_REQUEST,
                 format!(

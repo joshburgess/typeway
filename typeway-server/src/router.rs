@@ -1,9 +1,12 @@
 //! The runtime [`Router`] that matches incoming requests to handlers.
 //!
-//! The router performs a linear scan over registered routes, matching by
-//! HTTP method and path pattern. For typical API sizes (<100 routes),
-//! this is faster than a trie or hash map.
+//! Routes are dispatched via a per-method radix trie (`matchit`). Patterns
+//! that conflict with already-registered routes fall back to a linear scan
+//! within their method bucket, so registration never fails silently. The
+//! `match_fn` produced by `typeway_path!` runs on the candidate route as a
+//! type-validation step (e.g. confirming `{}` parses as `u32`).
 
+use std::collections::HashSet;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -11,7 +14,7 @@ use std::sync::Arc;
 use http::StatusCode;
 
 use crate::body::{body_from_string, BoxBody};
-use crate::extract::PathSegments;
+use crate::extract::PathPrefixOffset;
 use crate::handler::BoxedHandler;
 
 pub(crate) type MatchFn = Box<dyn Fn(&[&str]) -> bool + Send + Sync>;
@@ -29,48 +32,72 @@ pub const DEFAULT_MAX_BODY_SIZE: usize = 2 * 1024 * 1024;
 
 /// A runtime HTTP router.
 ///
-/// Routes are stored in a flat list but indexed by HTTP method for fast
-/// dispatch. For typical API sizes (<100 routes), this linear scan with
-/// method pre-filtering is faster than a trie.
+/// Routes are dispatched through a per-method radix trie (`matchit`). The
+/// trie matches on the request path; a per-route `match_fn` then validates
+/// typed captures (e.g. that `{}` parses as `u32`). Patterns that conflict
+/// in the trie fall back to a linear scan within the same method bucket,
+/// so registration never silently drops a route.
 pub struct Router {
     /// All mutable state behind RwLock so the router can be configured
     /// after Arc is shared (e.g., when LayeredServer wraps it).
-    inner: std::sync::RwLock<RouterInner>,
+    inner: parking_lot::RwLock<RouterInner>,
 }
 
 struct RouterInner {
     routes: Vec<RouteEntry>,
     method_index: MethodIndex,
+    /// Unified path-shape trie across all methods. Used to short-circuit
+    /// 404 detection without walking each method bucket.
+    any_method_trie: matchit::Router<()>,
+    /// Patterns already mirrored into `any_method_trie`; needed because
+    /// matchit rejects duplicate inserts (same pattern from another method)
+    /// the same way it rejects real structural conflicts.
+    any_method_seen: HashSet<String>,
+    /// Set when a pattern conflicted with `any_method_trie` (different shape
+    /// collapsing onto an existing entry). When true, miss detection falls
+    /// back to the per-bucket walk so we don't false-negative.
+    any_method_has_fallback: bool,
     state_injector: Option<StateInjector>,
     fallback: Option<FallbackService>,
     max_body_size: usize,
     prefix: Option<Vec<String>>,
+    /// Cached `"/seg1/seg2"` form of `prefix`, for byte-level path stripping.
+    prefix_str: Option<String>,
 }
 
 struct RouteEntry {
-    #[allow(dead_code)]
+    // method/pattern are only read by `find_handler_by_pattern` (gRPC feature).
+    #[cfg_attr(not(feature = "grpc"), allow(dead_code))]
+    method: http::Method,
+    #[cfg_attr(not(feature = "grpc"), allow(dead_code))]
     pattern: String,
-    /// Optional first literal segment for fast prefix rejection.
-    first_segment: Option<String>,
     match_fn: MatchFn,
     handler: BoxedHandler,
 }
 
-/// Pre-computed index: for each HTTP method, the indices into `routes`.
+/// Per-method radix tries plus a linear fallback for patterns matchit rejects.
 #[derive(Default)]
 struct MethodIndex {
-    get: Vec<usize>,
-    post: Vec<usize>,
-    put: Vec<usize>,
-    delete: Vec<usize>,
-    patch: Vec<usize>,
-    head: Vec<usize>,
-    options: Vec<usize>,
-    other: Vec<usize>,
+    get: MethodBucket,
+    post: MethodBucket,
+    put: MethodBucket,
+    delete: MethodBucket,
+    patch: MethodBucket,
+    head: MethodBucket,
+    options: MethodBucket,
+    other: MethodBucket,
+}
+
+#[derive(Default)]
+struct MethodBucket {
+    /// Radix trie of patterns -> route index. Most routes live here.
+    trie: matchit::Router<usize>,
+    /// Routes whose patterns conflicted with the trie (linear fallback).
+    fallback: Vec<usize>,
 }
 
 impl MethodIndex {
-    fn get_indices(&self, method: &http::Method) -> &[usize] {
+    fn bucket(&self, method: &http::Method) -> &MethodBucket {
         match *method {
             http::Method::GET => &self.get,
             http::Method::POST => &self.post,
@@ -83,44 +110,137 @@ impl MethodIndex {
         }
     }
 
-    fn get_all_indices(&self) -> impl Iterator<Item = usize> + '_ {
-        self.get
-            .iter()
-            .chain(&self.post)
-            .chain(&self.put)
-            .chain(&self.delete)
-            .chain(&self.patch)
-            .chain(&self.head)
-            .chain(&self.options)
-            .chain(&self.other)
-            .copied()
-    }
-
-    fn push(&mut self, method: &http::Method, idx: usize) {
+    fn bucket_mut(&mut self, method: &http::Method) -> &mut MethodBucket {
         match *method {
-            http::Method::GET => self.get.push(idx),
-            http::Method::POST => self.post.push(idx),
-            http::Method::PUT => self.put.push(idx),
-            http::Method::DELETE => self.delete.push(idx),
-            http::Method::PATCH => self.patch.push(idx),
-            http::Method::HEAD => self.head.push(idx),
-            http::Method::OPTIONS => self.options.push(idx),
-            _ => self.other.push(idx),
+            http::Method::GET => &mut self.get,
+            http::Method::POST => &mut self.post,
+            http::Method::PUT => &mut self.put,
+            http::Method::DELETE => &mut self.delete,
+            http::Method::PATCH => &mut self.patch,
+            http::Method::HEAD => &mut self.head,
+            http::Method::OPTIONS => &mut self.options,
+            _ => &mut self.other,
         }
     }
+
+    fn all_buckets(&self) -> [&MethodBucket; 8] {
+        [
+            &self.get,
+            &self.post,
+            &self.put,
+            &self.delete,
+            &self.patch,
+            &self.head,
+            &self.options,
+            &self.other,
+        ]
+    }
+}
+
+/// Convert a typeway pattern (`/users/{}/posts/{*rest}`) into the matchit
+/// pattern syntax (`/users/{p0}/posts/{*rest}`). matchit requires every
+/// capture to have a unique name; typeway emits empty `{}` for typed
+/// captures and `{*name}` for catch-alls.
+fn to_matchit_pattern(pat: &str) -> String {
+    let bytes = pat.as_bytes();
+    let mut out = String::with_capacity(pat.len() + 8);
+    let mut counter: u32 = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'{' {
+            let close = bytes[i + 1..].iter().position(|&b| b == b'}');
+            match close {
+                Some(rel_end) => {
+                    let inner = &pat[i + 1..i + 1 + rel_end];
+                    if inner.is_empty() {
+                        out.push_str(&format!("{{p{counter}}}"));
+                        counter += 1;
+                    } else {
+                        out.push('{');
+                        out.push_str(inner);
+                        out.push('}');
+                    }
+                    i += 2 + rel_end;
+                }
+                None => {
+                    out.push_str(&pat[i..]);
+                    break;
+                }
+            }
+        } else {
+            out.push(bytes[i] as char);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Strip the configured prefix off the request path, returning the
+/// post-prefix path (always starts with `/`) or `None` if the path
+/// doesn't fall under the prefix.
+fn strip_prefix<'a>(prefix_str: Option<&str>, path: &'a str) -> Option<&'a str> {
+    match prefix_str {
+        Some(prefix) => match path.strip_prefix(prefix) {
+            Some("") => Some("/"),
+            Some(rest) if rest.starts_with('/') => Some(rest),
+            _ => None,
+        },
+        None => Some(if path.is_empty() { "/" } else { path }),
+    }
+}
+
+/// Find the matching route index for a given path within a method bucket.
+/// Tries the trie first, then falls back to a linear scan over conflicts.
+fn lookup_in_bucket(
+    bucket: &MethodBucket,
+    routes: &[RouteEntry],
+    lookup_path: &str,
+    segments: &[&str],
+) -> Option<usize> {
+    if let Ok(m) = bucket.trie.at(lookup_path) {
+        let idx = *m.value;
+        if (routes[idx].match_fn)(segments) {
+            return Some(idx);
+        }
+    }
+    bucket
+        .fallback
+        .iter()
+        .copied()
+        .find(|&i| (routes[i].match_fn)(segments))
+}
+
+fn not_found_response() -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
+    Box::pin(async move {
+        let mut res = http::Response::new(body_from_string("Not Found".to_string()));
+        *res.status_mut() = StatusCode::NOT_FOUND;
+        res
+    })
+}
+
+fn method_not_allowed_response() -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
+    Box::pin(async move {
+        let mut res = http::Response::new(body_from_string("Method Not Allowed".to_string()));
+        *res.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
+        res
+    })
 }
 
 impl Router {
     /// Create an empty router.
     pub fn new() -> Self {
         Router {
-            inner: std::sync::RwLock::new(RouterInner {
+            inner: parking_lot::RwLock::new(RouterInner {
                 routes: Vec::new(),
                 method_index: MethodIndex::default(),
+                any_method_trie: matchit::Router::new(),
+                any_method_seen: HashSet::new(),
+                any_method_has_fallback: false,
                 state_injector: None,
                 fallback: None,
                 max_body_size: DEFAULT_MAX_BODY_SIZE,
                 prefix: None,
+                prefix_str: None,
             }),
         }
     }
@@ -132,14 +252,22 @@ impl Router {
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .collect();
-        if !segments.is_empty() {
-            self.inner.write().unwrap().prefix = Some(segments);
+        if segments.is_empty() {
+            return;
         }
+        let mut joined = String::with_capacity(segments.iter().map(|s| s.len() + 1).sum());
+        for seg in &segments {
+            joined.push('/');
+            joined.push_str(seg);
+        }
+        let mut inner = self.inner.write();
+        inner.prefix = Some(segments);
+        inner.prefix_str = Some(joined);
     }
 
     /// Set the maximum request body size in bytes.
     pub(crate) fn set_max_body_size(&self, max: usize) {
-        self.inner.write().unwrap().max_body_size = max;
+        self.inner.write().max_body_size = max;
     }
 
     /// Register a route with a method, pattern, match function, and handler.
@@ -150,17 +278,32 @@ impl Router {
         match_fn: MatchFn,
         handler: BoxedHandler,
     ) {
-        let first_segment = pattern
-            .split('/')
-            .find(|s| !s.is_empty() && !s.starts_with('{'))
-            .map(|s| s.to_string());
-
-        let mut inner = self.inner.write().unwrap();
+        let mut inner = self.inner.write();
         let idx = inner.routes.len();
-        inner.method_index.push(&method, idx);
+
+        let matchit_pattern = to_matchit_pattern(&pattern);
+        let bucket = inner.method_index.bucket_mut(&method);
+        if bucket.trie.insert(matchit_pattern.clone(), idx).is_err() {
+            // Pattern conflicts with an already-registered one (e.g. two routes
+            // collapse to the same matchit shape). Keep it in the linear
+            // fallback so registration never silently drops a route.
+            bucket.fallback.push(idx);
+        }
+
+        // Mirror the pattern into the unified path-existence trie. We only
+        // attempt the insert if we haven't seen this exact pattern before,
+        // since matchit can't distinguish "duplicate" from "conflict".
+        if inner.any_method_seen.insert(matchit_pattern.clone())
+            && inner.any_method_trie.insert(matchit_pattern, ()).is_err()
+        {
+            // Genuine structural conflict — fall back to the per-bucket
+            // walk for miss detection so we don't false-negative.
+            inner.any_method_has_fallback = true;
+        }
+
         inner.routes.push(RouteEntry {
+            method,
             pattern,
-            first_segment,
             match_fn,
             handler,
         });
@@ -171,12 +314,12 @@ impl Router {
         &self,
         injector: Arc<dyn Fn(&mut http::Extensions) + Send + Sync>,
     ) {
-        self.inner.write().unwrap().state_injector = Some(injector);
+        self.inner.write().state_injector = Some(injector);
     }
 
     /// Set a fallback service for requests that don't match any wayward route.
     pub(crate) fn set_fallback(&self, fallback: FallbackService) {
-        self.inner.write().unwrap().fallback = Some(fallback);
+        self.inner.write().fallback = Some(fallback);
     }
 
     /// Look up a handler by HTTP method and route pattern string.
@@ -192,20 +335,18 @@ impl Router {
         method: &http::Method,
         pattern: &str,
     ) -> Option<BoxedHandler> {
-        let inner = self.inner.read().unwrap();
-        let indices = inner.method_index.get_indices(method);
-        for &i in indices {
-            if inner.routes[i].pattern == pattern {
-                return Some(inner.routes[i].handler.clone());
-            }
-        }
-        None
+        let inner = self.inner.read();
+        inner
+            .routes
+            .iter()
+            .find(|e| e.method == *method && e.pattern == pattern)
+            .map(|e| e.handler.clone())
     }
 
     /// Get a clone of the state injector, if one is set.
     #[cfg(feature = "grpc")]
     pub(crate) fn state_injector(&self) -> Option<StateInjector> {
-        self.inner.read().unwrap().state_injector.clone()
+        self.inner.read().state_injector.clone()
     }
 
     /// Route a request to the appropriate handler.
@@ -217,100 +358,84 @@ impl Router {
         self: &Arc<Self>,
         req: http::Request<hyper::body::Incoming>,
     ) -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
-        let inner = self.inner.read().unwrap();
-        let path = req.uri().path().to_string();
-        let all_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        let inner = self.inner.read();
 
-        // Strip prefix if configured.
-        let segments: &[&str] = if let Some(ref prefix) = inner.prefix {
-            if all_segments.len() >= prefix.len()
-                && all_segments[..prefix.len()]
-                    .iter()
-                    .zip(prefix.iter())
-                    .all(|(a, b)| *a == b.as_str())
-            {
-                &all_segments[prefix.len()..]
-            } else {
-                // Prefix doesn't match — fall through to 404/fallback.
+        // Consume req into parts up front so we can borrow path from parts.uri
+        // without conflicting with the later move into the handler. If we hit
+        // a fallback path we reassemble the request below.
+        let (mut parts, body) = req.into_parts();
+
+        let path: &str = parts.uri.path();
+        let lookup_path = match strip_prefix(inner.prefix_str.as_deref(), path) {
+            Some(p) => p,
+            None => {
+                // Path doesn't fall under the configured prefix.
                 return if let Some(ref fallback) = inner.fallback {
-                    fallback(req)
+                    fallback(http::Request::from_parts(parts, body))
                 } else {
-                    Box::pin(async move {
-                        let mut res =
-                            http::Response::new(body_from_string("Not Found".to_string()));
-                        *res.status_mut() = StatusCode::NOT_FOUND;
-                        res
-                    })
+                    not_found_response()
                 };
             }
-        } else {
-            &all_segments
         };
-        let first_seg = segments.first().copied();
 
-        let method = req.method();
+        let segments: smallvec::SmallVec<[&str; 8]> =
+            lookup_path.split('/').filter(|s| !s.is_empty()).collect();
 
-        // Fast path: check only routes with matching method.
-        let method_indices = inner.method_index.get_indices(method);
-        for &i in method_indices {
-            let entry = &inner.routes[i];
-            // Fast prefix rejection: if the route starts with a literal segment
-            // and it doesn't match the request's first segment, skip.
-            if let Some(ref first) = entry.first_segment {
-                if first_seg != Some(first.as_str()) {
-                    continue;
-                }
+        // Method-bucket trie lookup, then linear fallback for trie conflicts.
+        let bucket = inner.method_index.bucket(&parts.method);
+        if let Some(i) = lookup_in_bucket(bucket, &inner.routes, lookup_path, &segments) {
+            drop(segments);
+            // Tell `Path<T>` how many bytes of the URI path are prefix.
+            // Skipped when there's no prefix to keep the common path allocation-free.
+            if let Some(ref prefix_str) = inner.prefix_str {
+                parts
+                    .extensions
+                    .insert(PathPrefixOffset(prefix_str.len()));
             }
-            if (entry.match_fn)(segments) {
-                let (mut parts, body) = req.into_parts();
 
-                parts.extensions.insert(PathSegments(Arc::new(
-                    segments.iter().map(|s| s.to_string()).collect(),
-                )));
-
-                if let Some(ref injector) = inner.state_injector {
-                    injector(&mut parts.extensions);
-                }
-
-                let router = self.clone();
-                let max_body = inner.max_body_size;
-                drop(inner); // Release read lock before async
-                return Box::pin(async move {
-                    let body_bytes = match collect_body_limited(body, max_body).await {
-                        Ok(bytes) => bytes,
-                        Err(resp) => return resp,
-                    };
-                    // Re-acquire lock, call handler, drop lock before awaiting the future.
-                    let fut = {
-                        let inner = router.inner.read().unwrap();
-                        (inner.routes[i].handler)(parts, body_bytes)
-                    };
-                    fut.await
-                });
+            if let Some(ref injector) = inner.state_injector {
+                injector(&mut parts.extensions);
             }
+
+            let router = self.clone();
+            let max_body = inner.max_body_size;
+            drop(inner);
+            return Box::pin(async move {
+                let body_bytes = match collect_body_limited(body, max_body).await {
+                    Ok(bytes) => bytes,
+                    Err(resp) => return resp,
+                };
+                let fut = {
+                    let inner = router.inner.read();
+                    (inner.routes[i].handler)(parts, body_bytes)
+                };
+                fut.await
+            });
         }
 
-        // No method match — check if any route matches the path (for 405 vs 404).
-        let path_matched = inner
-            .method_index
-            .get_all_indices()
-            .any(|i| (inner.routes[i].match_fn)(segments));
+        // Method bucket missed. Determine whether this is a 404 or a 405.
+        //
+        // Fast path: if no pattern in any method matches the path *shape*,
+        // it's definitely a 404. The unified `any_method_trie` lets us check
+        // this in one trie lookup. When a structural conflict was recorded
+        // at registration, the unified trie may have a false negative, so we
+        // skip the optimization in that case.
+        let any_path_shape =
+            inner.any_method_has_fallback || inner.any_method_trie.at(lookup_path).is_ok();
+        let path_matched = any_path_shape
+            && inner
+                .method_index
+                .all_buckets()
+                .iter()
+                .any(|b| lookup_in_bucket(b, &inner.routes, lookup_path, &segments).is_some());
+        drop(segments);
 
         if path_matched {
-            Box::pin(async move {
-                let mut res =
-                    http::Response::new(body_from_string("Method Not Allowed".to_string()));
-                *res.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
-                res
-            })
+            method_not_allowed_response()
         } else if let Some(ref fallback) = inner.fallback {
-            fallback(req)
+            fallback(http::Request::from_parts(parts, body))
         } else {
-            Box::pin(async move {
-                let mut res = http::Response::new(body_from_string("Not Found".to_string()));
-                *res.status_mut() = StatusCode::NOT_FOUND;
-                res
-            })
+            not_found_response()
         }
     }
 
@@ -324,73 +449,48 @@ impl Router {
         mut parts: http::request::Parts,
         body_bytes: bytes::Bytes,
     ) -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
-        let inner = self.inner.read().unwrap();
-        let path = parts.uri.path().to_string();
-        let all_segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        let inner = self.inner.read();
 
-        let segments: Vec<&str> = if let Some(ref prefix) = inner.prefix {
-            if all_segments.len() >= prefix.len()
-                && all_segments[..prefix.len()]
-                    .iter()
-                    .zip(prefix.iter())
-                    .all(|(a, b)| *a == b.as_str())
-            {
-                all_segments[prefix.len()..].to_vec()
-            } else {
-                return Box::pin(async move {
-                    let mut res = http::Response::new(body_from_string("Not Found".to_string()));
-                    *res.status_mut() = StatusCode::NOT_FOUND;
-                    res
-                });
-            }
-        } else {
-            all_segments
+        let path: &str = parts.uri.path();
+        let lookup_path = match strip_prefix(inner.prefix_str.as_deref(), path) {
+            Some(p) => p,
+            None => return not_found_response(),
         };
-        let first_seg = segments.first().copied();
 
-        let method = &parts.method;
-        let method_indices = inner.method_index.get_indices(method);
+        let segments: smallvec::SmallVec<[&str; 8]> =
+            lookup_path.split('/').filter(|s| !s.is_empty()).collect();
 
-        for &i in method_indices {
-            let entry = &inner.routes[i];
-            if let Some(ref first) = entry.first_segment {
-                if first_seg != Some(first.as_str()) {
-                    continue;
-                }
+        let bucket = inner.method_index.bucket(&parts.method);
+        if let Some(i) = lookup_in_bucket(bucket, &inner.routes, lookup_path, &segments) {
+            drop(segments);
+            if let Some(ref prefix_str) = inner.prefix_str {
+                parts
+                    .extensions
+                    .insert(PathPrefixOffset(prefix_str.len()));
             }
-            if (entry.match_fn)(&segments) {
-                parts.extensions.insert(PathSegments(Arc::new(
-                    segments.iter().map(|s| s.to_string()).collect(),
-                )));
 
-                if let Some(ref injector) = inner.state_injector {
-                    injector(&mut parts.extensions);
-                }
-
-                let fut = (entry.handler)(parts, body_bytes);
-                drop(inner);
-                return fut;
+            if let Some(ref injector) = inner.state_injector {
+                injector(&mut parts.extensions);
             }
+
+            let fut = (inner.routes[i].handler)(parts, body_bytes);
+            drop(inner);
+            return fut;
         }
 
-        let path_matched = inner
-            .method_index
-            .get_all_indices()
-            .any(|i| (inner.routes[i].match_fn)(&segments));
+        let any_path_shape =
+            inner.any_method_has_fallback || inner.any_method_trie.at(lookup_path).is_ok();
+        let path_matched = any_path_shape
+            && inner
+                .method_index
+                .all_buckets()
+                .iter()
+                .any(|b| lookup_in_bucket(b, &inner.routes, lookup_path, &segments).is_some());
 
         if path_matched {
-            Box::pin(async move {
-                let mut res =
-                    http::Response::new(body_from_string("Method Not Allowed".to_string()));
-                *res.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
-                res
-            })
+            method_not_allowed_response()
         } else {
-            Box::pin(async move {
-                let mut res = http::Response::new(body_from_string("Not Found".to_string()));
-                *res.status_mut() = StatusCode::NOT_FOUND;
-                res
-            })
+            not_found_response()
         }
     }
 }
