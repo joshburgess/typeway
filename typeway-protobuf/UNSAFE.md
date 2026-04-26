@@ -6,7 +6,7 @@ relied upon and why the usage is sound.
 
 ## typeway-protobuf/src/codec.rs
 
-### 1. `tw_encode_varint` — multi-byte path (line ~155)
+### 1. `tw_encode_varint`, multi-byte path (line ~155)
 
 ```rust
 buf.reserve(10);
@@ -22,7 +22,7 @@ unsafe {
 
 **Why unsafe:** Avoids per-byte bounds checks in `Vec::push()`. For multi-byte varints (values ≥ 128), this writes 2-10 bytes with a single `set_len` at the end.
 
-### 2. `tw_encode_packed_u32` — batch varint write (line ~177)
+### 2. `tw_encode_packed_u32`, batch varint write (line ~177)
 
 ```rust
 buf.reserve(values.len() * 5);
@@ -37,7 +37,7 @@ unsafe {
 
 **Why unsafe:** One `set_len` for the entire batch instead of per-element `push` calls. Eliminates N-1 stores to the Vec length field.
 
-### 3. `tw_encode_varint_unchecked` — pre-reserved encode (line ~204)
+### 3. `tw_encode_varint_unchecked`, pre-reserved encode (line ~204)
 
 ```rust
 pub unsafe fn tw_encode_varint_unchecked(buf: &mut Vec<u8>, mut value: u64) {
@@ -50,9 +50,9 @@ pub unsafe fn tw_encode_varint_unchecked(buf: &mut Vec<u8>, mut value: u64) {
 
 **Invariant:** The **caller** must ensure at least 10 bytes of spare capacity. Used only from generated packed encode loops that pre-reserve.
 
-**Why unsafe:** The function itself is `unsafe` — it has no reserve call, relying on the caller's guarantee. Used in hot packed encode loops where a single reserve covers all elements.
+**Why unsafe:** The function itself is `unsafe`, it has no reserve call, relying on the caller's guarantee. Used in hot packed encode loops where a single reserve covers all elements.
 
-### 4. `tw_varint_len` — NonZeroU64 construction (line ~227)
+### 4. `tw_varint_len`. NonZeroU64 construction (line ~227)
 
 ```rust
 let log2 = unsafe { core::num::NonZeroU64::new_unchecked(value | 1) }.ilog2();
@@ -111,7 +111,7 @@ let slice = &bytes[offset..offset + str_len];
 };
 ```
 
-**Invariant:** Same as #7 — UTF-8 validated on the borrowed slice, then the `Bytes::slice()` references the same data (refcount increment, no copy).
+**Invariant:** Same as #7. UTF-8 validated on the borrowed slice, then the `Bytes::slice()` references the same data (refcount increment, no copy).
 
 **Why unsafe:** True zero-copy: no allocation, no copy. The `Bytes::slice()` shares the backing buffer. Validation happened on the same bytes.
 
@@ -160,14 +160,14 @@ unsafe {
 
 | # | Location | Purpose | Risk |
 |---|----------|---------|------|
-| 1-3 | Varint encode | Skip Vec bounds checks | Low — reserve guarantees capacity |
-| 4 | Varint length | Skip NonZero check | None — `\|1` is always non-zero |
-| 5-6 | BytesStr | Skip UTF-8 re-validation | Low — constructors validate |
-| 7-8 | String/BytesStr decode | Skip redundant UTF-8 scan | Low — validated on prior line |
-| 9 | Packed batch write | One set_len for N elements | Low — reserve covers worst case |
-| 10 | Packed f64/f32 memcpy | Bulk write via ptr cast | Low — LE-guarded, no padding |
+| 1-3 | Varint encode | Skip Vec bounds checks | Low, reserve guarantees capacity |
+| 4 | Varint length | Skip NonZero check | None, `\|1` is always non-zero |
+| 5-6 | BytesStr | Skip UTF-8 re-validation | Low, constructors validate |
+| 7-8 | String/BytesStr decode | Skip redundant UTF-8 scan | Low, validated on prior line |
+| 9 | Packed batch write | One set_len for N elements | Low, reserve covers worst case |
+| 10 | Packed f64/f32 memcpy | Bulk write via ptr cast | Low. LE-guarded, no padding |
 
-All unsafe usage follows the pattern: **validate or guarantee the invariant, then use unsafe to skip redundant re-validation or bounds checks**. No unsafe is used for correctness — only for performance.
+All unsafe usage follows the pattern: **validate or guarantee the invariant, then use unsafe to skip redundant re-validation or bounds checks**. No unsafe is used for correctness, only for performance.
 
 ## API Surface: Safe from the Outside
 
@@ -214,7 +214,7 @@ via `#[doc(hidden)]`. Users cannot accidentally call any unsafe code.
 Users interact with safe, high-level APIs (`#[derive(TypewayCodec)]`,
 `encode_to_vec()`, `typeway_decode()`). The derive macro generates code
 that calls the hidden `tw_*` helpers internally. The unsafe is an
-implementation detail — the boundary between safe and unsafe is the
+implementation detail, the boundary between safe and unsafe is the
 derive macro, which guarantees all invariants (reserves capacity before
 unchecked writes, validates UTF-8 before unchecked construction, etc.).
 

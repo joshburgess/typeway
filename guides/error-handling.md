@@ -108,7 +108,7 @@ async fn handler() -> Result<Json<Data>, AppError> {
 | 500 | INTERNAL |
 
 When a handler returns `Err(JsonError::not_found(...))`, REST clients
-get `404` and gRPC clients get `grpc-status: 5` (NOT_FOUND) — from
+get `404` and gRPC clients get `grpc-status: 5` (NOT_FOUND), from
 the same handler.
 
 ## Tuple responses

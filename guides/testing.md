@@ -1,6 +1,6 @@
 # Testing Typeway Applications
 
-Typeway applications are standard Rust async code — test them with
+Typeway applications are standard Rust async code, test them with
 `tokio::test`, `reqwest`, and the built-in `GrpcTestClient`.
 
 ## Integration test pattern
@@ -133,7 +133,7 @@ async fn grpc_streaming() {
 
 ## Unit testing handlers
 
-Handlers are plain async functions — test them directly:
+Handlers are plain async functions, test them directly:
 
 ```rust
 #[tokio::test]

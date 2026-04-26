@@ -2,7 +2,7 @@
 name = "typeway"
 version = "0.1.0"
 edition = "2021"
-description = "Type-level web framework for Rust — your API is a type"
+description = "Type-level web framework for Rust: your API is a type"
 
 [features]
 default = ["server"]

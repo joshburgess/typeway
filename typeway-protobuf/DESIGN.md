@@ -1,10 +1,10 @@
-> **Status: Fully implemented.** The `typeway-protobuf` crate ships: `#[derive(TypewayCodec)]` (compile-time specialized encode/decode, 12-54% faster than prost — supports structs, simple enums, and tagged enums/oneofs), `#[derive(TypestateBuilder)]` (compile-time enforced message construction with `#[required]` fields), `BytesStr` (zero-copy strings), `RepeatedField<T>` (pooled allocations), `ProtoField<T, E>` (phantom-typed wire formats), `EncodeBuf` (buffer reuse), `BufPool` (arena-style buffer pooling), `MessageView` (GAT-based zero-copy borrowed decode with `ViewStr<'buf>` and `ViewBytes<'buf>`), `tw_decode_packed_varints` (batch varint decode), and `Proto<T>` (format-agnostic extractor).
+> **Status: Fully implemented.** The `typeway-protobuf` crate ships: `#[derive(TypewayCodec)]` (compile-time specialized encode/decode, 12-54% faster than prost, supports structs, simple enums, and tagged enums/oneofs), `#[derive(TypestateBuilder)]` (compile-time enforced message construction with `#[required]` fields), `BytesStr` (zero-copy strings), `RepeatedField<T>` (pooled allocations), `ProtoField<T, E>` (phantom-typed wire formats), `EncodeBuf` (buffer reuse), `BufPool` (arena-style buffer pooling), `MessageView` (GAT-based zero-copy borrowed decode with `ViewStr<'buf>` and `ViewBytes<'buf>`), `tw_decode_packed_varints` (batch varint decode), and `Proto<T>` (format-agnostic extractor).
 
-# Redesigning Prost: typeway-protobuf — A Type-Theoretic, High-Performance Protobuf Library for Rust
+# Redesigning Prost: typeway-protobuf, a Type-Theoretic, High-Performance Protobuf Library for Rust
 
 ## Executive Summary
 
-This document proposes a ground-up redesign of Rust's protobuf story, drawing on lessons from prost's limitations, ideas from zero-copy serialization frameworks (rkyv, Cap'n Proto, FlatBuffers), and type-theoretic / functional programming techniques that Rust's type system uniquely enables. The result is **`typeway-protobuf`** — a protobuf implementation that integrates with the existing Typeway framework and is both faster and more ergonomic than prost.
+This document proposes a ground-up redesign of Rust's protobuf story, drawing on lessons from prost's limitations, ideas from zero-copy serialization frameworks (rkyv, Cap'n Proto, FlatBuffers), and type-theoretic / functional programming techniques that Rust's type system uniquely enables. The result is **`typeway-protobuf`**, a protobuf implementation that integrates with the existing Typeway framework and is both faster and more ergonomic than prost.
 
 ---
 
@@ -18,11 +18,11 @@ Prost wraps all non-primitive message fields in `Option<T>`, even when the schem
 - Runtime panics where the compiler should have caught errors
 - Inability to make invalid states unrepresentable
 
-A crate like `prost-unwrap` exists solely to generate mirror structs that strip the `Option` wrappers — a clear signal that the core abstraction is wrong.
+A crate like `prost-unwrap` exists solely to generate mirror structs that strip the `Option` wrappers, a clear signal that the core abstraction is wrong.
 
 ### 1.2 Allocation-Heavy Deserialization
 
-Prost copies all string and bytes data into owned `String` / `Vec<u8>` during deserialization. GreptimeDB's benchmarking showed prost taking **~7.3ms** to parse a Prometheus write request that VictoriaMetrics (Go) handled in **~1.2ms** — a 6x difference. The causes:
+Prost copies all string and bytes data into owned `String` / `Vec<u8>` during deserialization. GreptimeDB's benchmarking showed prost taking **~7.3ms** to parse a Prometheus write request that VictoriaMetrics (Go) handled in **~1.2ms**, a 6x difference. The causes:
 
 - Every `string` field allocates a new `String` and copies bytes
 - Every `repeated` field creates a fresh `Vec` with no pooling
@@ -68,7 +68,7 @@ Protobuf's `oneof` is a sum type, but prost wraps it in `Option<enum>`, conflati
 //   ImageMessage image = 2;
 // }
 
-// Generated code — the oneof IS the enum, not Option<enum>
+// Generated code, the oneof IS the enum, not Option<enum>
 pub enum Payload {
     Text(TextMessage),
     Image(ImageMessage),
@@ -77,7 +77,7 @@ pub enum Payload {
 // The parent message uses Option only if the oneof itself is optional
 pub struct ChatEvent {
     pub id: EventId,
-    pub payload: Payload,         // required oneof — no Option
+    pub payload: Payload,         // required oneof, no Option
     pub metadata: Option<Meta>,   // truly optional message field
 }
 ```
@@ -86,7 +86,7 @@ This aligns with the "Typical" project's philosophy: use algebraic data types wi
 
 ### 3.2 Typestate Pattern for Message Construction
 
-Serde already uses typestates internally for its `Serializer` trait. We apply the same idea to message building — a message under construction carries compile-time proof of which required fields have been set:
+Serde already uses typestates internally for its `Serializer` trait. We apply the same idea to message building, a message under construction carries compile-time proof of which required fields have been set:
 
 ```rust
 // Generated builder with typestate tracking
@@ -156,7 +156,7 @@ type RepeatedSint32    = Vec<ProtoField<i32, ZigZag>>;
 type RepeatedSfixed32  = Vec<ProtoField<i32, Fixed>>;
 type PackedInt32       = Vec<ProtoField<i32, Packed<Varint>>>;
 
-// Encoding/decoding dispatches on the phantom type — zero runtime cost
+// Encoding/decoding dispatches on the phantom type, zero runtime cost
 impl<T: ProtoEncodable, E: WireStrategy> Encode for ProtoField<T, E> {
     fn encode(&self, buf: &mut impl BufMut) {
         E::encode(&self.value, buf)
@@ -188,7 +188,7 @@ pub struct ChatEventView<'buf> {
 
 impl<'buf> ChatEventView<'buf> {
     pub fn id(&self) -> &'buf str {
-        // Returns a borrow directly into the buffer — no allocation
+        // Returns a borrow directly into the buffer, no allocation
         &self.buf[self.offsets.id_start..self.offsets.id_end]
     }
 
@@ -208,11 +208,11 @@ impl<'buf> ChatEventView<'buf> {
 }
 ```
 
-This is the pattern used by `icu4x`'s Yoke/Yokeable framework and serde's `Deserialize<'de>` — but applied structurally to protobuf.
+This is the pattern used by `icu4x`'s Yoke/Yokeable framework and serde's `Deserialize<'de>`, but applied structurally to protobuf.
 
 ### 3.5 Dual Types for Schema Evolution (Inspired by "Typical")
 
-The "Typical" serialization library introduces **asymmetric field types** — separate types for serialization vs. deserialization. This elegantly solves schema evolution:
+The "Typical" serialization library introduces **asymmetric field types**, separate types for serialization vs. deserialization. This elegantly solves schema evolution:
 
 ```rust
 // When a field `sender` is newly added as "asymmetric":
@@ -250,7 +250,7 @@ pub struct RepeatedField<T> {
 
 impl<T> RepeatedField<T> {
     pub fn clear(&mut self) {
-        // Only reset the logical length — don't drop elements
+        // Only reset the logical length, don't drop elements
         // Elements are overwritten on next deserialize
         self.len = 0;
     }
@@ -321,7 +321,7 @@ if view.id().starts_with("spam") {
 
 // Tier 2: Selective ownership via Cow
 let cow_msg: ChatEventCow<'_> = view.to_cow();
-// String fields are Cow<'buf, str> — only allocate if you mutate
+// String fields are Cow<'buf, str>, only allocate if you mutate
 
 // Tier 3: Full owned conversion
 let owned: ChatEvent = view.to_owned();
@@ -398,7 +398,7 @@ This is essentially the functional programming concept of **optics** (lenses/pri
 
 ### 5.3 Derive-Based Custom Messages
 
-Unlike prost, which requires `.proto` files, typeway-protobuf also supports derive macros on hand-written Rust types — consistent with Typeway's derive-first philosophy:
+Unlike prost, which requires `.proto` files, typeway-protobuf also supports derive macros on hand-written Rust types, consistent with Typeway's derive-first philosophy:
 
 ```rust
 #[derive(ProtoMessage)]
@@ -484,10 +484,10 @@ This gives you full control over the types while remaining wire-compatible.
 
 Typeway-protobuf should be **wire-compatible** with standard protobuf, meaning it reads/writes the same bytes. Migration from prost would involve:
 
-1. **Phase 1**: Drop-in codec replacement — same `.proto` files, new generated code. The owned types look similar but with better Option handling.
+1. **Phase 1**: Drop-in codec replacement, same `.proto` files, new generated code. The owned types look similar but with better Option handling.
 2. **Phase 2**: Opt into zero-copy views where performance matters.
 3. **Phase 3**: Adopt typestate builders and lens accessors for new code.
 4. **Phase 4**: Use asymmetric In/Out types for services undergoing schema evolution.
-5. **Phase 5**: Deeper Typeway integration — share type-level primitives, encoding traits, and optics foundations across protobuf and other Typeway-supported protocols.
+5. **Phase 5**: Deeper Typeway integration, share type-level primitives, encoding traits, and optics foundations across protobuf and other Typeway-supported protocols.
 
 Each phase is independently valuable, and existing prost-using code can interop via `From`/`Into` implementations on the owned types.

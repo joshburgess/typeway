@@ -1,13 +1,13 @@
-# IoT Gateway — REST + gRPC + Streaming
+# IoT Gateway. REST + gRPC + Streaming
 
 A sensor data pipeline where the same handlers serve both REST
 (for dashboards) and gRPC (for IoT devices).
 
 ## Why this matters
 
-IoT devices send telemetry over gRPC — binary protobuf is compact
+IoT devices send telemetry over gRPC, binary protobuf is compact
 and fast over constrained networks. Web dashboards consume the same
-data over REST — JSON is debuggable and works with any HTTP client.
+data over REST. JSON is debuggable and works with any HTTP client.
 
 Most frameworks force you to write separate handlers for each protocol.
 Typeway serves both from the same code:

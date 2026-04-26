@@ -11,7 +11,7 @@ The type system guarantees that:
 ## The Protocol
 
 ```rust
-// Defined as a type — not documentation, not comments. A TYPE.
+// Defined as a type, not documentation, not comments. A TYPE.
 type ChatProtocol = Recv<AuthRequest, Send<WelcomeMessage, ChatLoop>>;
 type ChatLoop = Rec<Recv<ChatMessage, Send<ChatMessage, Var>>>;
 ```
@@ -21,7 +21,7 @@ This says:
 2. **Send** a `WelcomeMessage` (greeting + online users)
 3. **Loop**: receive a `ChatMessage`, send a `ChatMessage`, repeat
 
-Each step is enforced by the compiler. Try reordering them — it won't build.
+Each step is enforced by the compiler. Try reordering them, it won't build.
 
 ## Run
 
@@ -34,7 +34,7 @@ Open [http://localhost:3000](http://localhost:3000) in a browser.
 ## What makes this special
 
 No other Rust framework does this. Axum, Actix, and Warp all give you
-raw `WebSocket` handles with `send()` and `recv()` — you can call them
+raw `WebSocket` handles with `send()` and `recv()`, you can call them
 in any order, and protocol violations are runtime errors discovered in
 production.
 

@@ -2,7 +2,7 @@
 
 Typeway's WebSocket support uses session types to enforce correct
 message ordering at compile time. If your protocol says "send a
-greeting, then receive a name, then send a welcome" — the compiler
+greeting, then receive a name, then send a welcome", the compiler
 verifies you follow that exact sequence.
 
 ## Define a protocol

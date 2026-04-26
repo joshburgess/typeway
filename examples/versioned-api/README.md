@@ -2,8 +2,8 @@
 
 An API that evolves from V1 to V2 where:
 
-- **The changelog is a type** — not a markdown file, not documentation comments
-- **Middleware requirements are enforced at compile time** — forget the rate limiter and the code won't build
+- **The changelog is a type**: not a markdown file, not documentation comments
+- **Middleware requirements are enforced at compile time**: forget the rate limiter and the code won't build
 
 ## The core idea
 
@@ -71,11 +71,13 @@ curl http://localhost:3000/health            # new, rate-limited
 ## What makes this special
 
 1. **The changelog is queryable at compile time.** `V2Changes::ADDED`,
-   `V2Changes::DEPRECATED`, etc. are `const` values derived from the type.
+   `V2Changes::DEPRECATED`, etc. are `const` associated values on the
+   `ApiChangelog` trait. To use them you need `use typeway_core::ApiChangelog;`
+   in scope (or write `<V2Changes as ApiChangelog>::ADDED`).
 
 2. **Middleware requirements are per-endpoint.** The health check requires
    rate limiting, but user endpoints don't. The effect system tracks this
-   at the type level — no runtime checks, no middleware ordering bugs.
+   at the type level, no runtime checks, no middleware ordering bugs.
 
 3. **Deprecation is visible in the type system.** `Deprecated<E>` marks
    endpoints as deprecated in generated OpenAPI specs and documentation,

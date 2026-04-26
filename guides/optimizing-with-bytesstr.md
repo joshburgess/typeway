@@ -22,7 +22,7 @@ services, these allocations add up.
 ## Automatic with proto-first codegen
 
 If you generate types from a `.proto` file using `proto_to_typeway_with_codec()`,
-**BytesStr is used automatically** for all `string` fields — no manual work needed.
+**BytesStr is used automatically** for all `string` fields, no manual work needed.
 See the [proto-first codegen guide](proto-first-codegen.md).
 
 ## Manual switch (Rust-first)
@@ -72,7 +72,7 @@ let greeting = format!("Hello, {}!", profile.username);
 ```
 
 What doesn't work: `push_str`, `insert`, or any mutation. `BytesStr` is
-immutable — it's a view into the original buffer. If you need to mutate,
+immutable, it's a view into the original buffer. If you need to mutate,
 call `.to_string()` to get an owned `String`.
 
 ## Performance impact
@@ -83,24 +83,24 @@ Benchmarked with Criterion (medium message, 7 fields, 4 strings):
 |--------|------|----------|
 | `String` fields | 63 ns | 37% faster |
 | `BytesStr` fields | 46 ns | 54% faster |
-| prost | 100 ns | — |
+| prost | 100 ns | N/A |
 
 The improvement comes from eliminating 4 heap allocations. Each `String`
 field does `malloc + memcpy`. `BytesStr` does a refcount increment on the
-shared `Bytes` buffer — effectively free.
+shared `Bytes` buffer, effectively free.
 
 ## How it works
 
 When you use `BytesStr` fields and decode via `typeway_decode_bytes(Bytes)`:
 
 1. The decoder validates UTF-8 on the borrowed slice (zero-copy)
-2. It calls `Bytes::slice(offset..end)` — increments a refcount
-3. The `BytesStr` wraps the slice — no allocation, no copy
+2. It calls `Bytes::slice(offset..end)`, increments a refcount
+3. The `BytesStr` wraps the slice, no allocation, no copy
 
 When you use `String` fields:
 
 1. The decoder validates UTF-8 on the borrowed slice
-2. It calls `slice.to_vec()` — allocates + copies
+2. It calls `slice.to_vec()`, allocates + copies
 3. The `String` wraps the owned `Vec<u8>`
 
 ## Mixing String and BytesStr
@@ -129,4 +129,4 @@ struct Article {
 `BytesStr` implements `serde::Serialize` and `serde::Deserialize`, so it
 works transparently with JSON, TOML, or any serde format. When serialized
 to JSON, it produces a regular string. When deserialized from JSON, it
-allocates (same as `String`) — the zero-copy advantage is protobuf-specific.
+allocates (same as `String`), the zero-copy advantage is protobuf-specific.

@@ -1,4 +1,4 @@
-# High-Performance Order Book — gRPC Microservice
+# High-Performance Order Book, gRPC Microservice
 
 A real-time trading order book that pushes typeway's performance envelope.
 Every optimization is used: direct handlers, BytesStr zero-copy strings,
@@ -9,13 +9,13 @@ price feeds with backpressure.
 
 Trading systems are the canonical "every microsecond matters" domain:
 
-- **Order submission** is the hottest path — direct handlers bypass
+- **Order submission** is the hottest path, direct handlers bypass
   the HTTP extractor pipeline entirely
-- **Ticker symbols and order IDs** are read-only strings — BytesStr
+- **Ticker symbols and order IDs** are read-only strings. BytesStr
   eliminates allocation on decode (54% faster than prost)
-- **Price feeds** are server-streaming — subscribers receive updates
+- **Price feeds** are server-streaming, subscribers receive updates
   in real time with backpressure
-- **No REST needed** — this is an internal microservice, pure gRPC
+- **No REST needed**: this is an internal microservice, pure gRPC
 
 ## Performance stack
 
@@ -55,11 +55,11 @@ struct Order {
 ```
 
 When a gRPC client sends a binary protobuf `Order`, the `symbol` field
-is decoded by slicing the input buffer — a refcount increment, not a
+is decoded by slicing the input buffer, a refcount increment, not a
 heap allocation. For a service processing thousands of orders per second,
 this eliminates thousands of allocations per second.
 
-## Two approaches — same result
+## Two approaches, same result
 
 This example includes **two versions** of the same trading service:
 
@@ -75,7 +75,7 @@ cargo run -p typeway-orderbook
 
 Types are generated from a `.proto` definition. At startup, the server
 prints the generated Rust code so you can see exactly what the codegen
-produces — `BytesStr` fields, `#[derive(TypewayCodec)]`, `#[proto(tag)]`
+produces, `BytesStr` fields, `#[derive(TypewayCodec)]`, `#[proto(tag)]`
 attributes, all automatic:
 
 ```bash

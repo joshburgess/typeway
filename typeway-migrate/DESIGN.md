@@ -1,14 +1,14 @@
 # Design: Bidirectional Axum ↔ Typeway Migration Tool
 
-A `syn`-based CLI tool that reads Rust source files and mechanically translates between Axum and Typeway idioms in both directions. The goal is to make trying Typeway zero-cost for existing Axum users — and to make leaving Typeway zero-cost if they decide it's not for them.
+A `syn`-based CLI tool that reads Rust source files and mechanically translates between Axum and Typeway idioms in both directions. The goal is to make trying Typeway zero-cost for existing Axum users, and to make leaving Typeway zero-cost if they decide it's not for them.
 
 ---
 
 ## Motivation
 
-The biggest barrier to adopting a new web framework isn't technical — it's migration cost. Even if Typeway is strictly better for certain use cases, rewriting working Axum code by hand is tedious and error-prone. A tool that automates 80–90% of the translation eliminates the practical barrier.
+The biggest barrier to adopting a new web framework isn't technical, it's migration cost. Even if Typeway is strictly better for certain use cases, rewriting working Axum code by hand is tedious and error-prone. A tool that automates 80–90% of the translation eliminates the practical barrier.
 
-The reverse direction matters equally. If a team tries Typeway and decides it's not the right fit — wrong trade-offs for their use case, compile times too slow for their API size, team prefers Axum's imperative style — they should be able to mechanically convert back. This makes Typeway a genuinely risk-free experiment.
+The reverse direction matters equally. If a team tries Typeway and decides it's not the right fit, wrong trade-offs for their use case, compile times too slow for their API size, team prefers Axum's imperative style, they should be able to mechanically convert back. This makes Typeway a genuinely risk-free experiment.
 
 ---
 
@@ -188,7 +188,7 @@ Parse each handler function's signature to determine:
 - **Path capture types:** From `Path<u32>` or `Path<(u32, String)>` extractors.
 - **Body type:** From `Json<T>` extractor (the `FromRequest` argument, typically last).
 - **Response type:** The return type, which becomes the endpoint's `Res` parameter.
-- **Other extractors:** `State<T>`, `Query<T>`, `HeaderMap`, etc. — these transfer directly.
+- **Other extractors:** `State<T>`, `Query<T>`, `HeaderMap`, etc., these transfer directly.
 
 **AST pattern for destructuring extractors:**
 
@@ -247,7 +247,7 @@ handler: async fn f(Path((id, post_id)): Path<(u32, u64)>, ...) -> ...
 5. Emit: typeway_path!(type UsersByIdPostsByPostIdPath = "users" / u32 / "posts" / u64);
 ```
 
-**Path name deduplication:** Multiple handlers may share the same path (e.g., GET and DELETE on `/users/{id}`). The tool deduplicates `typeway_path!` declarations — one per unique path pattern.
+**Path name deduplication:** Multiple handlers may share the same path (e.g., GET and DELETE on `/users/{id}`). The tool deduplicates `typeway_path!` declarations, one per unique path pattern.
 
 #### 4. API Type Assembly
 
@@ -277,7 +277,7 @@ Axum-specific imports (`Router`, `routing::get`, etc.) are removed. Shared types
 
 #### 6. Layer/Middleware Passthrough
 
-`.layer(...)` calls translate directly — both Axum and Typeway use Tower layers with the same API. The tool copies them unchanged.
+`.layer(...)` calls translate directly, both Axum and Typeway use Tower layers with the same API. The tool copies them unchanged.
 
 `.with_state(state)` also translates directly.
 
@@ -410,21 +410,21 @@ The tool must group endpoints by path pattern and chain methods on the same `.ro
 typeway-migrate/
     Cargo.toml
     src/
-        main.rs              — CLI entry point (clap)
-        lib.rs               — public API for programmatic use
+        main.rs             . CLI entry point (clap)
+        lib.rs              , public API for programmatic use
         parse/
             mod.rs
-            axum.rs           — extract route table, handlers from Axum AST
-            typeway.rs        — extract API type, path types from Typeway AST
-            common.rs         — shared handler signature analysis
+            axum.rs          , extract route table, handlers from Axum AST
+            typeway.rs       , extract API type, path types from Typeway AST
+            common.rs        , shared handler signature analysis
         transform/
             mod.rs
-            axum_to_typeway.rs — Axum AST → Typeway AST transformations
-            typeway_to_axum.rs — Typeway AST → Axum AST transformations
+            axum_to_typeway.rs. Axum AST → Typeway AST transformations
+            typeway_to_axum.rs. Typeway AST → Axum AST transformations
         emit/
             mod.rs
-            codegen.rs        — syn AST → token stream → formatted Rust source
-        model.rs              — intermediate representation (IR)
+            codegen.rs       , syn AST → token stream → formatted Rust source
+        model.rs             , intermediate representation (IR)
 ```
 
 ### Intermediate Representation
@@ -621,7 +621,7 @@ anyhow = "1"
 walkdir = "2"
 ```
 
-No dependency on `typeway` itself — the tool operates purely on syntax. It doesn't need to resolve types or compile anything. This means it works even if the project doesn't have Typeway in its `Cargo.toml` yet (the tool can add it).
+No dependency on `typeway` itself, the tool operates purely on syntax. It doesn't need to resolve types or compile anything. This means it works even if the project doesn't have Typeway in its `Cargo.toml` yet (the tool can add it).
 
 ---
 
@@ -629,7 +629,7 @@ No dependency on `typeway` itself — the tool operates purely on syntax. It doe
 
 All phases are complete. **106 tests** across 11 test files.
 
-### Phase 1: Core pipeline — DONE
+### Phase 1: Core pipeline (DONE)
 
 - Parse single-file Axum router definitions
 - Extract routes, handlers, extractors
@@ -637,13 +637,13 @@ All phases are complete. **106 tests** across 11 test files.
 - Handle `Path`, `State`, `Json`, `Query` extractors
 - `--dry-run` mode and file writing with `.bak` backups
 
-### Phase 2: Reverse direction — DONE
+### Phase 2: Reverse direction (DONE)
 
 - Typeway → Axum conversion (full bidirectional)
 - Multi-file directory scanning
 - `check` command with auto-detection of Axum vs Typeway sources
 
-### Phase 3: Advanced patterns — DONE
+### Phase 3: Advanced patterns (DONE)
 
 - `.nest()` / `Router::merge()` resolution (follows function calls within the same file)
 - `axum::middleware::from_fn` detection (with TODO comments)
@@ -661,7 +661,7 @@ All phases are complete. **106 tests** across 11 test files.
 - OpenAPI auto-setup: adds `.with_openapi("API", "1.0.0")` to server
 - All common extractors: Cookie, CookieJar, Multipart, Form, Header, HeaderMap, WebSocketUpgrade
 
-### Phase 4: Polish — DONE
+### Phase 4: Polish (DONE)
 
 - Interactive mode (`--interactive`): dialoguer prompts for auth/validation/effects/WebSocket decisions
 - `--partial` flag: convert only specific routes by path pattern

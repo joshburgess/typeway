@@ -1,6 +1,6 @@
 # Working with Standard gRPC Clients
 
-By default, typeway uses `application/grpc+json` — JSON payloads over
+By default, typeway uses `application/grpc+json`. JSON payloads over
 gRPC framing. This works great for typeway-to-typeway communication but
 standard gRPC tools (grpcurl, Postman, tonic clients, Go/Python/Java
 clients) expect binary protobuf (`application/grpc`).
@@ -32,8 +32,8 @@ Server::<API>::new(handlers)
 ```
 
 The server now accepts both formats:
-- `application/grpc+json` — JSON (typeway clients, debugging)
-- `application/grpc` — binary protobuf (standard clients)
+- `application/grpc+json`. JSON (typeway clients, debugging)
+- `application/grpc`, binary protobuf (standard clients)
 
 The response format mirrors the request: binary clients get binary
 responses, JSON clients get JSON responses.
@@ -92,7 +92,7 @@ Or use the CLI:
 
 ```bash
 cargo run -p typeway-grpc --features cli -- proto-from-api \
-  --service UserService --package users.v1
+  --service-name UserService --package users.v1
 ```
 
 The generated `.proto` file is standard protobuf3 and works with
@@ -110,5 +110,5 @@ When `.with_proto_binary()` is enabled, the server:
 This transcoding is transparent. Your handlers don't change.
 
 For maximum performance with binary clients, use `Proto<T>` instead of
-`Json<T>` as your extractor — it decodes binary protobuf directly via
+`Json<T>` as your extractor, it decodes binary protobuf directly via
 `TypewayDecode` without the JSON intermediate step.

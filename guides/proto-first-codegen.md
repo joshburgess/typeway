@@ -1,7 +1,7 @@
 # Proto-First Development with TypewayCodec Codegen
 
 Start from a `.proto` file and generate high-performance Rust types
-with `#[derive(TypewayCodec)]` — no manual struct definitions needed.
+with `#[derive(TypewayCodec)]`, no manual struct definitions needed.
 
 ## When to use proto-first
 
@@ -93,7 +93,7 @@ use typeway_protobuf::BytesStr;
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]
 pub struct Order {
     #[proto(tag = 1)]
-    pub symbol: BytesStr,    // zero-copy decode — automatic!
+    pub symbol: BytesStr,    // zero-copy decode, automatic!
     #[proto(tag = 2)]
     pub side: BytesStr,
     #[proto(tag = 3)]
@@ -164,23 +164,23 @@ async fn main() {
 
 The `_with_codec` version generates:
 - `#[derive(TypewayCodec)]` and `#[proto(tag = N)]` for fast binary protobuf
-- `BytesStr` instead of `String` for all `string` proto fields — **zero-copy
+- `BytesStr` instead of `String` for all `string` proto fields, **zero-copy
   decode is automatic**, no manual optimization needed
 
-`BytesStr` eliminates allocation on decode — the decoder slices the
+`BytesStr` eliminates allocation on decode, the decoder slices the
 input buffer instead of copying (54% faster than prost on string-heavy
 messages).
 
 ## Round-trip: Rust-first → proto → codegen
 
-You can also go the other direction — define types in Rust, generate
+You can also go the other direction, define types in Rust, generate
 the `.proto`, then verify the codegen produces equivalent types:
 
 ```rust
 // Generate .proto from Rust types
 let proto = <MyAPI as ApiToProto>::to_proto("MyService", "my.v1");
 
-// Parse and regenerate — the round-trip should be stable
+// Parse and regenerate, the round-trip should be stable
 let regenerated = typeway_grpc::proto_to_typeway_with_codec(&proto).unwrap();
 ```
 

@@ -84,7 +84,7 @@ Server::<API>::new((
 ```
 
 That's it. Your REST handlers now serve gRPC too. The same port serves
-both protocols — routing is based on the `Content-Type` header.
+both protocols, routing is based on the `Content-Type` header.
 
 ## Step 3: Test it
 
@@ -110,7 +110,7 @@ grpcurl -plaintext -d '{"name":"Alice","email":"alice@example.com"}' \
 .with_grpc_docs()  // serves HTML docs at GET /grpc-docs
 ```
 
-Server reflection is enabled by default — tools like grpcurl can
+Server reflection is enabled by default, tools like grpcurl can
 discover your API without a `.proto` file.
 
 ## Optional: Binary protobuf for standard clients

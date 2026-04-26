@@ -1,7 +1,7 @@
 # Authentication & Authorization
 
 Typeway enforces authentication at the type level. `Protected<Auth, E>`
-wraps an endpoint — the compiler rejects handlers without auth.
+wraps an endpoint, the compiler rejects handlers without auth.
 
 ## Define an auth extractor
 
@@ -45,10 +45,10 @@ Use `Protected<AuthType, Endpoint>` in your API type:
 use typeway_server::auth::Protected;
 
 type API = (
-    // Public — anyone can access
+    // Public, anyone can access
     GetEndpoint<HealthPath, String>,
 
-    // Protected — requires AuthUser
+    // Protected, requires AuthUser
     Protected<AuthUser, GetEndpoint<ProfilePath, UserProfile>>,
     Protected<AuthUser, PostEndpoint<SettingsPath, UpdateSettings, Settings>>,
 );
@@ -83,15 +83,15 @@ Protected endpoints use `bind_auth!` instead of `bind!`:
 
 ```rust
 Server::<API>::new((
-    bind!(health_check),           // public — uses bind!
-    bind_auth!(get_profile),       // protected — uses bind_auth!
-    bind_auth!(update_settings),   // protected — uses bind_auth!
+    bind!(health_check),           // public, uses bind!
+    bind_auth!(get_profile),       // protected, uses bind_auth!
+    bind_auth!(update_settings),   // protected, uses bind_auth!
 ))
 .serve(addr)
 .await?;
 ```
 
-The compiler enforces this — using `bind!` on a `Protected` endpoint
+The compiler enforces this, using `bind!` on a `Protected` endpoint
 is a compile error.
 
 ## Role-based access
@@ -131,4 +131,4 @@ type AdminAPI = Protected<AdminUser, DeleteEndpoint<UserByIdPath, ()>>;
 
 `Protected` endpoints work with gRPC too. The auth extractor reads
 from HTTP headers (metadata in gRPC terms). A gRPC client sends
-auth via the `authorization` metadata header — same as REST.
+auth via the `authorization` metadata header, same as REST.

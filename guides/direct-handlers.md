@@ -15,7 +15,7 @@ handlers** bypass this pipeline entirely.
 | `Proto<T>` | -4% | Yes | Yes |
 | **Direct** | **-6%** | **No** | **Yes** |
 
-Direct handlers give you the fastest possible gRPC dispatch — within
+Direct handlers give you the fastest possible gRPC dispatch, within
 measurement noise of Tonic.
 
 ## How to use
@@ -44,7 +44,7 @@ struct Order {
 }
 
 // Define the handler as a plain async function.
-// No extractors, no Proto<T>, no Json<T> — just types in, types out.
+// No extractors, no Proto<T>, no Json<T>, just types in, types out.
 async fn create_order(req: CreateOrder) -> Order {
     Order {
         id: 42,

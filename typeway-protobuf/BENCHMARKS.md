@@ -31,21 +31,21 @@ prost uses `#[derive(prost::Message)]`.
 
 ### Why typeway-protobuf is faster
 
-1. **Compile-time field layout** — tag numbers, wire types, and tag bytes
+1. **Compile-time field layout**, tag numbers, wire types, and tag bytes
    are constants in the generated code. No runtime dispatch.
-2. **O(1) varint length** — `(ilog2 * 9 + 73) / 64` (bit shift) instead of
+2. **O(1) varint length**, `(ilog2 * 9 + 73) / 64` (bit shift) instead of
    `div_ceil(7)` (integer division, 10x slower).
-3. **Pre-validated UTF-8** — validate on borrowed slice, then
+3. **Pre-validated UTF-8**, validate on borrowed slice, then
    `String::from_utf8_unchecked` skips redundant re-validation.
-4. **BytesStr zero-copy** — `Bytes::slice()` instead of allocation for
+4. **BytesStr zero-copy**, `Bytes::slice()` instead of allocation for
    string fields. Eliminates all string allocations on decode.
-5. **Single-pass packed encode** — write data first, backfill length.
+5. **Single-pass packed encode**, write data first, backfill length.
    Avoids double iteration.
-6. **Batch unsafe varint write** — one `set_len` for entire packed field
+6. **Batch unsafe varint write**, one `set_len` for entire packed field
    instead of per-element.
-7. **Bulk memcpy for packed fixed types** — `Vec<f64>` written as single
+7. **Bulk memcpy for packed fixed types**, `Vec<f64>` written as single
    `extend_from_slice` on little-endian (instead of per-element writes).
-8. **Inline tag bytes** — `buf.push(0x08)` instead of function call for
+8. **Inline tag bytes**, `buf.push(0x08)` instead of function call for
    fields 1-15.
 
 ## End-to-end: typeway-grpc vs Tonic
@@ -54,8 +54,8 @@ Same CreateUser RPC (unary, small message). All servers use hyper HTTP/2.
 
 | Server | Latency | vs Tonic |
 |--------|---------|----------|
-| Baseline (bare hyper, no framework) | 48.8 µs | — |
-| Tonic (prost + async_trait) | 49.5 µs | — |
+| Baseline (bare hyper, no framework) | 48.8 µs | N/A |
+| Tonic (prost + async_trait) | 49.5 µs | N/A |
 | typeway Direct (TypewayCodec, no extractors) | 49.9 µs | 0.8% slower |
 | typeway Proto\<T\> (dual REST/gRPC) | 50.5 µs | 2.0% slower |
 | typeway Json\<T\> (JSON codec) | 52.8 µs | 6.7% slower |
@@ -85,13 +85,13 @@ The codec is faster (12-54%), but the dispatch overhead absorbs the gain:
 
 Beyond the core codec benchmarks above, typeway-protobuf provides:
 
-- **`BufPool`** — thread-safe pool of reusable encode buffers. Eliminates
+- **`BufPool`**: thread-safe pool of reusable encode buffers. Eliminates
   per-request allocation in steady state. Pre-allocate N buffers of M bytes
   and borrow from the pool.
-- **`MessageView<'buf>`** — GAT-based zero-copy borrowed decode. Fields are
+- **`MessageView<'buf>`**: GAT-based zero-copy borrowed decode. Fields are
   `&'buf str` slices into the input buffer, no allocation at all. For
   read-heavy workloads where you inspect a few fields and discard the rest.
-- **`tw_decode_packed_varints`** — batch varint decode with inline 1-byte
+- **`tw_decode_packed_varints`**: batch varint decode with inline 1-byte
   and 2-byte fast paths for packed repeated fields.
-- **Enum support** — simple enums (varint) and tagged enums (oneof) with
+- **Enum support**: simple enums (varint) and tagged enums (oneof) with
   per-variant wire type dispatch, all compile-time specialized.

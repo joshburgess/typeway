@@ -16,7 +16,7 @@ where T::Captures: Prepend<U> {
 }
 ```
 
-This is a type-level catamorphism (fold). The compiler evaluates it fully at compile time — no runtime cost.
+This is a type-level catamorphism (fold). The compiler evaluates it fully at compile time, no runtime cost.
 
 **Status:** Stable since Rust 1.0. This is the foundation and won't change.
 
@@ -60,7 +60,7 @@ macro_rules! impl_serves_for_tuple {
 }
 ```
 
-This is O(1) per instantiation for the compiler — no recursive constraint solving.
+This is O(1) per instantiation for the compiler, no recursive constraint solving.
 
 **Status:** Stable since Rust 1.0.
 
@@ -97,9 +97,9 @@ typeway_path!(type UsersPath = "users" / u32);
 
 ## What Typeway Works Around (Unstable Features)
 
-### Const Generic `&'static str` — The Big One
+### Const Generic `&'static str` (The Big One)
 
-**Feature:** `adt_const_params` — allows `&'static str` as a const generic parameter.
+**Feature:** `adt_const_params`, allows `&'static str` as a const generic parameter.
 
 **What we do instead:** Each unique path literal generates a zero-sized marker type implementing `LitSegment`. The proc macro `typeway_path!` automates this. Without it, users would have to define marker types by hand.
 
@@ -114,7 +114,7 @@ type UsersPath = HCons<Lit<"users">, HCons<Capture<u32>, HNil>>;
 ```
 
 **Concrete improvements:**
-- Eliminate `typeway_path!` macro entirely — paths become plain type expressions
+- Eliminate `typeway_path!` macro entirely, paths become plain type expressions
 - No hidden `__wp_*` modules polluting `cargo doc` output
 - Two paths with the same literal are automatically the same type (currently they're different types in different modules, requiring the same macro invocation)
 - Simpler compiler error messages: `Lit<"users">` instead of `Lit<__wp_UsersPath::__lit_users>`
@@ -126,7 +126,7 @@ type UsersPath = HCons<Lit<"users">, HCons<Capture<u32>, HNil>>;
 
 ### Specialization
 
-**Feature:** `specialization` / `min_specialization` — allows overlapping trait impls where a more specific impl takes priority.
+**Feature:** `specialization` / `min_specialization`, allows overlapping trait impls where a more specific impl takes priority.
 
 **What we do instead:** Separate traits for different handler patterns (`Handler`, `AuthHandler`, `StrictHandler`) with marker types (`WithBody<Parts, Body>`, `AuthWithBody<Parts, Body>`) to disambiguate overlapping arities.
 
@@ -142,7 +142,7 @@ type UsersPath = HCons<Lit<"users">, HCons<Capture<u32>, HNil>>;
 
 **What we do instead:** The `NotUnset` marker trait in the experimental type-level builder (Option C), which had to be manually implemented for every user type.
 
-**What it would enable:** Blanket impl `impl<T: !Unset> NotUnset for T {}` — any type that isn't `Unset` automatically satisfies the bound. This would make the type-level builder pattern (Option C) viable.
+**What it would enable:** Blanket impl `impl<T: !Unset> NotUnset for T {}`, any type that isn't `Unset` automatically satisfies the bound. This would make the type-level builder pattern (Option C) viable.
 
 **Why we can't use it:** Negative impls have been discussed since 2015 but never stabilized. Coherence implications are complex.
 
@@ -150,7 +150,7 @@ type UsersPath = HCons<Lit<"users">, HCons<Capture<u32>, HNil>>;
 
 ## Features We Could Use But Choose Not To
 
-### GATs (Generic Associated Types) — Stable Since 1.65
+### GATs (Generic Associated Types): Stable Since 1.65
 
 GATs allow associated types to have their own generic parameters:
 
@@ -161,13 +161,13 @@ trait StreamingExtractor {
 }
 ```
 
-**Why we don't use them:** The core design (HList paths, endpoint tuples, trait-based dispatch) doesn't benefit from GATs. The patterns we use — flat tuple impls via macros, PhantomData markers — are simpler and produce better error messages. GATs would add complexity without improving the user-facing API.
+**Why we don't use them:** The core design (HList paths, endpoint tuples, trait-based dispatch) doesn't benefit from GATs. The patterns we use (flat tuple impls via macros, PhantomData markers) are simpler and produce better error messages. GATs would add complexity without improving the user-facing API.
 
 **Where they could help:** Custom streaming extractors that borrow from the request. Currently, `FromRequest` returns owned data (`Bytes`). A GAT-based version could return borrowed data with a lifetime tied to the request. This is a potential future enhancement for advanced use cases, not a core framework change.
 
 **Trade-off:** GATs increase trait complexity and tend to produce harder-to-read error messages. The compile-time cost of resolving GAT bounds is also higher than flat impls. For a framework where compile time and error quality are explicit priorities, this trade-off isn't worth it for the core API.
 
-### Const Generics for Integers — Stable Since 1.51
+### Const Generics for Integers: Stable Since 1.51
 
 Integer const generics allow types parameterized by numbers:
 
@@ -191,7 +191,7 @@ impl RateLimit for StandardRate {
 type E = RateLimited<StandardRate, GetEndpoint<...>>;
 ```
 
-The trait approach names the configuration (`StandardRate`), making it reusable and readable. The const generic approach is terser but anonymous — you can't tell what `100, 60` means without context.
+The trait approach names the configuration (`StandardRate`), making it reusable and readable. The const generic approach is terser but anonymous, you can't tell what `100, 60` means without context.
 
 **Where they could help:** For simple, well-understood constants (max body size, timeout duration) where a named type would be overkill. We may adopt this selectively for specific wrappers.
 
@@ -208,7 +208,7 @@ The trait approach names the configuration (`StandardRate`), making it reusable 
 | Const generic `&'static str` | **Unstable** | Eliminates marker types and path macros | Waiting for stabilization |
 | Specialization | **Unstable** | Unifies handler traits | Waiting; moderate impact |
 | Negative trait impls | **Unstable** | Enables type-level builder (Option C) | Waiting; high impact |
-| GATs | Stable | Streaming extractors | No — complexity exceeds benefit for core API |
+| GATs | Stable | Streaming extractors | No, complexity exceeds benefit for core API |
 | Const generic integers | Stable | Terser rate limit / config types | Selectively, where naming isn't needed |
 
-The framework is designed so that unstable features, when they stabilize, can be adopted incrementally behind feature flags without breaking existing code. The macro-based approach (`typeway_path!`, `endpoint!`) will remain supported even after const generic strings stabilize — it's syntactic sugar that some users may prefer regardless.
+The framework is designed so that unstable features, when they stabilize, can be adopted incrementally behind feature flags without breaking existing code. The macro-based approach (`typeway_path!`, `endpoint!`) will remain supported even after const generic strings stabilize, it's syntactic sugar that some users may prefer regardless.

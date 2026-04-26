@@ -31,7 +31,7 @@ MIME types are inferred from file extensions:
 | `.svg` | `image/svg+xml` |
 | `.woff2` | `font/woff2` |
 
-Directory traversal (`..`) is blocked — returns 403 Forbidden.
+Directory traversal (`..`) is blocked, returns 403 Forbidden.
 
 ## SPA fallback
 
@@ -55,7 +55,7 @@ client-side route all serve the same `index.html`, letting the
 JavaScript router handle navigation.
 
 Paths with file extensions (`.js`, `.css`, `.png`) that don't match
-a static file return 404 instead of the SPA fallback — this prevents
+a static file return 404 instead of the SPA fallback, this prevents
 broken asset requests from serving HTML.
 
 ## Full example

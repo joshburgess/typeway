@@ -40,8 +40,8 @@ Practical, standalone guides for building with typeway.
 
 See [`examples/`](../examples/) for complete runnable applications:
 
-- **[realworld](../examples/realworld/)** — Full REST API (RealWorld spec)
-- **[chat](../examples/chat/)** — Session-typed WebSocket chat
-- **[versioned-api](../examples/versioned-api/)** — Type-level API versioning
-- **[iot-gateway](../examples/iot-gateway/)** — Dual-protocol REST + gRPC
-- **[orderbook](../examples/orderbook/)** — High-performance gRPC (Rust-first + proto-first)
+- **[realworld](../examples/realworld/)**: Full REST API (RealWorld spec)
+- **[chat](../examples/chat/)**: Session-typed WebSocket chat
+- **[versioned-api](../examples/versioned-api/)**: Type-level API versioning
+- **[iot-gateway](../examples/iot-gateway/)**: Dual-protocol REST + gRPC
+- **[orderbook](../examples/orderbook/)**: High-performance gRPC (Rust-first + proto-first)

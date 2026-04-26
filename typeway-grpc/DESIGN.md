@@ -26,7 +26,7 @@ The handlers you write for REST work unchanged for gRPC. No separate implementat
 
 ## Table of Contents
 
-- [Part 1: Design — Why This Approach](#part-1-design--why-this-approach)
+- [Part 1: Design. Why This Approach](#part-1-design--why-this-approach)
   - [What Tonic Does Well (and Where It Stops)](#what-tonic-does-well-and-where-it-stops)
   - [The Core Idea: Services as Types](#the-core-idea-services-as-types)
   - [Same Handlers, Both Protocols](#same-handlers-both-protocols)
@@ -36,7 +36,7 @@ The handlers you write for REST work unchanged for gRPC. No separate implementat
   - [Middleware](#middleware)
   - [Performance: TypewayCodec](#performance-typewaycodec)
   - [Architecture Diagram](#architecture-diagram)
-- [Part 2: Implementation — What Was Built](#part-2-implementation--what-was-built)
+- [Part 2: Implementation. What Was Built](#part-2-implementation--what-was-built)
   - [The Four Phases](#the-four-phases)
   - [Benchmark Results](#benchmark-results)
   - [What's Missing](#whats-missing)
@@ -44,7 +44,7 @@ The handlers you write for REST work unchanged for gRPC. No separate implementat
 
 ---
 
-# Part 1: Design — Why This Approach
+# Part 1, Design: Why This Approach
 
 ## What Tonic Does Well (and Where It Stops)
 
@@ -52,15 +52,15 @@ Tonic is the standard gRPC framework for Rust. It is battle-tested, well-maintai
 
 That said, Tonic's architecture makes certain tradeoffs that typeway-grpc attempts to address:
 
-**Code generation is the only entry point.** Tonic generates a server trait (via `#[async_trait]`) and a client struct from `.proto` files. The generated code is opaque — you implement the trait, but you cannot compose, inspect, or reinterpret the service description. If you want to serve both REST and gRPC, you write two separate handler implementations. If you want to generate documentation, you parse the `.proto` files again with a different tool.
+**Code generation is the only entry point.** Tonic generates a server trait (via `#[async_trait]`) and a client struct from `.proto` files. The generated code is opaque: you implement the trait, but you cannot compose, inspect, or reinterpret the service description. If you want to serve both REST and gRPC, you write two separate handler implementations. If you want to generate documentation, you parse the `.proto` files again with a different tool.
 
-**Errors are untyped.** Every Tonic handler returns `Result<Response<T>, Status>`, where `Status` is a flat struct containing a code enum, a string message, and opaque `Vec<u8>` details. Domain errors collapse into this single type. The `tonic-types` crate adds structured error details, but they remain opt-in and runtime-checked — you can still return any code with any message, and the client must parse opaque bytes to recover detail.
+**Errors are untyped.** Every Tonic handler returns `Result<Response<T>, Status>`, where `Status` is a flat struct containing a code enum, a string message, and opaque `Vec<u8>` details. Domain errors collapse into this single type. The `tonic-types` crate adds structured error details, but they remain opt-in and runtime-checked. You can still return any code with any message, and the client must parse opaque bytes to recover detail.
 
 **Interceptors are shallow.** Tonic's `Interceptor` trait can inspect metadata and reject requests, but cannot modify bodies, cannot be async, and cannot carry typed state. For anything more, you write raw Tower `Layer`/`Service` implementations with their complex associated type bounds.
 
-**Per-RPC allocation.** `#[async_trait]` desugars every handler into `Pin<Box<dyn Future>>` — one heap allocation per RPC. Rust 1.75 stabilized native `async fn` in traits, making this avoidable in many cases.
+**Per-RPC allocation.** `#[async_trait]` desugars every handler into `Pin<Box<dyn Future>>`, one heap allocation per RPC. Rust 1.75 stabilized native `async fn` in traits, making this avoidable in many cases.
 
-**Streams lack protocol safety.** gRPC defines four RPC patterns (unary, server-streaming, client-streaming, bidirectional), but Tonic provides no compile-time guarantee that a server-streaming handler actually sends a stream, or that a bidirectional handler coordinates sends and receives correctly. Streams are `Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>` — fully type-erased.
+**Streams lack protocol safety.** gRPC defines four RPC patterns (unary, server-streaming, client-streaming, bidirectional), but Tonic provides no compile-time guarantee that a server-streaming handler actually sends a stream, or that a bidirectional handler coordinates sends and receives correctly. Streams are `Pin<Box<dyn Stream<Item = Result<T, Status>> + Send>>`, fully type-erased.
 
 None of these are bugs. They are design choices that optimize for ecosystem compatibility and `.proto`-first workflows. typeway-grpc makes different choices.
 
@@ -78,7 +78,7 @@ type UserService = (
 );
 ```
 
-This is not a macro that generates code. It is a type alias — a description of the service in the type system. The framework provides multiple **interpreters** for this type:
+This is not a macro that generates code. It is a type alias, a description of the service in the type system. The framework provides multiple **interpreters** for this type:
 
 | Interpreter | What it produces |
 |---|---|
@@ -122,7 +122,7 @@ This means:
 - REST and gRPC responses are always consistent
 - Adding gRPC support to an existing REST API is a configuration change, not a rewrite
 
-The dispatch itself is O(1) — gRPC method paths (e.g., `/users.v1.UserService/GetUser`) are looked up in a `HashMap` that maps directly to the handler. No REST routing is involved.
+The dispatch itself is O(1), gRPC method paths (e.g., `/users.v1.UserService/GetUser`) are looked up in a `HashMap` that maps directly to the handler. No REST routing is involved.
 
 ## Proto Files Are Derived, Not Required
 
@@ -144,7 +144,7 @@ typeway_grpc::build()
     .emit()?;
 ```
 
-The output is a set of type aliases — not opaque generated traits. You can extend, compose, or layer middleware on them like any other typeway API type.
+The output is a set of type aliases, not opaque generated traits. You can extend, compose, or layer middleware on them like any other typeway API type.
 
 The proto parser handles proto3 syntax, services, RPCs, messages, `map<K, V>` fields, enums, and `import` statements. The `parse_proto_with_imports()` function resolves imports recursively from include directories with circular import detection. For complex proto files with `oneof`, the Tonic codegen bridge (`tonic-compat` feature) provides full compatibility.
 
@@ -216,7 +216,7 @@ pub struct GrpcReceiver<T> {
 }
 ```
 
-The sender/receiver types are not interchangeable. A handler for a server-streaming RPC receives a `GrpcSender` — calling `.recv()` on it is a compile error because the method does not exist. This is a lightweight form of session typing: the type system enforces which direction data flows.
+The sender/receiver types are not interchangeable. A handler for a server-streaming RPC receives a `GrpcSender`, calling `.recv()` on it is a compile error because the method does not exist. This is a lightweight form of session typing: the type system enforces which direction data flows.
 
 ## Middleware
 
@@ -230,7 +230,7 @@ typeway-grpc builds on Typeway's existing Tower integration and effect-system mi
 
 **Deadline propagation.** The `grpc-timeout` header is parsed and available as context for handlers.
 
-**Per-RPC middleware scoping** is a design goal expressed in the type-level API — wrapping individual endpoints with `WithMiddleware<M, Endpoint>` — but this is aspirational architecture, not yet fully implemented.
+**Per-RPC middleware scoping** is a design goal expressed in the type-level API, wrapping individual endpoints with `WithMiddleware<M, Endpoint>`, but this is aspirational architecture, not yet fully implemented.
 
 ## Performance: TypewayCodec
 
@@ -260,10 +260,10 @@ struct User {
 
 The generated code:
 
-- **Pre-computes buffer sizes** — `encoded_len()` calculates the exact byte count without encoding, so the output buffer is allocated once
-- **No runtime field lookup** — tag numbers and wire types are compile-time constants baked into the generated function
-- **No JSON intermediate** — encodes directly from Rust struct fields to protobuf binary, skipping the `serde_json::Value` step that `JsonCodec` and `BinaryCodec` use
-- **Inlineable** — the generated code is a sequence of direct buffer writes that LLVM can optimize aggressively
+- **Pre-computes buffer sizes**: `encoded_len()` calculates the exact byte count without encoding, so the output buffer is allocated once
+- **No runtime field lookup**: tag numbers and wire types are compile-time constants baked into the generated function
+- **No JSON intermediate**: encodes directly from Rust struct fields to protobuf binary, skipping the `serde_json::Value` step that `JsonCodec` and `BinaryCodec` use
+- **Inlineable**: the generated code is a sequence of direct buffer writes that LLVM can optimize aggressively
 
 The `TypewayCodecAdapter<T>` bridges this into the `GrpcCodec` trait system so it works with the existing dispatch infrastructure.
 
@@ -289,7 +289,7 @@ Measured with Criterion, encoding Rust structs to protobuf binary:
 
 **Honest caveats:**
 
-- These benchmarks use identical message schemas with Criterion. The prost types use `#[derive(prost::Message)]` — the same derive that prost users get in production.
+- These benchmarks use identical message schemas with Criterion. The prost types use `#[derive(prost::Message)]`, the same derive that prost users get in production.
 - The speedup comes from compile-time field layout knowledge eliminating runtime dispatch. For workloads where serialization is not the bottleneck, this will not matter.
 - Enums and `oneof` (tagged enum) fields are supported in TypewayCodec. Simple enums encode as varints; tagged enums encode as protobuf oneofs with per-variant wire types.
 
@@ -331,7 +331,7 @@ Measured with Criterion, encoding Rust structs to protobuf binary:
 
 ---
 
-# Part 2: Implementation — What Was Built
+# Part 2, Implementation: What Was Built
 
 ## The Four Phases
 
@@ -339,9 +339,9 @@ typeway-grpc was built incrementally over four phases. Each phase replaced a lay
 
 ### Phase 1: Native gRPC Server
 
-**Problem:** The original proof-of-concept used a "bridge" pattern — gRPC requests were translated into synthetic REST requests, routed through the REST handler, and the REST response was translated back to gRPC framing. This worked but was slow (double serialization), fragile (synthetic request construction could fail in surprising ways), and could not support real streaming.
+**Problem:** The original proof-of-concept used a "bridge" pattern: gRPC requests were translated into synthetic REST requests, routed through the REST handler, and the REST response was translated back to gRPC framing. This worked but was slow (double serialization), fragile (synthetic request construction could fail in surprising ways), and could not support real streaming.
 
-**Solution:** `GrpcMultiplexer` dispatches gRPC requests directly to handlers via `HashMap` lookup. The `GrpcMultiplexer` sits at the HTTP layer and routes by `content-type: application/grpc*` — gRPC requests go to native dispatch, everything else goes to the REST router.
+**Solution:** `GrpcMultiplexer` dispatches gRPC requests directly to handlers via `HashMap` lookup. The `GrpcMultiplexer` sits at the HTTP layer and routes by `content-type: application/grpc*`: gRPC requests go to native dispatch, everything else goes to the REST router.
 
 Key implementation details:
 - Real HTTP/2 trailers carry `grpc-status` and `grpc-message` (via a custom `TrailerBody` type that uses hyper's trailer support)
@@ -365,8 +365,8 @@ The `ProtoTranscoder` maps between `serde_json::Value` (the internal representat
 **Solution:** `#[derive(TypewayCodec)]` generates compile-time specialized encode/decode functions that work directly on struct fields. The `TypewayCodecAdapter<T>` wraps these as a `GrpcCodec` implementation.
 
 The codec generates two traits:
-- `TypewayEncode` — `encoded_len()` + `encode_to(&self, buf: &mut Vec<u8>)`
-- `TypewayDecode` — `typeway_decode(bytes: &[u8]) -> Result<Self, TypewayDecodeError>`
+- `TypewayEncode`, `encoded_len()` + `encode_to(&self, buf: &mut Vec<u8>)`
+- `TypewayDecode`, `typeway_decode(bytes: &[u8]) -> Result<Self, TypewayDecodeError>`
 
 Error handling is thorough: `TypewayDecodeError` covers unexpected EOF, varint overflow, unknown wire types, invalid field values, and unknown enum discriminants.
 
@@ -387,22 +387,22 @@ The client uses `reqwest` as its HTTP transport.
 
 What ships today in typeway-grpc:
 
-- **Proto generation** — `ApiToProto::to_proto()` from Rust types
-- **Proto parsing** — `ProtoFile::parse()` for proto3 files (services, messages, map fields)
-- **Proto diffing** — detect additions, removals, and type changes between proto versions
-- **Proto validation** — check for breaking changes
-- **Native gRPC dispatch** — `HashMap`-based O(1) routing to handlers
-- **Three codecs** — JSON, binary protobuf (prost), TypewayCodec
-- **Real HTTP/2 trailers** — proper `grpc-status` via `TrailerBody`
-- **Streaming** — server, client, and bidirectional via mpsc channels
-- **Server reflection** — `grpc.reflection.v1alpha` protocol
-- **Health checks** — standard gRPC health checking
-- **gRPC-Web** — browser client compatibility
-- **Compression** — gzip support (behind feature flag)
-- **Tonic codegen bridge** — `tonic-compat` feature for existing `.proto` workflows
-- **Service specs** — runtime service metadata and HTML documentation
-- **Compile-time readiness** — `GrpcReady` trait ensures all types are proto-compatible
-- **gRPC client** — codec-aware with interceptors and streaming
+- **Proto generation**: `ApiToProto::to_proto()` from Rust types
+- **Proto parsing**: `ProtoFile::parse()` for proto3 files (services, messages, map fields)
+- **Proto diffing**: detect additions, removals, and type changes between proto versions
+- **Proto validation**: check for breaking changes
+- **Native gRPC dispatch**: `HashMap`-based O(1) routing to handlers
+- **Three codecs**: JSON, binary protobuf (prost), TypewayCodec
+- **Real HTTP/2 trailers**: proper `grpc-status` via `TrailerBody`
+- **Streaming**: server, client, and bidirectional via mpsc channels
+- **Server reflection**: `grpc.reflection.v1alpha` protocol
+- **Health checks**: standard gRPC health checking
+- **gRPC-Web**: browser client compatibility
+- **Compression**: gzip support (behind feature flag)
+- **Tonic codegen bridge**: `tonic-compat` feature for existing `.proto` workflows
+- **Service specs**: runtime service metadata and HTML documentation
+- **Compile-time readiness**: `GrpcReady` trait ensures all types are proto-compatible
+- **gRPC client**: codec-aware with interceptors and streaming
 - **350+ tests, 0 warnings, 0 clippy lints**
 
 ## Benchmark Results
@@ -421,7 +421,7 @@ Decode (protobuf binary → Rust struct):
   large:   TypewayCodec 291ns | Prost 362ns | Hand-written 1064ns
 ```
 
-The gains over prost come from compile-time field layout knowledge — tag numbers, wire types, and buffer sizes are constants, not runtime values. The gap widens with message complexity because each additional field is one more branch prost evaluates at runtime that TypewayCodec resolves at compile time.
+The gains over prost come from compile-time field layout knowledge: tag numbers, wire types, and buffer sizes are constants, not runtime values. The gap widens with message complexity because each additional field is one more branch prost evaluates at runtime that TypewayCodec resolves at compile time.
 
 ## What's Shipped vs. What's Missing
 
@@ -435,10 +435,10 @@ The gains over prost come from compile-time field layout knowledge — tag numbe
 - **Per-RPC middleware.** `GrpcRouter::add_middleware()` registers per-method middleware that runs between request decode and handler call.
 - **Arena pooling.** `BufPool` provides thread-safe reusable encode buffers for zero-allocation steady-state encoding.
 - **GAT-based zero-copy views.** `MessageView` trait with `type View<'buf>` for borrowed decode without allocation.
-- **Typestate builders.** `#[derive(TypestateBuilder)]` with `#[required]` fields — `.build()` only compiles when all required fields are set.
+- **Typestate builders.** `#[derive(TypestateBuilder)]` with `#[required]` fields, `.build()` only compiles when all required fields are set.
 - **gRPC conformance testing.** Smoke + interop test suite covering proto validation, framing, status codes, error details, proto diffing, retry defaults, and circuit breaker state transitions.
 - **Proto-first codegen.** `.proto` → Rust types with TypewayCodec + ToProtoType + BytesStr, via library API or CLI (`typeway-grpc api-from-proto --codec`).
-- **OpenAPI bidirectional codegen.** Swagger 2.x ↔ Rust, OpenAPI 3.x ↔ Rust — parse specs to generate typeway types, or generate specs from types.
+- **OpenAPI bidirectional codegen.** Swagger 2.x ↔ Rust, OpenAPI 3.x ↔ Rust, parse specs to generate typeway types, or generate specs from types.
 - **ServerBuilder with `.mount()`.** Compose large APIs from sub-APIs with type-level mount + effect tracking. `.build()` checks both `AllMounted` and `AllProvided`.
 
 ### Remaining gaps
@@ -472,4 +472,4 @@ The incremental path is lower risk. The full migration path gives you the dual-p
 | Runtime codec selection | Compile-time specialized codec (15-30% faster than prost on decode) |
 | Proto files are input | Proto files are output (or input, your choice) |
 
-typeway-grpc is experimental. Tonic is not. Choose accordingly — but if the idea of services-as-types appeals to you, this is what that looks like for gRPC in Rust.
+typeway-grpc is experimental. Tonic is not. Choose accordingly, but if the idea of services-as-types appeals to you, this is what that looks like for gRPC in Rust.

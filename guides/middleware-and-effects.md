@@ -2,8 +2,8 @@
 
 Typeway has two middleware mechanisms:
 
-1. **Tower layers** — standard `tower_http` middleware (CORS, timeouts, tracing)
-2. **Type-level effects** — compile-time enforcement that required middleware is applied
+1. **Tower layers**, standard `tower_http` middleware (CORS, timeouts, tracing)
+2. **Type-level effects**, compile-time enforcement that required middleware is applied
 
 ## Tower middleware
 
@@ -34,7 +34,7 @@ Common layers from `tower-http` (re-exported via `typeway::tower_http`):
 
 ## The effect system
 
-Tower layers are applied at runtime — the compiler can't verify that
+Tower layers are applied at runtime, the compiler can't verify that
 required middleware is present. The effect system adds compile-time
 enforcement.
 

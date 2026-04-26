@@ -1,7 +1,7 @@
 # Request Validation
 
 Typeway validates request bodies at the type level. `Validated<V, E>`
-wraps an endpoint — the validator runs automatically after deserialization,
+wraps an endpoint, the validator runs automatically after deserialization,
 before the handler.
 
 ## Define a validator
@@ -98,7 +98,7 @@ then the handler.
 
 ## Handler signature
 
-The handler doesn't change — it receives the already-validated body:
+The handler doesn't change, it receives the already-validated body:
 
 ```rust
 async fn create_user(body: Json<CreateUser>) -> (http::StatusCode, Json<User>) {

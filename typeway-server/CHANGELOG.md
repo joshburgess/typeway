@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Extractors**: `Path<P>`, `State<T>`, `Query<T>`, `Json<T>`, `Extension<T>`, `Header<T>`, `Cookie<T>`, `CookieJar`, `HeaderMap`, `http::Method`, `http::Uri`, `Bytes`, `String`
 - **Responses**: `IntoResponse` trait with impls for `&str`, `String`, `Json<T>`, `StatusCode`, `(StatusCode, T)`, `Result<T, E>`, `Bytes`, `Response<BoxBody>`
 - **Streaming**: `body_from_stream()` and `sse_body()` for chunked/SSE responses
+- **`SseResponse<S>` and `SseEvent`**: typed Server-Sent Events response. `SseResponse<S>` wraps any `Stream<Item = SseEvent>` and sets `Content-Type: text/event-stream`, `Cache-Control: no-cache`, `Connection: keep-alive`, `X-Accel-Buffering: no`. `SseEvent` formats per the WHATWG SSE spec (multi-line `data` splits, CR/LF stripped from scalar fields, `:` prefix for comments)
+- **`keep_alive(stream, interval)`**: interleaves `:keepalive` comment frames into an SSE stream so idle proxies don't drop the connection
 - **Body size limits**: configurable via `Server::max_body_size()`, default 2 MiB
 - **Structured errors**: `JsonError` with convenience constructors and JSON serialization
 - **Router**: method-indexed linear scan with first-segment prefix rejection

@@ -8,3 +8,6 @@ This project uses per-crate changelogs. See the changelog for each crate:
 - [`typeway-client`](typeway-client/CHANGELOG.md)
 - [`typeway-openapi`](typeway-openapi/CHANGELOG.md)
 - [`typeway-macros`](typeway-macros/CHANGELOG.md)
+- [`typeway-grpc`](typeway-grpc/CHANGELOG.md)
+- [`typeway-protobuf`](typeway-protobuf/CHANGELOG.md)
+- [`typeway-migrate`](typeway-migrate/CHANGELOG.md)

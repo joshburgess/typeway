@@ -13,8 +13,8 @@ Server::<API>::new(handlers)
 ```
 
 This serves:
-- `GET /openapi.json` — the OpenAPI 3.1 spec
-- `GET /docs` — embedded Swagger UI page
+- `GET /openapi.json`, the OpenAPI 3.1 spec
+- `GET /docs`, embedded Swagger UI page
 
 ## Adding handler documentation
 
@@ -116,7 +116,7 @@ Server::<API>::new(handlers)
 ```
 
 Now you have:
-- `/docs` — Swagger UI for REST
-- `/openapi.json` — OpenAPI spec
-- `/grpc-docs` — gRPC service documentation
-- `/grpc-spec` — gRPC service spec (JSON)
+- `/docs`. Swagger UI for REST
+- `/openapi.json`. OpenAPI spec
+- `/grpc-docs`, gRPC service documentation
+- `/grpc-spec`, gRPC service spec (JSON)
