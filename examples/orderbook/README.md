@@ -31,9 +31,9 @@ Trading systems are the canonical "every microsecond matters" domain:
 
 ```rust
 type OrderBookAPI = (
-    PostEndpoint<OrdersPath, Order, OrderAck>,        // submit order
-    PostEndpoint<CancelPath, CancelRequest, CancelAck>, // cancel order
-    PostEndpoint<BookPath, SymbolQuery, OrderBookSnapshot>, // get book
+    PostEndpoint<OrdersPath, Order, OrderAck>,               // submit order
+    PostEndpoint<CancelPath, CancelRequest, CancelAck>,      // cancel order
+    PostEndpoint<BookPath, SymbolQuery, OrderBookSnapshot>,  // get book
     ServerStream<GetEndpoint<PricesPath, Vec<PriceUpdate>>>, // price feed
 );
 ```

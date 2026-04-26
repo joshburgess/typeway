@@ -191,10 +191,10 @@ Streaming RPCs are expressed as wrapper types in the API definition:
 
 ```rust
 type API = (
-    GetEndpoint<UserByIdPath, User>,                              // Unary
-    ServerStream<GetEndpoint<UsersPath, Vec<User>>>,               // Server-streaming
-    ClientStream<PostEndpoint<UploadPath, PhotoChunk, Result>>,    // Client-streaming
-    BidirectionalStream<PostEndpoint<ChatPath, Msg, Msg>>,         // Bidirectional
+    GetEndpoint<UserByIdPath, User>,                            // Unary
+    ServerStream<GetEndpoint<UsersPath, Vec<User>>>,            // Server-streaming
+    ClientStream<PostEndpoint<UploadPath, PhotoChunk, Result>>, // Client-streaming
+    BidirectionalStream<PostEndpoint<ChatPath, Msg, Msg>>,      // Bidirectional
 );
 ```
 

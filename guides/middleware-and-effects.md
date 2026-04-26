@@ -72,11 +72,11 @@ Use `EffectfulServer` and `.provide::<E>()` to discharge requirements:
 use typeway_server::EffectfulServer;
 
 EffectfulServer::<API>::new(handlers)
-    .provide::<AuthRequired>()   // "I promise auth middleware is applied"
-    .layer(auth_middleware)       // apply the actual middleware
+    .provide::<AuthRequired>()       // "I promise auth middleware is applied"
+    .layer(auth_middleware)          // apply the actual middleware
     .provide::<CorsRequired>()
     .layer(CorsLayer::permissive())
-    .ready()                     // compile-time check: all effects provided
+    .ready()                         // compile-time check: all effects provided
     .serve(addr)
     .await?;
 ```

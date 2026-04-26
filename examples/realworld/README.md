@@ -94,9 +94,9 @@ In `main.rs`, the server must satisfy all declared effects before it can start:
 
 ```rust
 let server = EffectfulServer::<RealWorldAPI>::new(handlers)
-    .provide::<CorsRequired>()  // Mark CorsRequired as satisfied
+    .provide::<CorsRequired>()       // Mark CorsRequired as satisfied
     .layer(CorsLayer::permissive())  // Apply the actual middleware
-    .ready();  // Only compiles if ALL effects are provided
+    .ready();                        // Only compiles if ALL effects are provided
 ```
 
 If you comment out `.provide::<CorsRequired>()`, the call to `.ready()` fails with:
@@ -181,9 +181,9 @@ Four changes from V1:
 
 ```rust
 type V2Changes = (
-    Added<GetEndpoint<HealthPath, HealthResponse>>,           // New: health check
-    Added<GetEndpoint<ArticlesSearchPath, ArticlesResponse>>, // New: article search
-    Replaced<                                                  // Tags now include counts
+    Added<GetEndpoint<HealthPath, HealthResponse>>,                       // New: health check
+    Added<GetEndpoint<ArticlesSearchPath, ArticlesResponse>>,             // New: article search
+    Replaced<                                                             // Tags now include counts
         Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponse>>,
         Requires<CorsRequired, GetEndpoint<TagsPath, TagsResponseV2>>,
     >,
@@ -221,9 +221,9 @@ Four changes from V2:
 
 ```rust
 type V3Changes = (
-    Added<GetEndpoint<StatsPath, StatsResponse>>,                // New: site statistics
-    Added<Protected<AuthUser, DeleteEndpoint<UserPath, ()>>>,    // New: account deletion
-    Replaced<                                                     // User response upgraded
+    Added<GetEndpoint<StatsPath, StatsResponse>>,                      // New: site statistics
+    Added<Protected<AuthUser, DeleteEndpoint<UserPath, ()>>>,          // New: account deletion
+    Replaced<                                                          // User response upgraded
         Protected<AuthUser, GetEndpoint<UserPath, UserResponse>>,
         Protected<AuthUser, GetEndpoint<UserPath, UserResponseV3>>,
     >,

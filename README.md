@@ -49,10 +49,10 @@ The API specification is a Rust type, a tuple of endpoint descriptors:
 
 ```rust
 type UsersAPI = (
-    GetEndpoint<UsersPath, Json<Vec<User>>>,       // GET /users
-    GetEndpoint<UserByIdPath, Json<User>>,          // GET /users/:id
+    GetEndpoint<UsersPath, Json<Vec<User>>>,                // GET /users
+    GetEndpoint<UserByIdPath, Json<User>>,                  // GET /users/:id
     PostEndpoint<UsersPath, Json<CreateUser>, Json<User>>,  // POST /users
-    DeleteEndpoint<UserByIdPath, StatusCode>,       // DELETE /users/:id
+    DeleteEndpoint<UserByIdPath, StatusCode>,               // DELETE /users/:id
 );
 ```
 
@@ -218,8 +218,8 @@ Server::<API>::new(handlers)
     .with_openapi("My API", "1.0.0")
     .serve(addr)
     .await?;
-// GET /openapi.json, the spec
-// GET /docs        . Swagger UI
+// GET /openapi.json -> the spec
+// GET /docs         -> Swagger UI
 ```
 
 ### Axum Interoperability
@@ -362,9 +362,9 @@ type V2Changes = (
 // The resolved V2 API after applying changes
 type V2Resolved = (
     GetEndpoint<UsersPath, Json<Vec<UserV1>>>,
-    GetEndpoint<UserByIdPath, Json<UserV2>>,          // replaced
+    GetEndpoint<UserByIdPath, Json<UserV2>>,                  // replaced
     PostEndpoint<UsersPath, Json<CreateUser>, Json<UserV1>>,  // deprecated but present
-    GetEndpoint<UserProfilePath, Json<Profile>>,      // added
+    GetEndpoint<UserProfilePath, Json<Profile>>,              // added
 );
 
 type V2 = VersionedApi<V1, V2Changes, V2Resolved>;
@@ -429,8 +429,8 @@ enum Status {
 #[derive(ToProtoType)]
 enum Payload {
     Text(String),         // -> oneof payload { string text = 1; }
-    Binary(Vec<u8>),      // ->                  bytes binary = 2;
-    Structured(UserData), // ->                  UserData structured = 3;
+    Binary(Vec<u8>),      // ->                 bytes binary = 2;
+    Structured(UserData), // ->                 UserData structured = 3;
 }
 ```
 
