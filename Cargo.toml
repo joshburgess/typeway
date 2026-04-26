@@ -9,7 +9,6 @@ members = [
     "typeway-protobuf",
     "typeway",
     "typeway-migrate",
-    "spike",
     "examples/realworld",
     "examples/chat",
     "examples/versioned-api",

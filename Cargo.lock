@@ -3581,13 +3581,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "typeway-spike"
-version = "0.1.0"
-dependencies = [
- "typeway-core",
-]
-
-[[package]]
 name = "typeway-versioned-api"
 version = "0.1.0"
 dependencies = [
