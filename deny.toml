@@ -17,6 +17,9 @@ ignore = [
 
 # License checks
 [licenses]
+# Skip unlicensed checks for workspace crates marked publish = false
+# (the example apps don't declare a license because they're not published).
+private = { ignore = true }
 allow = [
     "MIT",
     "Apache-2.0",
