@@ -1,7 +1,17 @@
 [package]
 name = "typeway-migrate"
-version = "0.1.0"
-edition = "2021"
+description = "Code migration tool for porting axum services to typeway"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../README.md"
 
 [[bin]]
 name = "typeway-migrate"

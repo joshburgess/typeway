@@ -750,3 +750,7 @@ The Axum compatibility layer is the strongest practical argument for this founda
 - **Bidirectional embedding.** This isn't just "typeway can call Axum." It's fully bidirectional: Axum routes can be the fallback inside a typeway server. This means you can use Axum's mature WebSocket handling, static file serving, or any other Axum feature alongside typeway's type-safe endpoints.
 
 No other type-safe web framework offers this kind of ecosystem integration. Servant can't embed a WAI app inside a Servant server. Dropshot has no interop with Axum or Actix. Typeway's tower-native architecture makes it a participant in the ecosystem rather than an island.
+
+## License
+
+Dual licensed under [Apache 2.0](LICENSE-APACHE) or [MIT](LICENSE-MIT).

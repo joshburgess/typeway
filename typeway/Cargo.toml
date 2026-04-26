@@ -1,8 +1,17 @@
 [package]
 name = "typeway"
-version = "0.1.0"
-edition = "2021"
 description = "Type-level web framework for Rust: your API is a type"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../README.md"
 
 [features]
 default = ["server"]
@@ -15,13 +24,13 @@ protobuf = ["grpc", "typeway-server/protobuf", "dep:typeway-protobuf"]
 full = ["server", "client", "openapi", "grpc"]
 
 [dependencies]
-typeway-core = { path = "../typeway-core" }
-typeway-macros = { path = "../typeway-macros" }
-typeway-server = { path = "../typeway-server", optional = true }
-typeway-client = { path = "../typeway-client", optional = true }
-typeway-grpc = { path = "../typeway-grpc", optional = true }
-typeway-protobuf = { path = "../typeway-protobuf", optional = true }
-typeway-openapi = { path = "../typeway-openapi", optional = true }
+typeway-core = { path = "../typeway-core", version = "0.1.0" }
+typeway-macros = { path = "../typeway-macros", version = "0.1.0" }
+typeway-server = { path = "../typeway-server", version = "0.1.0", optional = true }
+typeway-client = { path = "../typeway-client", version = "0.1.0", optional = true }
+typeway-grpc = { path = "../typeway-grpc", version = "0.1.0", optional = true }
+typeway-protobuf = { path = "../typeway-protobuf", version = "0.1.0", optional = true }
+typeway-openapi = { path = "../typeway-openapi", version = "0.1.0", optional = true }
 
 # Re-export common deps so users don't need to depend on them directly
 http = "1"
@@ -85,6 +94,11 @@ required-features = ["full"]
 [[example]]
 name = "grpc"
 required-features = ["grpc"]
+
+[[test]]
+name = "compile_errors"
+path = "tests/compile_errors.rs"
+required-features = ["full"]
 
 [lints]
 workspace = true

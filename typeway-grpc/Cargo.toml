@@ -1,7 +1,17 @@
 [package]
 name = "typeway-grpc"
-version = "0.1.0"
-edition = "2021"
+description = "gRPC integration for the typeway type-level web framework"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme = "../README.md"
 
 [[bin]]
 name = "typeway-grpc"
@@ -21,9 +31,9 @@ prost-build = ["dep:prost", "dep:prost-build"]
 tonic-compat = ["dep:prost", "dep:tonic"]
 
 [dependencies]
-typeway-core = { path = "../typeway-core" }
-typeway-protobuf = { path = "../typeway-protobuf" }
-typeway-client = { path = "../typeway-client", optional = true }
+typeway-core = { path = "../typeway-core", version = "0.1.0" }
+typeway-protobuf = { path = "../typeway-protobuf", version = "0.1.0" }
+typeway-client = { path = "../typeway-client", version = "0.1.0", optional = true }
 http = "1"
 indexmap = { version = "2", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
