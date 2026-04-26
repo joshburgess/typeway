@@ -61,7 +61,10 @@ impl<T> GrpcStreamSender<T> {
     }
 
     /// Send an error status, ending the stream with that status.
-    pub async fn send_error(&self, status: GrpcStatus) -> Result<(), typeway_grpc::StreamSendError> {
+    pub async fn send_error(
+        &self,
+        status: GrpcStatus,
+    ) -> Result<(), typeway_grpc::StreamSendError> {
         self.tx
             .send(Err(status))
             .await

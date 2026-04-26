@@ -70,8 +70,7 @@ fn detects_request_body_type() {
 
 #[test]
 fn full_conversion_produces_valid_rust() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     // Verify the output contains key typeway constructs.
     // prettyplease formats macros with spaces, so check without `!` directly.
@@ -94,13 +93,16 @@ fn full_conversion_produces_valid_rust() {
 
     // The output should parse as valid Rust syntax.
     let parsed: Result<syn::File, _> = syn::parse_str(&output);
-    assert!(parsed.is_ok(), "output should be valid Rust syntax: {:?}", parsed.err());
+    assert!(
+        parsed.is_ok(),
+        "output should be valid Rust syntax: {:?}",
+        parsed.err()
+    );
 }
 
 #[test]
 fn handler_extractors_are_transformed() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     // Path extractors should use the generated path type, not raw u32.
     assert!(

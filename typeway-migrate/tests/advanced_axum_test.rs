@@ -72,8 +72,7 @@ fn custom_extractor_produces_warning() {
 #[test]
 fn conversion_succeeds_with_warnings() {
     // Warnings should not block the conversion.
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     // The output should contain TODO comments from warnings.
     assert!(
@@ -97,8 +96,7 @@ fn conversion_succeeds_with_warnings() {
 
 #[test]
 fn nest_prefix_appears_in_output() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
     // The nest prefix is now baked into path type names and path macro segments.
     assert!(
         output.contains("api") && output.contains("v1"),

@@ -60,7 +60,9 @@ fn clone_shares_state() {
 
 #[test]
 fn is_health_path_matches_check() {
-    assert!(HealthService::is_health_path("/grpc.health.v1.Health/Check"));
+    assert!(HealthService::is_health_path(
+        "/grpc.health.v1.Health/Check"
+    ));
 }
 
 #[test]
@@ -70,7 +72,9 @@ fn is_health_path_matches_prefix() {
 
 #[test]
 fn is_health_path_rejects_other() {
-    assert!(!HealthService::is_health_path("/users.v1.UserService/GetUser"));
+    assert!(!HealthService::is_health_path(
+        "/users.v1.UserService/GetUser"
+    ));
     assert!(!HealthService::is_health_path(
         "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo"
     ));

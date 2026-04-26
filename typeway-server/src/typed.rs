@@ -11,8 +11,8 @@
 
 use std::marker::PhantomData;
 
-use typeway_core::ApiSpec;
 use typeway_core::effects::{Effect, Requires};
+use typeway_core::ApiSpec;
 
 use crate::handler_for::BindableEndpoint;
 

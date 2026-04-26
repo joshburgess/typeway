@@ -11,7 +11,9 @@ use uuid::Uuid;
 
 use typeway_server::error::JsonError;
 use typeway_server::extract::{Path, State};
-use typeway_server::negotiate::{AcceptHeader, JsonFormat, NegotiatedResponse, TextFormat, XmlFormat};
+use typeway_server::negotiate::{
+    AcceptHeader, JsonFormat, NegotiatedResponse, TextFormat, XmlFormat,
+};
 use typeway_server::response::Json;
 
 use crate::api::*;
@@ -733,10 +735,7 @@ pub async fn get_tags(
     state: State<Db>,
 ) -> Result<NegotiatedResponse<TagsResponse, (JsonFormat, TextFormat, XmlFormat)>, JsonError> {
     let tags = db::get_tags(&state.0).await?;
-    Ok(NegotiatedResponse::new(
-        TagsResponse { tags },
-        accept.0,
-    ))
+    Ok(NegotiatedResponse::new(TagsResponse { tags }, accept.0))
 }
 
 // ---------------------------------------------------------------------------
@@ -816,19 +815,14 @@ pub async fn get_tags_v2(
         })
         .collect();
 
-    Ok(NegotiatedResponse::new(
-        TagsResponseV2 { tags },
-        accept.0,
-    ))
+    Ok(NegotiatedResponse::new(TagsResponseV2 { tags }, accept.0))
 }
 
 // ---------------------------------------------------------------------------
 // Stats handler — V3 addition
 // ---------------------------------------------------------------------------
 
-pub async fn get_stats(
-    state: State<Db>,
-) -> Result<Json<StatsResponse>, JsonError> {
+pub async fn get_stats(state: State<Db>) -> Result<Json<StatsResponse>, JsonError> {
     let client = state
         .0
         .get()

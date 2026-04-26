@@ -154,10 +154,7 @@ impl GrpcStreamBody {
     }
 
     /// Create a streaming body with a custom final status.
-    pub fn with_status(
-        receiver: tokio::sync::mpsc::Receiver<Bytes>,
-        status: GrpcStatus,
-    ) -> Self {
+    pub fn with_status(receiver: tokio::sync::mpsc::Receiver<Bytes>, status: GrpcStatus) -> Self {
         GrpcStreamBody {
             receiver,
             status,

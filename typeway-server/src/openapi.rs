@@ -180,9 +180,7 @@ mod openapi_impls {
 
     /// `Validated<V, E>` is transparent to OpenAPI — validation is an
     /// internal implementation detail.
-    impl<V: Send + Sync + 'static, E: EndpointToOperation> EndpointToOperation
-        for Validated<V, E>
-    {
+    impl<V: Send + Sync + 'static, E: EndpointToOperation> EndpointToOperation for Validated<V, E> {
         fn path_pattern() -> String {
             E::path_pattern()
         }

@@ -149,9 +149,9 @@ fn arb_path() -> impl Strategy<Value = String> {
                 Just("users".to_string()),
                 Just("hello".to_string()),
                 // Unicode
-                Just("\u{200b}".to_string()),       // zero-width space
-                Just("\u{feff}".to_string()),        // BOM
-                Just("\u{202e}".to_string()),        // RTL override
+                Just("\u{200b}".to_string()), // zero-width space
+                Just("\u{feff}".to_string()), // BOM
+                Just("\u{202e}".to_string()), // RTL override
                 Just("\u{ffff}".to_string()),
                 // Very long segment
                 "[a-z]{1,500}",
@@ -326,14 +326,7 @@ fn arb_query_string() -> impl Strategy<Value = String> {
         // Empty query
         Just("".to_string()),
         // Random key-value pairs
-        prop::collection::vec(
-            (
-                "\\PC{0,50}",
-                "\\PC{0,50}",
-            ),
-            0..20,
-        )
-        .prop_map(|pairs| {
+        prop::collection::vec(("\\PC{0,50}", "\\PC{0,50}",), 0..20,).prop_map(|pairs| {
             pairs
                 .into_iter()
                 .map(|(k, v)| format!("{k}={v}"))
@@ -346,10 +339,10 @@ fn arb_query_string() -> impl Strategy<Value = String> {
         Just("q=".to_string()),
         Just("=value".to_string()),
         Just("key".to_string()),
-        Just("q=hello&q=world".to_string()),        // duplicate keys
-        Just("q=%00%01%02".to_string()),             // null bytes in values
-        Just("q=%zz".to_string()),                   // invalid percent encoding
-        Just("q=a%2".to_string()),                   // truncated percent encoding
+        Just("q=hello&q=world".to_string()), // duplicate keys
+        Just("q=%00%01%02".to_string()),     // null bytes in values
+        Just("q=%zz".to_string()),           // invalid percent encoding
+        Just("q=a%2".to_string()),           // truncated percent encoding
         // Very long query string
         "[a-z]{1,100}".prop_map(|s| format!("q={}", s.repeat(50))),
         // Unicode in query values

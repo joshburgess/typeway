@@ -87,29 +87,39 @@ pub fn sanitize_name(name: &str) -> String {
 /// `#/definitions/User` → `User` (v2)
 /// `#/components/schemas/User` → `User` (v3)
 pub fn ref_to_name(ref_str: &str) -> String {
-    ref_str
-        .rsplit('/')
-        .next()
-        .unwrap_or(ref_str)
-        .to_string()
+    ref_str.rsplit('/').next().unwrap_or(ref_str).to_string()
 }
 
 /// Generate the endpoint type string for a path + method.
-pub fn endpoint_type(method: &str, path_type: &str, req_type: Option<&str>, res_type: &str) -> String {
+pub fn endpoint_type(
+    method: &str,
+    path_type: &str,
+    req_type: Option<&str>,
+    res_type: &str,
+) -> String {
     match method.to_uppercase().as_str() {
         "GET" | "HEAD" => format!("GetEndpoint<{}, Json<{}>>", path_type, res_type),
         "DELETE" => format!("DeleteEndpoint<{}, Json<{}>>", path_type, res_type),
         "POST" => {
             let req = req_type.unwrap_or("serde_json::Value");
-            format!("PostEndpoint<{}, Json<{}>, Json<{}>>", path_type, req, res_type)
+            format!(
+                "PostEndpoint<{}, Json<{}>, Json<{}>>",
+                path_type, req, res_type
+            )
         }
         "PUT" => {
             let req = req_type.unwrap_or("serde_json::Value");
-            format!("PutEndpoint<{}, Json<{}>, Json<{}>>", path_type, req, res_type)
+            format!(
+                "PutEndpoint<{}, Json<{}>, Json<{}>>",
+                path_type, req, res_type
+            )
         }
         "PATCH" => {
             let req = req_type.unwrap_or("serde_json::Value");
-            format!("PatchEndpoint<{}, Json<{}>, Json<{}>>", path_type, req, res_type)
+            format!(
+                "PatchEndpoint<{}, Json<{}>, Json<{}>>",
+                path_type, req, res_type
+            )
         }
         _ => format!("GetEndpoint<{}, Json<{}>>", path_type, res_type),
     }

@@ -2,13 +2,12 @@
 //!
 //! The [`GrpcReady`] trait ensures that all request and response types in an
 //! API implement [`ToProtoType`], guaranteeing complete `.proto` generation.
-//! This is the gRPC equivalent of
-//! [`Serves<A>`](typeway_server::serves::Serves) for the REST server.
+//! This is the gRPC equivalent of `Serves<A>` (in `typeway_server`)
+//! for the REST server.
 //!
-//! [`GrpcReady`] is checked as a bound on
-//! [`Server::with_grpc`](typeway_server::server::Server::with_grpc), so
-//! calling `.with_grpc()` on a server whose API has types missing
-//! `ToProtoType` produces a compile-time error.
+//! [`GrpcReady`] is checked as a bound on `Server::with_grpc`
+//! (in `typeway_server`), so calling `.with_grpc()` on a server whose API
+//! has types missing `ToProtoType` produces a compile-time error.
 
 use typeway_core::effects::{Effect, Requires};
 use typeway_core::endpoint::{Endpoint, NoBody};

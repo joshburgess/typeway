@@ -3,7 +3,7 @@
 //! [`GrpcServiceDescriptor`] describes a complete gRPC service at runtime,
 //! including all method names, paths, and HTTP method mappings.
 //! [`ApiToServiceDescriptor`] builds a descriptor by reusing the
-//! [`CollectRpcs`](crate::proto_gen::CollectRpcs) machinery.
+//! [`crate::proto_gen::CollectRpcs`] machinery.
 
 use crate::proto_gen::CollectRpcs;
 
@@ -78,15 +78,13 @@ impl<T: CollectRpcs> ApiToServiceDescriptor for T {
                 .map(|rpc| GrpcMethodDescriptor {
                     name: rpc.name.clone(),
                     full_path: format!("/{}.{}/{}", package, service_name, rpc.name),
-                    http_method: rpc.http_method.parse::<http::Method>().unwrap_or_else(
-                        |_| {
-                            panic!(
-                                "invalid HTTP method '{}' for gRPC method '{}' \
+                    http_method: rpc.http_method.parse::<http::Method>().unwrap_or_else(|_| {
+                        panic!(
+                            "invalid HTTP method '{}' for gRPC method '{}' \
                                  — this is a bug in proto generation",
-                                rpc.http_method, rpc.name
-                            )
-                        },
-                    ),
+                            rpc.http_method, rpc.name
+                        )
+                    }),
                     rest_path: rpc.path_pattern.clone(),
                     server_streaming: rpc.server_streaming,
                     client_streaming: rpc.client_streaming,
@@ -112,15 +110,13 @@ mod tests {
                 .map(|rpc| GrpcMethodDescriptor {
                     name: rpc.name.clone(),
                     full_path: format!("/test.v1.TestService/{}", rpc.name),
-                    http_method: rpc.http_method.parse::<http::Method>().unwrap_or_else(
-                        |_| {
-                            panic!(
-                                "invalid HTTP method '{}' for gRPC method '{}' \
+                    http_method: rpc.http_method.parse::<http::Method>().unwrap_or_else(|_| {
+                        panic!(
+                            "invalid HTTP method '{}' for gRPC method '{}' \
                                  — this is a bug in proto generation",
-                                rpc.http_method, rpc.name
-                            )
-                        },
-                    ),
+                            rpc.http_method, rpc.name
+                        )
+                    }),
                     rest_path: rpc.path_pattern.clone(),
                     server_streaming: rpc.server_streaming,
                     client_streaming: rpc.client_streaming,

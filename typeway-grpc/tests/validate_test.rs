@@ -165,7 +165,10 @@ service TestService {
         .iter()
         .filter(|e| e.error.contains("output type"))
         .collect();
-    assert!(!input_errors.is_empty(), "Expected missing input type error");
+    assert!(
+        !input_errors.is_empty(),
+        "Expected missing input type error"
+    );
     assert!(
         !output_errors.is_empty(),
         "Expected missing output type error"
@@ -180,10 +183,7 @@ fn api_to_proto_validated_returns_errors() {
         GetEndpoint<UserByIdPath, User>,
     );
     let (proto, errors) = API::to_proto_validated("UserService", "users.v1");
-    assert!(
-        !proto.is_empty(),
-        "Expected non-empty proto output"
-    );
+    assert!(!proto.is_empty(), "Expected non-empty proto output");
     assert!(
         errors.is_empty(),
         "Expected no errors for valid API, got: {:?}",

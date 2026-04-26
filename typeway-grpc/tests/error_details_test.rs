@@ -23,8 +23,8 @@ fn rich_status_serializes_to_json() {
 
 #[test]
 fn bad_request_has_field_violations() {
-    let status = RichGrpcStatus::new(GrpcCode::InvalidArgument, "bad input")
-        .with_bad_request(BadRequest {
+    let status =
+        RichGrpcStatus::new(GrpcCode::InvalidArgument, "bad input").with_bad_request(BadRequest {
             field_violations: vec![
                 FieldViolation {
                     field: "email".to_string(),
@@ -39,10 +39,7 @@ fn bad_request_has_field_violations() {
 
     let json: serde_json::Value = serde_json::from_slice(&status.to_json_bytes()).unwrap();
     let detail = &json["details"][0];
-    assert_eq!(
-        detail["@type"],
-        "type.googleapis.com/google.rpc.BadRequest"
-    );
+    assert_eq!(detail["@type"], "type.googleapis.com/google.rpc.BadRequest");
     let violations = detail["field_violations"].as_array().unwrap();
     assert_eq!(violations.len(), 2);
     assert_eq!(violations[0]["field"], "email");
@@ -65,10 +62,7 @@ fn retry_info_serializes() {
 #[test]
 fn debug_info_serializes() {
     let status = RichGrpcStatus::new(GrpcCode::Internal, "internal error").with_debug_info(
-        vec![
-            "main.rs:42".to_string(),
-            "handler.rs:17".to_string(),
-        ],
+        vec!["main.rs:42".to_string(), "handler.rs:17".to_string()],
         "null pointer in user lookup",
     );
 
@@ -86,8 +80,11 @@ fn error_info_with_metadata() {
     let mut metadata = HashMap::new();
     metadata.insert("consumer".to_string(), "projects/123".to_string());
 
-    let status = RichGrpcStatus::new(GrpcCode::ResourceExhausted, "rate limited")
-        .with_error_info("RATE_LIMIT_EXCEEDED", "googleapis.com", metadata);
+    let status = RichGrpcStatus::new(GrpcCode::ResourceExhausted, "rate limited").with_error_info(
+        "RATE_LIMIT_EXCEEDED",
+        "googleapis.com",
+        metadata,
+    );
 
     let json: serde_json::Value = serde_json::from_slice(&status.to_json_bytes()).unwrap();
     let detail = &json["details"][0];
@@ -123,16 +120,17 @@ fn multiple_details() {
         details[1]["@type"],
         "type.googleapis.com/google.rpc.DebugInfo"
     );
-    assert_eq!(
-        details[2]["@type"],
-        "type.googleapis.com/google.rpc.Help"
-    );
+    assert_eq!(details[2]["@type"], "type.googleapis.com/google.rpc.Help");
 }
 
 #[test]
 fn to_grpc_response_parts_has_headers_and_body() {
-    let status = RichGrpcStatus::new(GrpcCode::NotFound, "user not found")
-        .with_resource_info("user", "user-42", "", "no user with id 42");
+    let status = RichGrpcStatus::new(GrpcCode::NotFound, "user not found").with_resource_info(
+        "user",
+        "user-42",
+        "",
+        "no user with id 42",
+    );
 
     let (headers, body) = status.to_grpc_response_parts();
 
@@ -325,8 +323,11 @@ fn grpc_status_into_rich_then_add_details() {
 
 #[test]
 fn error_info_empty_metadata_omitted_in_json() {
-    let status = RichGrpcStatus::new(GrpcCode::Internal, "err")
-        .with_error_info("REASON", "domain.com", HashMap::new());
+    let status = RichGrpcStatus::new(GrpcCode::Internal, "err").with_error_info(
+        "REASON",
+        "domain.com",
+        HashMap::new(),
+    );
 
     let json: serde_json::Value = serde_json::from_slice(&status.to_json_bytes()).unwrap();
     let detail = &json["details"][0];

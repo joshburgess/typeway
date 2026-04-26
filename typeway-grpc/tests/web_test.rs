@@ -1,6 +1,5 @@
 use typeway_grpc::web::{
-    encode_trailers_frame, is_grpc_web_request, GrpcWebLayer, GrpcWebService,
-    TRAILERS_FRAME_FLAG,
+    encode_trailers_frame, is_grpc_web_request, GrpcWebLayer, GrpcWebService, TRAILERS_FRAME_FLAG,
 };
 
 #[test]

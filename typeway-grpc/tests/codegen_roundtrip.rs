@@ -67,7 +67,10 @@ fn serde_codegen_produces_valid_rust() {
     assert!(output.contains("pub symbol: String,"));
     assert!(output.contains("pub price: f64,"));
     assert!(output.contains("pub quantity: u32,"));
-    assert!(!output.contains("BytesStr"), "serde mode should not use BytesStr");
+    assert!(
+        !output.contains("BytesStr"),
+        "serde mode should not use BytesStr"
+    );
 
     // Repeated fields.
     assert!(output.contains("pub bids: Vec<PriceLevel>,"));
@@ -111,7 +114,10 @@ fn codec_codegen_produces_valid_rust() {
     assert!(output.contains("pub struct PriceLevel {"));
 
     // String fields use BytesStr in codec mode.
-    assert!(output.contains("pub symbol: BytesStr,"), "Expected BytesStr for string fields");
+    assert!(
+        output.contains("pub symbol: BytesStr,"),
+        "Expected BytesStr for string fields"
+    );
     assert!(output.contains("pub order_id: BytesStr,"));
 
     // Non-string fields unchanged.
@@ -257,8 +263,14 @@ message User {
     assert!(output.contains("Inactive,"));
     assert!(output.contains("#[proto(tag = 0)]"));
     // Enum gets TypewayCodec + ToProtoType.
-    assert!(output.contains("TypewayCodec"), "Missing TypewayCodec in:\n{output}");
-    assert!(output.contains("pub enum Status {"), "Missing enum:\n{output}");
+    assert!(
+        output.contains("TypewayCodec"),
+        "Missing TypewayCodec in:\n{output}"
+    );
+    assert!(
+        output.contains("pub enum Status {"),
+        "Missing enum:\n{output}"
+    );
     // Struct still generated.
     assert!(output.contains("pub struct User {"));
 }

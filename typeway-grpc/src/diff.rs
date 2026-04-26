@@ -263,7 +263,9 @@ message CreateUserRequest {
         let changes = diff_protos(V1, v2).unwrap();
         let added: Vec<_> = changes
             .iter()
-            .filter(|c| c.kind == ChangeKind::Compatible && c.description.contains("RPC method added"))
+            .filter(|c| {
+                c.kind == ChangeKind::Compatible && c.description.contains("RPC method added")
+            })
             .collect();
         assert_eq!(added.len(), 1);
         assert!(added[0].location.contains("CreateUser"));
@@ -287,7 +289,9 @@ message GetUserRequest {
         let changes = diff_protos(V1, v2).unwrap();
         let breaking: Vec<_> = changes
             .iter()
-            .filter(|c| c.kind == ChangeKind::Breaking && c.description.contains("RPC method removed"))
+            .filter(|c| {
+                c.kind == ChangeKind::Breaking && c.description.contains("RPC method removed")
+            })
             .collect();
         assert_eq!(breaking.len(), 1);
         assert!(breaking[0].location.contains("ListUser"));
@@ -307,7 +311,9 @@ message GetUserRequest {
         let changes = diff_protos(V1, &v2).unwrap();
         let breaking: Vec<_> = changes
             .iter()
-            .filter(|c| c.kind == ChangeKind::Breaking && c.description.contains("input type changed"))
+            .filter(|c| {
+                c.kind == ChangeKind::Breaking && c.description.contains("input type changed")
+            })
             .collect();
         assert_eq!(breaking.len(), 1);
     }
@@ -318,14 +324,13 @@ message GetUserRequest {
             "rpc GetUser(GetUserRequest) returns (User);",
             "rpc GetUser(GetUserRequest) returns (UserV2);",
         );
-        let v2 = format!(
-            "{}\nmessage UserV2 {{\n  uint32 id = 1;\n}}\n",
-            v2
-        );
+        let v2 = format!("{}\nmessage UserV2 {{\n  uint32 id = 1;\n}}\n", v2);
         let changes = diff_protos(V1, &v2).unwrap();
         let breaking: Vec<_> = changes
             .iter()
-            .filter(|c| c.kind == ChangeKind::Breaking && c.description.contains("output type changed"))
+            .filter(|c| {
+                c.kind == ChangeKind::Breaking && c.description.contains("output type changed")
+            })
             .collect();
         assert_eq!(breaking.len(), 1);
     }
@@ -390,10 +395,7 @@ message GetUserRequest {
 
     #[test]
     fn added_message_is_compatible() {
-        let v2 = format!(
-            "{}\nmessage NewMessage {{\n  string value = 1;\n}}\n",
-            V1
-        );
+        let v2 = format!("{}\nmessage NewMessage {{\n  string value = 1;\n}}\n", V1);
         let changes = diff_protos(V1, &v2).unwrap();
         let compatible: Vec<_> = changes
             .iter()

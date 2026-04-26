@@ -54,7 +54,9 @@ async fn _compile_test_full_protocol(ws: TypedWebSocket<Send<String, Recv<String
 }
 
 /// Verify that a recursive protocol type-checks.
-async fn _compile_test_recursive_protocol(ws: TypedWebSocket<Rec<Recv<String, Send<String, Var>>>>) {
+async fn _compile_test_recursive_protocol(
+    ws: TypedWebSocket<Rec<Recv<String, Send<String, Var>>>>,
+) {
     let ws = ws.enter();
     let (msg, ws) = ws.recv().await.unwrap();
     let ws = ws.send(msg).await.unwrap();

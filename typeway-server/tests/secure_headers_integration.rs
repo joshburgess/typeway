@@ -64,7 +64,11 @@ async fn all_default_headers_present() {
     let headers = resp.headers();
 
     assert_eq!(
-        headers.get("x-content-type-options").unwrap().to_str().unwrap(),
+        headers
+            .get("x-content-type-options")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "nosniff"
     );
     assert_eq!(
@@ -80,7 +84,11 @@ async fn all_default_headers_present() {
         "strict-origin-when-cross-origin"
     );
     assert_eq!(
-        headers.get("content-security-policy").unwrap().to_str().unwrap(),
+        headers
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap(),
         "default-src 'self'"
     );
     assert_eq!(
@@ -173,8 +181,7 @@ async fn custom_header_added() {
 
 #[tokio::test]
 async fn content_security_policy_override() {
-    let layer =
-        SecureHeadersLayer::new().content_security_policy("default-src 'self'; img-src *");
+    let layer = SecureHeadersLayer::new().content_security_policy("default-src 'self'; img-src *");
     let port = start_server(layer).await;
 
     let resp = reqwest::get(format!("http://127.0.0.1:{port}/hello"))

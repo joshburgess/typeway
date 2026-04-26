@@ -85,10 +85,7 @@ async fn create_user_handler(
     (StatusCode::CREATED, Json(user))
 }
 
-async fn delete_user_handler(
-    path: Path<UserByIdPath>,
-    state: State<AppState>,
-) -> StatusCode {
+async fn delete_user_handler(path: Path<UserByIdPath>, state: State<AppState>) -> StatusCode {
     let (id,) = path.0;
     let mut users = state.0.lock().unwrap();
     let len_before = users.len();

@@ -33,7 +33,10 @@ mod common {
     #[test]
     fn type_mapping_other() {
         assert_eq!(openapi_type_to_rust("boolean", None), "bool");
-        assert_eq!(openapi_type_to_rust("array", None), "Vec<serde_json::Value>");
+        assert_eq!(
+            openapi_type_to_rust("array", None),
+            "Vec<serde_json::Value>"
+        );
         assert_eq!(openapi_type_to_rust("object", None), "serde_json::Value");
     }
 
@@ -52,10 +55,7 @@ mod common {
     fn path_to_type_name_conversion() {
         assert_eq!(path_to_type_name("/users"), "UsersPath");
         assert_eq!(path_to_type_name("/users/{id}"), "UsersByIdPath");
-        assert_eq!(
-            path_to_type_name("/users/{id}/posts"),
-            "UsersByIdPostsPath"
-        );
+        assert_eq!(path_to_type_name("/users/{id}/posts"), "UsersByIdPostsPath");
         assert_eq!(path_to_type_name("/"), "RootPath");
     }
 
@@ -130,7 +130,10 @@ mod swagger {
   }
 }"##;
         let output = swagger_to_typeway(spec).unwrap();
-        assert!(output.contains("Vec<Item>"), "Expected Vec<Item>, got:\n{output}");
+        assert!(
+            output.contains("Vec<Item>"),
+            "Expected Vec<Item>, got:\n{output}"
+        );
     }
 
     #[test]
@@ -401,9 +404,9 @@ mod openapi3 {
 // ===========================================================================
 
 mod roundtrip {
-    use typeway_openapi::{openapi3_to_typeway, swagger_to_typeway, to_swagger2, to_swagger2_json};
-    use typeway_openapi::spec::*;
     use indexmap::IndexMap;
+    use typeway_openapi::spec::*;
+    use typeway_openapi::{openapi3_to_typeway, swagger_to_typeway, to_swagger2, to_swagger2_json};
 
     /// Build a sample OpenAPI 3.x spec programmatically.
     fn sample_spec() -> OpenApiSpec {
@@ -420,13 +423,19 @@ mod roundtrip {
             required: false,
             schema: Some(Schema::integer()),
         });
-        get_op.responses.insert("200".to_string(), Response {
-            description: "Success".to_string(),
-            content: IndexMap::from([("application/json".to_string(), MediaType {
-                schema: Some(Schema::array(Schema::string())),
-                example: None,
-            })]),
-        });
+        get_op.responses.insert(
+            "200".to_string(),
+            Response {
+                description: "Success".to_string(),
+                content: IndexMap::from([(
+                    "application/json".to_string(),
+                    MediaType {
+                        schema: Some(Schema::array(Schema::string())),
+                        example: None,
+                    },
+                )]),
+            },
+        );
         users_path.get = Some(get_op);
 
         // POST /users → create user
@@ -434,18 +443,27 @@ mod roundtrip {
         post_op.summary = Some("Create user".to_string());
         post_op.request_body = Some(RequestBody {
             required: true,
-            content: IndexMap::from([("application/json".to_string(), MediaType {
-                schema: Some(Schema::object()),
-                example: None,
-            })]),
+            content: IndexMap::from([(
+                "application/json".to_string(),
+                MediaType {
+                    schema: Some(Schema::object()),
+                    example: None,
+                },
+            )]),
         });
-        post_op.responses.insert("201".to_string(), Response {
-            description: "Created".to_string(),
-            content: IndexMap::from([("application/json".to_string(), MediaType {
-                schema: Some(Schema::object()),
-                example: None,
-            })]),
-        });
+        post_op.responses.insert(
+            "201".to_string(),
+            Response {
+                description: "Created".to_string(),
+                content: IndexMap::from([(
+                    "application/json".to_string(),
+                    MediaType {
+                        schema: Some(Schema::object()),
+                        example: None,
+                    },
+                )]),
+            },
+        );
         users_path.post = Some(post_op);
 
         spec.paths.insert("/users".to_string(), users_path);
@@ -459,10 +477,13 @@ mod roundtrip {
             required: true,
             schema: Some(Schema::string()),
         });
-        delete_op.responses.insert("204".to_string(), Response {
-            description: "Deleted".to_string(),
-            content: IndexMap::new(),
-        });
+        delete_op.responses.insert(
+            "204".to_string(),
+            Response {
+                description: "Deleted".to_string(),
+                content: IndexMap::new(),
+            },
+        );
         user_path.delete = Some(delete_op);
         spec.paths.insert("/users/{id}".to_string(), user_path);
 
@@ -488,7 +509,9 @@ mod roundtrip {
         let swagger = to_swagger2(&spec);
 
         let post = &swagger.paths["/users"]["post"];
-        let body_param = post.parameters.iter()
+        let body_param = post
+            .parameters
+            .iter()
             .find(|p| p["in"] == "body")
             .expect("POST should have body parameter");
         assert_eq!(body_param["required"], true);
@@ -500,7 +523,9 @@ mod roundtrip {
         let swagger = to_swagger2(&spec);
 
         let get = &swagger.paths["/users"]["get"];
-        let query_param = get.parameters.iter()
+        let query_param = get
+            .parameters
+            .iter()
             .find(|p| p["in"] == "query")
             .expect("GET should have query parameter");
         assert_eq!(query_param["name"], "limit");

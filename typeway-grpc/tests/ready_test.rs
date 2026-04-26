@@ -129,10 +129,9 @@ fn requires_wrapper_is_grpc_ready() {
 #[test]
 fn nested_wrappers_are_grpc_ready() {
     // Requires wrapping a Deprecated wrapping a ServerStream
-    assert_grpc_ready::<Requires<
-        CorsRequired,
-        Deprecated<ServerStream<GetEndpoint<UsersPath, Vec<User>>>>,
-    >>();
+    assert_grpc_ready::<
+        Requires<CorsRequired, Deprecated<ServerStream<GetEndpoint<UsersPath, Vec<User>>>>>,
+    >();
 }
 
 // --- Primitive response types ---

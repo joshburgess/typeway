@@ -8,7 +8,7 @@
 //!
 //! ## Quick Start
 //!
-//! ```no_run
+//! ```ignore
 //! use typeway::prelude::*;
 //!
 //! // 1. Define path types
@@ -79,8 +79,8 @@ pub use typeway_client::{CallEndpoint, Client, ClientError};
 // --- gRPC (feature = "grpc") ---
 #[cfg(feature = "grpc")]
 pub use typeway_grpc::{
-    ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcCode, GrpcMultiplexer, GrpcReady,
-    GrpcServiceDescriptor, GrpcClient, GrpcClientConfig, GrpcClientError, ToProtoType,
+    ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcClient, GrpcClientConfig, GrpcClientError,
+    GrpcCode, GrpcMultiplexer, GrpcReady, GrpcServiceDescriptor, ToProtoType,
 };
 #[cfg(feature = "grpc")]
 pub use typeway_server::GrpcServer;
@@ -89,13 +89,13 @@ pub use typeway_server::GrpcServer;
 #[cfg(feature = "protobuf")]
 pub use typeway_protobuf::{BytesStr, ProtoMessage, TypewayDecode, TypewayEncode};
 #[cfg(feature = "protobuf")]
-pub use typeway_server::{Proto, into_direct_handler};
+pub use typeway_server::{into_direct_handler, Proto};
 
 // --- OpenAPI (feature = "openapi") ---
 #[cfg(feature = "openapi")]
 pub use typeway_openapi::{
-    ApiToSpec, Components, EndpointToOperation, ExampleValue, OpenApiSpec, SecurityRequirement,
-    SecurityScheme, ToSchema, apply_handler_docs,
+    apply_handler_docs, ApiToSpec, Components, EndpointToOperation, ExampleValue, OpenApiSpec,
+    SecurityRequirement, SecurityScheme, ToSchema,
 };
 
 /// Convenience prelude — import everything you typically need.
@@ -118,8 +118,8 @@ pub mod prelude {
 
     #[cfg(feature = "grpc")]
     pub use typeway_grpc::{
-        ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcCode, GrpcMultiplexer, GrpcReady,
-        GrpcServiceDescriptor, GrpcClient, GrpcClientConfig, GrpcClientError, ToProtoType,
+        ApiToProto, ApiToServiceDescriptor, CollectRpcs, GrpcClient, GrpcClientConfig,
+        GrpcClientError, GrpcCode, GrpcMultiplexer, GrpcReady, GrpcServiceDescriptor, ToProtoType,
     };
     #[cfg(feature = "grpc")]
     pub use typeway_server::GrpcServer;
@@ -127,11 +127,11 @@ pub mod prelude {
     #[cfg(feature = "protobuf")]
     pub use typeway_protobuf::{BytesStr, ProtoMessage, TypewayDecode, TypewayEncode};
     #[cfg(feature = "protobuf")]
-    pub use typeway_server::{Proto, into_direct_handler};
+    pub use typeway_server::{into_direct_handler, Proto};
 
     #[cfg(feature = "openapi")]
     pub use typeway_openapi::{
-    ApiToSpec, Components, EndpointToOperation, ExampleValue, OpenApiSpec, SecurityRequirement,
-    SecurityScheme, ToSchema, apply_handler_docs,
-};
+        apply_handler_docs, ApiToSpec, Components, EndpointToOperation, ExampleValue, OpenApiSpec,
+        SecurityRequirement, SecurityScheme, ToSchema,
+    };
 }

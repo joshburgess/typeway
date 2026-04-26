@@ -85,7 +85,11 @@ fn roundtrip<T: TypewayEncode + TypewayDecode + std::fmt::Debug + PartialEq>(val
 
 #[test]
 fn simple_roundtrip() {
-    roundtrip(&Simple { name: "Alice".into(), age: 30, active: true });
+    roundtrip(&Simple {
+        name: "Alice".into(),
+        age: 30,
+        active: true,
+    });
 }
 
 #[test]
@@ -104,8 +108,8 @@ fn all_scalars_roundtrip() {
         u64_val: u64::MAX,
         i32_val: -100,
         i64_val: i64::MIN,
-        f32_val: 3.14,
-        f64_val: 2.718281828,
+        f32_val: 1.5,
+        f64_val: 2.5,
         bool_val: true,
         str_val: "hello world".into(),
         bytes_val: vec![0x00, 0xFF, 0x42],
@@ -174,7 +178,11 @@ fn optional_bool_false_roundtrips() {
 
 #[test]
 fn repeated_empty() {
-    roundtrip(&WithRepeated { tags: vec![], scores: vec![], flags: vec![] });
+    roundtrip(&WithRepeated {
+        tags: vec![],
+        scores: vec![],
+        flags: vec![],
+    });
 }
 
 #[test]
@@ -189,18 +197,38 @@ fn repeated_populated() {
 #[test]
 fn nested_roundtrip() {
     roundtrip(&Nested {
-        inner: Simple { name: "inner".into(), age: 10, active: true },
+        inner: Simple {
+            name: "inner".into(),
+            age: 10,
+            active: true,
+        },
         items: vec![
-            Simple { name: "a".into(), age: 1, active: true },
-            Simple { name: "b".into(), age: 2, active: false },
+            Simple {
+                name: "a".into(),
+                age: 1,
+                active: true,
+            },
+            Simple {
+                name: "b".into(),
+                age: 2,
+                active: false,
+            },
         ],
-        maybe: Some(Simple { name: "opt".into(), age: 99, active: true }),
+        maybe: Some(Simple {
+            name: "opt".into(),
+            age: 99,
+            active: true,
+        }),
     });
 }
 
 #[test]
 fn nested_empty_collections() {
-    roundtrip(&Nested { inner: Simple::default(), items: vec![], maybe: None });
+    roundtrip(&Nested {
+        inner: Simple::default(),
+        items: vec![],
+        maybe: None,
+    });
 }
 
 #[test]
@@ -225,7 +253,11 @@ fn bytesstr_roundtrip() {
 
 #[test]
 fn bytesstr_empty_fields() {
-    let val = WithBytesStr { symbol: BytesStr::default(), notes: None, tags: vec![] };
+    let val = WithBytesStr {
+        symbol: BytesStr::default(),
+        notes: None,
+        tags: vec![],
+    };
     let encoded = val.encode_to_vec();
     let decoded = WithBytesStr::typeway_decode(&encoded).unwrap();
     assert!(decoded.symbol.is_empty());
@@ -235,7 +267,11 @@ fn bytesstr_empty_fields() {
 
 #[test]
 fn bytesstr_zero_copy_decode() {
-    let val = WithBytesStr { symbol: BytesStr::from("GOOG"), notes: None, tags: vec![] };
+    let val = WithBytesStr {
+        symbol: BytesStr::from("GOOG"),
+        notes: None,
+        tags: vec![],
+    };
     let encoded = val.encode_to_vec();
     let bytes = bytes::Bytes::from(encoded);
     let decoded = WithBytesStr::typeway_decode_bytes(bytes).unwrap();
@@ -244,7 +280,11 @@ fn bytesstr_zero_copy_decode() {
 
 #[test]
 fn decode_truncated_input_does_not_panic() {
-    let val = Simple { name: "test".into(), age: 42, active: true };
+    let val = Simple {
+        name: "test".into(),
+        age: 42,
+        active: true,
+    };
     let encoded = val.encode_to_vec();
     for len in 1..encoded.len() {
         let _ = Simple::typeway_decode(&encoded[..len]);
@@ -259,16 +299,26 @@ fn decode_empty_input() {
 
 #[test]
 fn encoded_len_matches_actual_simple() {
-    let val = Simple { name: "Alice".into(), age: 30, active: true };
+    let val = Simple {
+        name: "Alice".into(),
+        age: 30,
+        active: true,
+    };
     assert_eq!(val.encoded_len(), val.encode_to_vec().len());
 }
 
 #[test]
 fn encoded_len_matches_actual_all_scalars() {
     let val = AllScalars {
-        u32_val: 42, u64_val: 123456789, i32_val: -50, i64_val: -999999,
-        f32_val: 1.5, f64_val: 2.5, bool_val: true,
-        str_val: "hello".into(), bytes_val: vec![1, 2, 3],
+        u32_val: 42,
+        u64_val: 123456789,
+        i32_val: -50,
+        i64_val: -999999,
+        f32_val: 1.5,
+        f64_val: 2.5,
+        bool_val: true,
+        str_val: "hello".into(),
+        bytes_val: vec![1, 2, 3],
     };
     assert_eq!(val.encoded_len(), val.encode_to_vec().len());
 }
@@ -276,9 +326,21 @@ fn encoded_len_matches_actual_all_scalars() {
 #[test]
 fn encoded_len_matches_actual_nested() {
     let val = Nested {
-        inner: Simple { name: "x".into(), age: 1, active: true },
-        items: vec![Simple { name: "a".into(), age: 10, active: false }],
-        maybe: Some(Simple { name: "b".into(), age: 20, active: true }),
+        inner: Simple {
+            name: "x".into(),
+            age: 1,
+            active: true,
+        },
+        items: vec![Simple {
+            name: "a".into(),
+            age: 10,
+            active: false,
+        }],
+        maybe: Some(Simple {
+            name: "b".into(),
+            age: 20,
+            active: true,
+        }),
     };
     assert_eq!(val.encoded_len(), val.encode_to_vec().len());
 }
@@ -361,7 +423,11 @@ fn oneof_bool_roundtrip() {
 
 #[test]
 fn oneof_encoded_len_matches() {
-    for val in [Value::Text("test".into()), Value::Number(999), Value::Flag(false)] {
+    for val in [
+        Value::Text("test".into()),
+        Value::Number(999),
+        Value::Flag(false),
+    ] {
         assert_eq!(val.encoded_len(), val.encode_to_vec().len());
     }
 }
@@ -376,7 +442,11 @@ fn oneof_nested_message_roundtrip() {
         Deleted(Simple),
     }
 
-    let val = Event::Created(Simple { name: "test".into(), age: 5, active: true });
+    let val = Event::Created(Simple {
+        name: "test".into(),
+        age: 5,
+        active: true,
+    });
     let encoded = val.encode_to_vec();
     let decoded = Event::typeway_decode(&encoded).unwrap();
     assert_eq!(val, decoded);

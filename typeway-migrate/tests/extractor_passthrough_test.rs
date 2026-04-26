@@ -31,7 +31,10 @@ fn form_is_classified_correctly() {
 
 #[test]
 fn websocket_upgrade_is_classified_correctly() {
-    assert_eq!(classify("WebSocketUpgrade"), ExtractorKind::WebSocketUpgrade);
+    assert_eq!(
+        classify("WebSocketUpgrade"),
+        ExtractorKind::WebSocketUpgrade
+    );
 }
 
 #[test]
@@ -61,7 +64,10 @@ fn cookie_extractor_passthrough_in_conversion() {
     let typeway_output = typeway_migrate::axum_to_typeway(source);
     assert!(typeway_output.is_ok(), "axum_to_typeway should succeed");
     let output = typeway_output.unwrap();
-    assert!(output.contains("CookieJar"), "output should contain CookieJar");
+    assert!(
+        output.contains("CookieJar"),
+        "output should contain CookieJar"
+    );
 }
 
 #[test]
@@ -131,5 +137,9 @@ fn websocket_upgrade_generates_warning() {
         .warnings
         .iter()
         .any(|w| w.contains("WebSocket") && w.contains("ws_handler"));
-    assert!(has_ws_warning, "should have WebSocket warning, got: {:?}", model.warnings);
+    assert!(
+        has_ws_warning,
+        "should have WebSocket warning, got: {:?}",
+        model.warnings
+    );
 }

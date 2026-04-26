@@ -1,6 +1,6 @@
 //! Proto-to-typeway code generation.
 //!
-//! Given a [`ProtoFile`](crate::proto_parse::ProtoFile), generate Rust source
+//! Given a [`crate::proto_parse::ProtoFile`], generate Rust source
 //! code with typeway API types, structs, and path declarations.
 
 use crate::proto_parse::{ParsedEnum, ParsedMessage, ProtoFile};
@@ -112,7 +112,9 @@ fn generate_struct_impl(msg: &ParsedMessage, with_typeway_codec: bool) -> String
     // Use a sanitized name (replace dots from nested message flattening).
     let struct_name = msg.name.replace('.', "_");
     if with_typeway_codec {
-        s.push_str("#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]\n");
+        s.push_str(
+            "#[derive(Debug, Clone, Default, Serialize, Deserialize, TypewayCodec, ToProtoType)]\n",
+        );
     } else {
         s.push_str("#[derive(Debug, Clone, Serialize, Deserialize)]\n");
     }
@@ -641,10 +643,7 @@ message ListUserResponse {
 
     #[test]
     fn proto_type_mapping_optional() {
-        assert_eq!(
-            proto_type_to_rust("string", false, true),
-            "Option<String>"
-        );
+        assert_eq!(proto_type_to_rust("string", false, true), "Option<String>");
         assert_eq!(proto_type_to_rust("uint32", false, true), "Option<u32>");
     }
 
@@ -652,10 +651,7 @@ message ListUserResponse {
     fn path_type_name_generation() {
         assert_eq!(path_to_type_name("/users"), "UsersPath");
         assert_eq!(path_to_type_name("/users/{}"), "UsersByIdPath");
-        assert_eq!(
-            path_to_type_name("/users/{}/posts"),
-            "UsersByIdPostsPath"
-        );
+        assert_eq!(path_to_type_name("/users/{}/posts"), "UsersByIdPostsPath");
         assert_eq!(path_to_type_name("/"), "RootPath");
     }
 
@@ -745,7 +741,6 @@ message ListUserResponse {
         assert!(output.contains("#[proto(tag = 3)]"), "Missing tag 3");
     }
 
-    #[test]
     #[test]
     fn codec_imports_typeway_macros_and_bytesstr() {
         let proto = parse_proto(SAMPLE_PROTO).unwrap();
@@ -839,8 +834,14 @@ message ListUserResponse {
     fn non_codec_version_has_no_tags() {
         let proto = parse_proto(SAMPLE_PROTO).unwrap();
         let output = generate_typeway_from_proto(&proto);
-        assert!(!output.contains("#[proto(tag ="), "Non-codec version should not have proto tags");
-        assert!(!output.contains("TypewayCodec"), "Non-codec version should not have TypewayCodec");
+        assert!(
+            !output.contains("#[proto(tag ="),
+            "Non-codec version should not have proto tags"
+        );
+        assert!(
+            !output.contains("TypewayCodec"),
+            "Non-codec version should not have TypewayCodec"
+        );
     }
 
     #[test]
@@ -873,9 +874,18 @@ message ListUserResponse {
         let e = ParsedEnum {
             name: "Status".to_string(),
             variants: vec![
-                crate::proto_parse::ParsedEnumVariant { name: "UNKNOWN".to_string(), tag: 0 },
-                crate::proto_parse::ParsedEnumVariant { name: "ACTIVE".to_string(), tag: 1 },
-                crate::proto_parse::ParsedEnumVariant { name: "INACTIVE".to_string(), tag: 2 },
+                crate::proto_parse::ParsedEnumVariant {
+                    name: "UNKNOWN".to_string(),
+                    tag: 0,
+                },
+                crate::proto_parse::ParsedEnumVariant {
+                    name: "ACTIVE".to_string(),
+                    tag: 1,
+                },
+                crate::proto_parse::ParsedEnumVariant {
+                    name: "INACTIVE".to_string(),
+                    tag: 2,
+                },
             ],
         };
         let s = generate_enum(&e);
@@ -893,9 +903,18 @@ message ListUserResponse {
         let e = ParsedEnum {
             name: "Priority".to_string(),
             variants: vec![
-                crate::proto_parse::ParsedEnumVariant { name: "UNSPECIFIED".to_string(), tag: 0 },
-                crate::proto_parse::ParsedEnumVariant { name: "LOW".to_string(), tag: 1 },
-                crate::proto_parse::ParsedEnumVariant { name: "HIGH".to_string(), tag: 2 },
+                crate::proto_parse::ParsedEnumVariant {
+                    name: "UNSPECIFIED".to_string(),
+                    tag: 0,
+                },
+                crate::proto_parse::ParsedEnumVariant {
+                    name: "LOW".to_string(),
+                    tag: 1,
+                },
+                crate::proto_parse::ParsedEnumVariant {
+                    name: "HIGH".to_string(),
+                    tag: 2,
+                },
             ],
         };
         let s = generate_enum_with_codec(&e);
@@ -932,8 +951,14 @@ message User {
 }
 "#;
         let output = proto_to_typeway_with_codec(source).unwrap();
-        assert!(output.contains("pub enum Status {"), "Missing enum: {output}");
-        assert!(output.contains("pub struct User {"), "Missing struct: {output}");
+        assert!(
+            output.contains("pub enum Status {"),
+            "Missing enum: {output}"
+        );
+        assert!(
+            output.contains("pub struct User {"),
+            "Missing struct: {output}"
+        );
         assert!(output.contains("TypewayCodec"));
         assert!(output.contains("ToProtoType"));
     }

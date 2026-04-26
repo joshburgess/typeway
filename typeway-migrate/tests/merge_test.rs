@@ -28,11 +28,23 @@ fn extracts_all_handler_names() {
         .map(|ep| ep.handler.name.to_string())
         .collect();
 
-    assert!(names.contains(&"list_users".to_string()), "missing list_users");
+    assert!(
+        names.contains(&"list_users".to_string()),
+        "missing list_users"
+    );
     assert!(names.contains(&"get_user".to_string()), "missing get_user");
-    assert!(names.contains(&"create_user".to_string()), "missing create_user");
-    assert!(names.contains(&"list_articles".to_string()), "missing list_articles");
-    assert!(names.contains(&"delete_article".to_string()), "missing delete_article");
+    assert!(
+        names.contains(&"create_user".to_string()),
+        "missing create_user"
+    );
+    assert!(
+        names.contains(&"list_articles".to_string()),
+        "missing list_articles"
+    );
+    assert!(
+        names.contains(&"delete_article".to_string()),
+        "missing delete_article"
+    );
 }
 
 #[test]
@@ -46,8 +58,14 @@ fn extracts_correct_path_patterns() {
         .collect();
 
     assert!(paths.contains(&"/users".to_string()), "missing /users");
-    assert!(paths.contains(&"/users/{id}".to_string()), "missing /users/{{id}}");
-    assert!(paths.contains(&"/articles".to_string()), "missing /articles");
+    assert!(
+        paths.contains(&"/users/{id}".to_string()),
+        "missing /users/{{id}}"
+    );
+    assert!(
+        paths.contains(&"/articles".to_string()),
+        "missing /articles"
+    );
     assert!(
         paths.contains(&"/articles/{id}".to_string()),
         "missing /articles/{{id}}"
@@ -56,8 +74,7 @@ fn extracts_correct_path_patterns() {
 
 #[test]
 fn full_conversion_produces_valid_rust_with_all_endpoints() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     // The output should parse as valid Rust syntax.
     let parsed: Result<syn::File, _> = syn::parse_str(&output);

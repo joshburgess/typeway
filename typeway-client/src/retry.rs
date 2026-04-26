@@ -113,7 +113,8 @@ impl RetryPolicy {
     /// Applies exponential backoff capped at `max_backoff`, plus random
     /// jitter of 0-25% to avoid thundering herd.
     pub(crate) fn backoff_for_attempt(&self, attempt: u32) -> Duration {
-        let base = self.initial_backoff.as_secs_f64() * self.backoff_multiplier.powi(attempt as i32);
+        let base =
+            self.initial_backoff.as_secs_f64() * self.backoff_multiplier.powi(attempt as i32);
         let capped = base.min(self.max_backoff.as_secs_f64());
 
         // Add 0-25% jitter using RandomState (no external deps needed).

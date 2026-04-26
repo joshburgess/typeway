@@ -281,10 +281,7 @@ mod tests {
             res.headers().get(http::header::CONNECTION).unwrap(),
             "keep-alive"
         );
-        assert_eq!(
-            res.headers().get("x-accel-buffering").unwrap(),
-            "no"
-        );
+        assert_eq!(res.headers().get("x-accel-buffering").unwrap(), "no");
     }
 
     #[tokio::test]
@@ -299,10 +296,7 @@ mod tests {
         let res = SseResponse::new(s).into_response();
         let collected = res.into_body().collect().await.unwrap().to_bytes();
         let text = std::str::from_utf8(&collected).unwrap();
-        assert_eq!(
-            text,
-            "data: first\n\nevent: update\ndata: second\n\n"
-        );
+        assert_eq!(text, "data: first\n\nevent: update\ndata: second\n\n");
     }
 
     #[tokio::test]
@@ -326,8 +320,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        let saw_ping =
-            first.comment.is_some() || second.comment.is_some();
+        let saw_ping = first.comment.is_some() || second.comment.is_some();
         assert!(saw_ping, "expected at least one keep-alive ping");
     }
 }

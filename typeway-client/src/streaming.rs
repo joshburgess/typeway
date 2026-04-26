@@ -1,4 +1,4 @@
-//! Streaming response support for the [`Client`](crate::Client).
+//! Streaming response support for the [`crate::Client`].
 //!
 //! The [`call_streaming`](crate::Client::call_streaming) method sends a
 //! request but returns the raw [`reqwest::Response`] instead of
@@ -14,7 +14,7 @@ impl Client {
     ///
     /// Unlike [`call`](Client::call), this does not deserialize the response
     /// body. The caller can stream the body using
-    /// [`bytes_stream()`](reqwest::Response::bytes_stream) or read it
+    /// `reqwest::Response::bytes_stream()` or read it
     /// manually.
     ///
     /// The request is built identically to `call` (path substitution, method,

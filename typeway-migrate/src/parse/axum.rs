@@ -3,9 +3,7 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use syn::{
-    Expr, ExprCall, ExprMethodCall, ExprPath, Item, ItemFn, Lit,
-};
+use syn::{Expr, ExprCall, ExprMethodCall, ExprPath, Item, ItemFn, Lit};
 
 use quote::quote;
 
@@ -42,12 +40,10 @@ fn is_from_fn_middleware(expr: &Expr) -> bool {
     match expr {
         Expr::Call(call) => {
             if let Expr::Path(ExprPath { path, .. }) = call.func.as_ref() {
-                let segments: Vec<_> =
-                    path.segments.iter().map(|s| s.ident.to_string()).collect();
+                let segments: Vec<_> = path.segments.iter().map(|s| s.ident.to_string()).collect();
                 // Match `axum::middleware::from_fn(...)`, `middleware::from_fn(...)`,
                 // or any path ending in `middleware::from_fn`.
-                segments
-                    .ends_with(&["middleware".to_string(), "from_fn".to_string()])
+                segments.ends_with(&["middleware".to_string(), "from_fn".to_string()])
             } else {
                 false
             }
@@ -58,8 +54,7 @@ fn is_from_fn_middleware(expr: &Expr) -> bool {
 
 /// Parse an Axum source file into an `ApiModel`.
 pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
-    let file: syn::File =
-        syn::parse_str(source).context("failed to parse Rust source file")?;
+    let file: syn::File = syn::parse_str(source).context("failed to parse Rust source file")?;
 
     let mut handler_fns: HashMap<String, &ItemFn> = HashMap::new();
     let mut sync_fns: HashMap<String, &ItemFn> = HashMap::new();
@@ -160,9 +155,7 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
     if raw_routes.is_empty() && pending_merges.is_empty() {
         for func in handler_fns.values() {
             let routes_and_layers = extract_routes_from_fn(func);
-            if !routes_and_layers.routes.is_empty()
-                || !routes_and_layers.merged_fns.is_empty()
-            {
+            if !routes_and_layers.routes.is_empty() || !routes_and_layers.merged_fns.is_empty() {
                 raw_routes.extend(routes_and_layers.routes);
                 layers.extend(routes_and_layers.layers);
                 if routes_and_layers.state_type.is_some() {
@@ -252,10 +245,7 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
                 // Handler not found as an async fn — might be a closure or imported.
                 // Create a placeholder.
                 HandlerModel {
-                    name: syn::Ident::new(
-                        &route.handler_name,
-                        proc_macro2::Span::call_site(),
-                    ),
+                    name: syn::Ident::new(&route.handler_name, proc_macro2::Span::call_site()),
                     is_async: true,
                     extractors: Vec::new(),
                     return_type: syn::parse_quote! { impl IntoResponse },
@@ -362,15 +352,12 @@ pub fn parse_axum_file(source: &str) -> Result<ApiModel> {
                 let ty_str = quote!(#ty).to_string();
                 // Don't emit the generic "unknown extractor" warning for auth types
                 // that we've already recognized.
-                if endpoint.requires_auth
-                    && endpoint.auth_type.as_deref() == Some(&ty_str)
-                {
+                if endpoint.requires_auth && endpoint.auth_type.as_deref() == Some(&ty_str) {
                     continue;
                 }
                 warnings.push(format!(
                     "Handler `{}` uses unknown extractor type `{}` — review after conversion",
-                    endpoint.handler.name,
-                    ty_str,
+                    endpoint.handler.name, ty_str,
                 ));
             }
         }
@@ -520,7 +507,7 @@ fn extract_from_expr(expr: &Expr, result: &mut RoutesAndLayers) {
                     }
 
                     // Also store the prefix for inline .nest() usage (no function call).
-                    if nest_prefix.is_some() && mc.args.get(1).is_none_or(|a| !matches!(a, Expr::Call(_))) {
+                    if nest_prefix.is_some() && !matches!(mc.args.get(1), Some(Expr::Call(_))) {
                         result.prefix = nest_prefix;
                     }
 
@@ -607,18 +594,13 @@ fn extract_handler_name_from_args(
 ) -> Option<String> {
     let first = args.first()?;
     match first {
-        Expr::Path(ExprPath { path, .. }) => {
-            Some(path.segments.last()?.ident.to_string())
-        }
+        Expr::Path(ExprPath { path, .. }) => Some(path.segments.last()?.ident.to_string()),
         _ => None,
     }
 }
 
 /// Analyze a handler function's signature and body.
-fn analyze_handler(
-    func: &ItemFn,
-    _path_models: &mut HashMap<String, PathModel>,
-) -> HandlerModel {
+fn analyze_handler(func: &ItemFn, _path_models: &mut HashMap<String, PathModel>) -> HandlerModel {
     let extractors: Vec<ExtractorModel> = func
         .sig
         .inputs
@@ -641,10 +623,7 @@ fn analyze_handler(
 }
 
 /// Fill in capture types on a path model from the handler's Path<T> extractor.
-fn fill_capture_types(
-    endpoint: &mut EndpointModel,
-    path_models: &HashMap<String, PathModel>,
-) {
+fn fill_capture_types(endpoint: &mut EndpointModel, path_models: &HashMap<String, PathModel>) {
     let path_extractor = endpoint
         .handler
         .extractors
@@ -662,7 +641,10 @@ fn fill_capture_types(
                 .collect();
 
             for (seg, ty) in captures.into_iter().zip(capture_types) {
-                if let PathSegment::Capture { ty: ref mut slot, .. } = seg {
+                if let PathSegment::Capture {
+                    ty: ref mut slot, ..
+                } = seg
+                {
                     *slot = Some(Box::new(ty));
                 }
             }
@@ -718,11 +700,11 @@ fn detect_auth_extractor(handler: &HandlerModel) -> (bool, Option<String>, BindM
 /// Extract a simple type name string from a Type for display/matching.
 fn extract_type_name_string(ty: &syn::Type) -> String {
     match ty {
-        syn::Type::Path(syn::TypePath { path, .. }) => {
-            path.segments.last()
-                .map(|s| s.ident.to_string())
-                .unwrap_or_default()
-        }
+        syn::Type::Path(syn::TypePath { path, .. }) => path
+            .segments
+            .last()
+            .map(|s| s.ident.to_string())
+            .unwrap_or_default(),
         _ => String::new(),
     }
 }

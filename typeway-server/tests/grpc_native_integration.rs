@@ -127,8 +127,7 @@ async fn start_native_grpc_server() -> u16 {
         bind::<_, _, _>(create_user),
     ))
     .with_state(state)
-    .with_grpc("UserService", "users.v1")
-    ;
+    .with_grpc("UserService", "users.v1");
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -157,8 +156,7 @@ fn native_grpc_server_compiles() {
         bind::<_, _, _>(create_user),
     ))
     .with_state(state)
-    .with_grpc("UserService", "users.v1")
-    ;
+    .with_grpc("UserService", "users.v1");
 }
 
 /// Native gRPC server should still serve REST requests.
@@ -323,9 +321,18 @@ type StreamingAPI = (
 
 async fn start_streaming_server() -> u16 {
     let state: AppState = Arc::new(std::sync::Mutex::new(vec![
-        User { id: 1, name: "Alice".into() },
-        User { id: 2, name: "Bob".into() },
-        User { id: 3, name: "Charlie".into() },
+        User {
+            id: 1,
+            name: "Alice".into(),
+        },
+        User {
+            id: 2,
+            name: "Bob".into(),
+        },
+        User {
+            id: 3,
+            name: "Charlie".into(),
+        },
     ]));
 
     let server = Server::<StreamingAPI>::new((
@@ -361,7 +368,12 @@ async fn grpc_stream_returns_individual_frames() {
         .await;
 
     assert!(resp.is_ok(), "expected OK, got {:?}", resp.grpc_code());
-    assert_eq!(resp.len(), 3, "expected 3 streamed items, got {}", resp.len());
+    assert_eq!(
+        resp.len(),
+        3,
+        "expected 3 streamed items, got {}",
+        resp.len()
+    );
     assert_eq!(resp.items[0]["name"], "Alice");
     assert_eq!(resp.items[1]["name"], "Bob");
     assert_eq!(resp.items[2]["name"], "Charlie");
@@ -490,9 +502,10 @@ fn typeway_codec_adapter_with_derive() {
 #[cfg(feature = "grpc-proto-binary")]
 #[tokio::test]
 async fn binary_protobuf_content_type_detection() {
-    let state: AppState = Arc::new(std::sync::Mutex::new(vec![
-        User { id: 1, name: "Alice".into() },
-    ]));
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![User {
+        id: 1,
+        name: "Alice".into(),
+    }]));
 
     let server = Server::<TestAPI>::new((
         bind::<_, _, _>(list_users),
@@ -520,9 +533,8 @@ async fn binary_protobuf_content_type_detection() {
         .unwrap();
 
     // JSON requests still work when proto-binary is enabled.
-    let json_body = typeway_grpc::encode_grpc_frame(
-        serde_json::json!({"name": "Dave"}).to_string().as_bytes(),
-    );
+    let json_body =
+        typeway_grpc::encode_grpc_frame(serde_json::json!({"name": "Dave"}).to_string().as_bytes());
     let resp = client
         .post(format!(
             "http://127.0.0.1:{port}/users.v1.UserService/CreateUser"

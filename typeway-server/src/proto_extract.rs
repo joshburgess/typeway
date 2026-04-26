@@ -104,9 +104,12 @@ impl<T: ProtoMessage + 'static> FromRequest for Proto<T> {
 
         if is_binary_protobuf(content_type) {
             // Fast path: binary protobuf → TypewayDecode (no JSON intermediate).
-            T::typeway_decode_bytes(body)
-                .map(Proto)
-                .map_err(|e| (StatusCode::BAD_REQUEST, format!("protobuf decode error: {e}")))
+            T::typeway_decode_bytes(body).map(Proto).map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("protobuf decode error: {e}"),
+                )
+            })
         } else {
             // JSON path: same as Json<T>.
             serde_json::from_slice(&body)
@@ -158,7 +161,8 @@ mod tests {
                 len += 1 + typeway_protobuf::tw_varint_len(self.id as u64);
             }
             if !self.name.is_empty() {
-                len += 1 + typeway_protobuf::tw_varint_len(self.name.len() as u64) + self.name.len();
+                len +=
+                    1 + typeway_protobuf::tw_varint_len(self.name.len() as u64) + self.name.len();
             }
             len
         }
@@ -200,7 +204,8 @@ mod tests {
                         offset += len;
                     }
                     _ => {
-                        offset += typeway_protobuf::tw_skip_wire_value(&bytes[offset..], wire_type)?;
+                        offset +=
+                            typeway_protobuf::tw_skip_wire_value(&bytes[offset..], wire_type)?;
                     }
                 }
             }
@@ -236,29 +241,44 @@ mod tests {
 
     #[tokio::test]
     async fn proto_from_binary() {
-        let user = TestUser { id: 42, name: "Alice".into() };
+        let user = TestUser {
+            id: 42,
+            name: "Alice".into(),
+        };
         let binary = user.encode_to_vec();
         let parts = make_parts("application/grpc+proto");
-        let Proto(decoded) = Proto::<TestUser>::from_request(&parts, Bytes::from(binary)).await.unwrap();
+        let Proto(decoded) = Proto::<TestUser>::from_request(&parts, Bytes::from(binary))
+            .await
+            .unwrap();
         assert_eq!(decoded.id, 42);
         assert_eq!(decoded.name, "Alice");
     }
 
     #[tokio::test]
     async fn proto_from_application_grpc() {
-        let user = TestUser { id: 7, name: "Charlie".into() };
+        let user = TestUser {
+            id: 7,
+            name: "Charlie".into(),
+        };
         let binary = user.encode_to_vec();
         let parts = make_parts("application/grpc");
-        let Proto(decoded) = Proto::<TestUser>::from_request(&parts, Bytes::from(binary)).await.unwrap();
+        let Proto(decoded) = Proto::<TestUser>::from_request(&parts, Bytes::from(binary))
+            .await
+            .unwrap();
         assert_eq!(decoded.id, 7);
     }
 
     #[tokio::test]
     async fn proto_from_application_protobuf() {
-        let user = TestUser { id: 99, name: "Dave".into() };
+        let user = TestUser {
+            id: 99,
+            name: "Dave".into(),
+        };
         let binary = user.encode_to_vec();
         let parts = make_parts("application/protobuf");
-        let Proto(decoded) = Proto::<TestUser>::from_request(&parts, Bytes::from(binary)).await.unwrap();
+        let Proto(decoded) = Proto::<TestUser>::from_request(&parts, Bytes::from(binary))
+            .await
+            .unwrap();
         assert_eq!(decoded.id, 99);
     }
 
@@ -274,33 +294,50 @@ mod tests {
     #[tokio::test]
     async fn proto_invalid_binary() {
         let parts = make_parts("application/grpc+proto");
-        let result = Proto::<TestUser>::from_request(&parts, Bytes::from_static(&[0xFF, 0xFF])).await;
+        let result =
+            Proto::<TestUser>::from_request(&parts, Bytes::from_static(&[0xFF, 0xFF])).await;
         assert!(result.is_err());
     }
 
     #[test]
     fn proto_into_response_json() {
-        let response = Proto(TestUser { id: 42, name: "Alice".into() }).into_response();
+        let response = Proto(TestUser {
+            id: 42,
+            name: "Alice".into(),
+        })
+        .into_response();
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(response.headers().get("content-type").unwrap(), "application/json");
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/json"
+        );
     }
 
     #[test]
     fn proto_tuple_destructure() {
-        let Proto(user) = Proto(TestUser { id: 1, name: "test".into() });
+        let Proto(user) = Proto(TestUser {
+            id: 1,
+            name: "test".into(),
+        });
         assert_eq!(user.id, 1);
     }
 
     #[test]
     fn proto_deref() {
-        let p = Proto(TestUser { id: 1, name: "test".into() });
+        let p = Proto(TestUser {
+            id: 1,
+            name: "test".into(),
+        });
         assert_eq!(p.id, 1);
         assert_eq!(p.name, "test");
     }
 
     #[test]
     fn proto_debug_and_clone() {
-        let p = Proto(TestUser { id: 1, name: "test".into() });
+        let p = Proto(TestUser {
+            id: 1,
+            name: "test".into(),
+        });
         let p2 = p.clone();
         assert_eq!(format!("{p:?}"), format!("{p2:?}"));
     }

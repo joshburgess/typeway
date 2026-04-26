@@ -245,10 +245,7 @@ fn emit_single_handler(endpoint: &EndpointModel) -> TokenStream {
             }
             ExtractorKind::WebSocketUpgrade => {
                 // WebSocket upgrade extractor passes through.
-                let var = ext
-                    .var_name
-                    .clone()
-                    .unwrap_or_else(|| format_ident!("ws"));
+                let var = ext.var_name.clone().unwrap_or_else(|| format_ident!("ws"));
                 let full_type = &ext.full_type;
                 params.push(quote! { #var: #full_type });
             }
@@ -316,9 +313,7 @@ fn should_filter_destructuring_stmt(
 
     // Check if the LHS pattern involves a destructured variable.
     match &local.pat {
-        syn::Pat::Ident(pat_id) => {
-            destructured_vars.contains(&pat_id.ident.to_string())
-        }
+        syn::Pat::Ident(pat_id) => destructured_vars.contains(&pat_id.ident.to_string()),
         syn::Pat::Tuple(tuple) => {
             // `let (x,) = y.0;`
             tuple.elems.iter().any(|elem| {

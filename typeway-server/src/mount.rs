@@ -27,8 +27,8 @@ use std::convert::Infallible;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use typeway_core::ApiSpec;
 use typeway_core::effects::{AllProvided, ECons, ENil, Effect};
+use typeway_core::ApiSpec;
 
 use crate::body::BoxBody;
 use crate::router::{Router, RouterService};
@@ -57,11 +57,7 @@ pub trait HasMount<A, Idx> {}
 
 impl<A, Tail> HasMount<A, MHere> for MCons<A, Tail> {}
 
-impl<A, Head, Tail, Idx> HasMount<A, MThere<Idx>> for MCons<Head, Tail>
-where
-    Tail: HasMount<A, Idx>,
-{
-}
+impl<A, Head, Tail, Idx> HasMount<A, MThere<Idx>> for MCons<Head, Tail> where Tail: HasMount<A, Idx> {}
 
 /// Asserts that ALL sub-APIs in `FullAPI` have been mounted.
 ///

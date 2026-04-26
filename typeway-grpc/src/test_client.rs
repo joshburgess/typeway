@@ -91,8 +91,7 @@ impl GrpcTestClient {
         let body_bytes = response.bytes().await.unwrap_or_default();
 
         // Try to decode gRPC frame; fall back to raw bytes if unframed.
-        let unframed = framing::decode_grpc_frame(&body_bytes)
-            .unwrap_or(&body_bytes);
+        let unframed = framing::decode_grpc_frame(&body_bytes).unwrap_or(&body_bytes);
 
         let json: serde_json::Value =
             serde_json::from_slice(unframed).unwrap_or(serde_json::Value::Null);
@@ -168,11 +167,7 @@ impl GrpcTestClient {
     }
 
     /// Call a server-streaming gRPC method with an empty request body.
-    pub async fn call_streaming_empty(
-        &self,
-        service: &str,
-        method: &str,
-    ) -> GrpcStreamingResponse {
+    pub async fn call_streaming_empty(&self, service: &str, method: &str) -> GrpcStreamingResponse {
         self.call_streaming(service, method, serde_json::json!({}))
             .await
     }

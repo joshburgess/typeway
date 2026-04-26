@@ -147,7 +147,13 @@ pub type RealWorldV1 = (
     Protected<AuthUser, GetEndpoint<ArticlesFeedPath, ArticlesResponse>>,
     Requires<CorsRequired, GetEndpoint<ArticlePath, ArticleResponse>>,
     // Article creation is protected AND validated
-    Protected<AuthUser, Validated<NewArticleValidator, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>>,
+    Protected<
+        AuthUser,
+        Validated<
+            NewArticleValidator,
+            PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>,
+        >,
+    >,
     Protected<AuthUser, PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>>,
     Protected<AuthUser, DeleteEndpoint<ArticlePath, ()>>,
     // Favorites (protected)
@@ -189,7 +195,7 @@ type V2Changes = (
 pub type RealWorldV2Resolved = (
     // Auth
     Validated<NewUserValidator, PostEndpoint<UsersPath, NewUserRequest, UserResponse>>,
-    PostEndpoint<UsersLoginPath, LoginRequest, UserResponse>,  // deprecated but still present
+    PostEndpoint<UsersLoginPath, LoginRequest, UserResponse>, // deprecated but still present
     Protected<AuthUser, GetEndpoint<UserPath, UserResponse>>,
     Protected<AuthUser, PutEndpoint<UserPath, UpdateUserRequest, UserResponse>>,
     // Profiles
@@ -200,7 +206,13 @@ pub type RealWorldV2Resolved = (
     Requires<CorsRequired, GetEndpoint<ArticlesPath, ArticlesResponse>>,
     Protected<AuthUser, GetEndpoint<ArticlesFeedPath, ArticlesResponse>>,
     Requires<CorsRequired, GetEndpoint<ArticlePath, ArticleResponse>>,
-    Protected<AuthUser, Validated<NewArticleValidator, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>>,
+    Protected<
+        AuthUser,
+        Validated<
+            NewArticleValidator,
+            PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>,
+        >,
+    >,
     Protected<AuthUser, PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>>,
     Protected<AuthUser, DeleteEndpoint<ArticlePath, ()>>,
     // Favorites
@@ -237,7 +249,13 @@ typeway_core::assert_api_compatible!(
         Requires<CorsRequired, GetEndpoint<ArticlesPath, ArticlesResponse>>,
         Protected<AuthUser, GetEndpoint<ArticlesFeedPath, ArticlesResponse>>,
         Requires<CorsRequired, GetEndpoint<ArticlePath, ArticleResponse>>,
-        Protected<AuthUser, Validated<NewArticleValidator, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>>,
+        Protected<
+            AuthUser,
+            Validated<
+                NewArticleValidator,
+                PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>,
+            >,
+        >,
         Protected<AuthUser, PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>>,
         Protected<AuthUser, DeleteEndpoint<ArticlePath, ()>>,
         Protected<AuthUser, PostEndpoint<ArticleFavoritePath, (), ArticleResponse>>,
@@ -276,7 +294,7 @@ pub type RealWorldV3Resolved = (
     // Auth
     Validated<NewUserValidator, PostEndpoint<UsersPath, NewUserRequest, UserResponse>>,
     // (login removed in V3)
-    Protected<AuthUser, GetEndpoint<UserPath, UserResponseV3>>,  // REPLACED: now V3 response
+    Protected<AuthUser, GetEndpoint<UserPath, UserResponseV3>>, // REPLACED: now V3 response
     Protected<AuthUser, PutEndpoint<UserPath, UpdateUserRequest, UserResponse>>,
     // Profiles
     Requires<CorsRequired, GetEndpoint<ProfilePath, ProfileResponse>>,
@@ -286,7 +304,13 @@ pub type RealWorldV3Resolved = (
     Requires<CorsRequired, GetEndpoint<ArticlesPath, ArticlesResponse>>,
     Protected<AuthUser, GetEndpoint<ArticlesFeedPath, ArticlesResponse>>,
     Requires<CorsRequired, GetEndpoint<ArticlePath, ArticleResponse>>,
-    Protected<AuthUser, Validated<NewArticleValidator, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>>,
+    Protected<
+        AuthUser,
+        Validated<
+            NewArticleValidator,
+            PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>,
+        >,
+    >,
     Protected<AuthUser, PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>>,
     Protected<AuthUser, DeleteEndpoint<ArticlePath, ()>>,
     // Favorites
@@ -328,7 +352,13 @@ typeway_core::assert_api_compatible!(
         Requires<CorsRequired, GetEndpoint<ArticlesPath, ArticlesResponse>>,
         Protected<AuthUser, GetEndpoint<ArticlesFeedPath, ArticlesResponse>>,
         Requires<CorsRequired, GetEndpoint<ArticlePath, ArticleResponse>>,
-        Protected<AuthUser, Validated<NewArticleValidator, PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>>>,
+        Protected<
+            AuthUser,
+            Validated<
+                NewArticleValidator,
+                PostEndpoint<ArticlesPath, NewArticleRequest, ArticleResponse>,
+            >,
+        >,
         Protected<AuthUser, PutEndpoint<ArticlePath, UpdateArticleRequest, ArticleResponse>>,
         Protected<AuthUser, DeleteEndpoint<ArticlePath, ()>>,
         Protected<AuthUser, PostEndpoint<ArticleFavoritePath, (), ArticleResponse>>,

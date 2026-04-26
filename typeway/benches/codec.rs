@@ -10,8 +10,8 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use prost::Message;
 use typeway_grpc::proto_codec::{json_to_proto_binary, proto_binary_to_json, ProtoFieldDef};
-use typeway_protobuf::{BytesStr, TypewayDecode, TypewayEncode};
 use typeway_macros::TypewayCodec;
+use typeway_protobuf::{BytesStr, TypewayDecode, TypewayEncode};
 
 // ---------------------------------------------------------------------------
 // Test message types
@@ -46,6 +46,7 @@ struct MediumMessage {
 }
 
 /// Large message (~1KB encoded): nested with repeated fields.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Default, PartialEq, TypewayCodec)]
 struct Tag {
     #[proto(tag = 1)]
@@ -266,13 +267,76 @@ fn medium_json() -> serde_json::Value {
 
 fn medium_fields() -> Vec<ProtoFieldDef> {
     vec![
-        ProtoFieldDef { name: "id".into(), proto_type: "uint64".into(), tag: 1, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "username".into(), proto_type: "string".into(), tag: 2, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "email".into(), proto_type: "string".into(), tag: 3, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "bio".into(), proto_type: "string".into(), tag: 4, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "active".into(), proto_type: "bool".into(), tag: 5, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "score".into(), proto_type: "double".into(), tag: 6, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "level".into(), proto_type: "uint32".into(), tag: 7, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
+        ProtoFieldDef {
+            name: "id".into(),
+            proto_type: "uint64".into(),
+            tag: 1,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "username".into(),
+            proto_type: "string".into(),
+            tag: 2,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "email".into(),
+            proto_type: "string".into(),
+            tag: 3,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "bio".into(),
+            proto_type: "string".into(),
+            tag: 4,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "active".into(),
+            proto_type: "bool".into(),
+            tag: 5,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "score".into(),
+            proto_type: "double".into(),
+            tag: 6,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "level".into(),
+            proto_type: "uint32".into(),
+            tag: 7,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
     ]
 }
 
@@ -319,15 +383,96 @@ fn large_json() -> serde_json::Value {
 
 fn large_fields() -> Vec<ProtoFieldDef> {
     vec![
-        ProtoFieldDef { name: "id".into(), proto_type: "uint64".into(), tag: 1, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "title".into(), proto_type: "string".into(), tag: 2, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "body".into(), proto_type: "string".into(), tag: 3, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "author".into(), proto_type: "string".into(), tag: 4, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "tags".into(), proto_type: "string".into(), tag: 5, repeated: true, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "view_count".into(), proto_type: "uint64".into(), tag: 6, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "favorited".into(), proto_type: "bool".into(), tag: 7, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "created_at".into(), proto_type: "string".into(), tag: 8, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
-        ProtoFieldDef { name: "updated_at".into(), proto_type: "string".into(), tag: 9, repeated: false, is_map: false, map_key_type: None, map_value_type: None, nested_fields: None },
+        ProtoFieldDef {
+            name: "id".into(),
+            proto_type: "uint64".into(),
+            tag: 1,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "title".into(),
+            proto_type: "string".into(),
+            tag: 2,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "body".into(),
+            proto_type: "string".into(),
+            tag: 3,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "author".into(),
+            proto_type: "string".into(),
+            tag: 4,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "tags".into(),
+            proto_type: "string".into(),
+            tag: 5,
+            repeated: true,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "view_count".into(),
+            proto_type: "uint64".into(),
+            tag: 6,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "favorited".into(),
+            proto_type: "bool".into(),
+            tag: 7,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "created_at".into(),
+            proto_type: "string".into(),
+            tag: 8,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
+        ProtoFieldDef {
+            name: "updated_at".into(),
+            proto_type: "string".into(),
+            tag: 9,
+            repeated: false,
+            is_map: false,
+            map_key_type: None,
+            map_value_type: None,
+            nested_fields: None,
+        },
     ]
 }
 
@@ -596,8 +741,16 @@ fn bench_packed(c: &mut Criterion) {
     let values: Vec<u32> = (0..100).collect();
     let scores: Vec<f64> = (0..20).map(|i| i as f64 * 1.5).collect();
 
-    let tw_msg = RepeatedMessage { id: 1, values: values.clone(), scores: scores.clone() };
-    let prost_msg = ProstRepeatedMessage { id: 1, values: values.clone(), scores: scores.clone() };
+    let tw_msg = RepeatedMessage {
+        id: 1,
+        values: values.clone(),
+        scores: scores.clone(),
+    };
+    let prost_msg = ProstRepeatedMessage {
+        id: 1,
+        values: values.clone(),
+        scores: scores.clone(),
+    };
 
     group.bench_function("encode/typeway_packed", |b| {
         b.iter(|| black_box(tw_msg.encode_to_vec()))
@@ -622,5 +775,11 @@ fn bench_packed(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_encode, bench_decode, bench_roundtrip, bench_packed);
+criterion_group!(
+    benches,
+    bench_encode,
+    bench_decode,
+    bench_roundtrip,
+    bench_packed
+);
 criterion_main!(benches);

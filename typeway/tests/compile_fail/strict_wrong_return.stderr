@@ -3,8 +3,3 @@ error: cannot find macro `bind_strict` in this scope
    |
 17 |     let _ = Server::<API>::new((bind_strict!(get_tags),));
    |                                 ^^^^^^^^^^^
-   |
-help: consider importing this macro
-   |
- 4 + use typeway_server::bind_strict;
-   |

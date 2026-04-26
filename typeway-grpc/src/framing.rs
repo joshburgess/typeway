@@ -52,9 +52,7 @@ pub fn encode_grpc_frame(message: &[u8]) -> Vec<u8> {
 /// ```
 pub fn decode_grpc_frame(data: &[u8]) -> Result<&[u8], FramingError> {
     if data.len() < 5 {
-        return Err(FramingError::TooShort {
-            got: data.len(),
-        });
+        return Err(FramingError::TooShort { got: data.len() });
     }
     let compressed = data[0];
     if compressed != 0 {
@@ -105,10 +103,7 @@ impl std::fmt::Display for FramingError {
                 )
             }
             FramingError::Incomplete { expected, got } => {
-                write!(
-                    f,
-                    "incomplete frame: expected {expected} bytes, got {got}"
-                )
+                write!(f, "incomplete frame: expected {expected} bytes, got {got}")
             }
         }
     }

@@ -81,8 +81,12 @@ fn is_reflection_path_matches_prefix() {
 
 #[test]
 fn is_reflection_path_rejects_non_reflection() {
-    assert!(!ReflectionService::is_reflection_path("/users.v1.UserService/GetUser"));
-    assert!(!ReflectionService::is_reflection_path("/grpc.health.v1.Health/Check"));
+    assert!(!ReflectionService::is_reflection_path(
+        "/users.v1.UserService/GetUser"
+    ));
+    assert!(!ReflectionService::is_reflection_path(
+        "/grpc.health.v1.Health/Check"
+    ));
     assert!(!ReflectionService::is_reflection_path("/"));
 }
 
@@ -90,10 +94,7 @@ fn is_reflection_path_rejects_non_reflection() {
 fn multiple_services() {
     let svc = ReflectionService::new(
         "proto content".to_string(),
-        vec![
-            "pkg.v1.ServiceA".to_string(),
-            "pkg.v1.ServiceB".to_string(),
-        ],
+        vec!["pkg.v1.ServiceA".to_string(), "pkg.v1.ServiceB".to_string()],
     );
     assert_eq!(svc.list_services().len(), 2);
     let response = svc.handle_request("{\"list_services\":\"\"}");

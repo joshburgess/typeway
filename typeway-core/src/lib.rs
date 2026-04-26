@@ -33,6 +33,6 @@ pub use path::{
 // shadowing `std::marker::Send` when using `typeway_core::*`.
 pub use session::{Dual, End, Offer, Rec, Recv, Select, SessionType, Var};
 pub use versioning::{
-    Added, ApiChangelog, VersionedApi, BackwardCompatible, ChangeMarker, Deprecated, HasEndpoint,
-    Here, IsEndpoint, Removed, Replaced, There, VersionInfo,
+    Added, ApiChangelog, BackwardCompatible, ChangeMarker, Deprecated, HasEndpoint, Here,
+    IsEndpoint, Removed, Replaced, There, VersionInfo, VersionedApi,
 };

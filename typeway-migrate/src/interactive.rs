@@ -29,10 +29,7 @@ fn resolve_auth_detection(model: &mut ApiModel) -> Result<()> {
             continue;
         }
 
-        let auth_ty = endpoint
-            .auth_type
-            .as_deref()
-            .unwrap_or("unknown");
+        let auth_ty = endpoint.auth_type.as_deref().unwrap_or("unknown");
 
         let prompt = format!(
             "Handler `{}` has `{}` as first argument.\n  \
@@ -120,10 +117,7 @@ fn resolve_validation(model: &mut ApiModel) -> Result<()> {
             continue;
         }
 
-        let validator_name = endpoint
-            .validator_name
-            .as_deref()
-            .unwrap_or("Validator");
+        let validator_name = endpoint.validator_name.as_deref().unwrap_or("Validator");
 
         let prompt = format!(
             "Handler `{}` appears to contain manual validation (.is_empty(), .len()).\n  \
@@ -224,9 +218,9 @@ fn resolve_websocket(model: &mut ApiModel) -> Result<()> {
 /// equals it exactly.
 pub fn filter_partial(model: &mut ApiModel, patterns: &[String]) {
     model.endpoints.retain(|ep| {
-        patterns
-            .iter()
-            .any(|pat| ep.path.raw_pattern == *pat || ep.path.raw_pattern.starts_with(&format!("{}/", pat)))
+        patterns.iter().any(|pat| {
+            ep.path.raw_pattern == *pat || ep.path.raw_pattern.starts_with(&format!("{}/", pat))
+        })
     });
 }
 
@@ -348,6 +342,9 @@ mod tests {
         filter_partial(&mut model, &["/users".to_string()]);
 
         assert_eq!(model.endpoints.len(), 2);
-        assert!(model.endpoints.iter().all(|ep| ep.path.raw_pattern.starts_with("/users")));
+        assert!(model
+            .endpoints
+            .iter()
+            .all(|ep| ep.path.raw_pattern.starts_with("/users")));
     }
 }

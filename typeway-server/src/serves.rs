@@ -388,9 +388,7 @@ impl_serves_for_tuple!(
 // VersionedApi<Base, Changes, Resolved> delegates Serves to the resolved API type.
 // This allows EffectfulServer::<VersionedApi<V1, Changes, V2Resolved>>::new(handlers)
 // where handlers: Serves<V2Resolved>.
-impl<B, C, R: ApiSpec, H: Serves<R>> Serves<typeway_core::versioning::VersionedApi<B, C, R>>
-    for H
-{
+impl<B, C, R: ApiSpec, H: Serves<R>> Serves<typeway_core::versioning::VersionedApi<B, C, R>> for H {
     fn register(self, router: &mut Router) {
         <H as Serves<R>>::register(self, router)
     }
@@ -463,9 +461,60 @@ macro_rules! impl_serves_for_subapi_tuple {
 impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1));
 impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2));
 impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3));
-impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4));
-impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4), (A5, H5, 5));
-impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4), (A5, H5, 5), (A6, H6, 6));
-impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4), (A5, H5, 5), (A6, H6, 6), (A7, H7, 7));
-impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4), (A5, H5, 5), (A6, H6, 6), (A7, H7, 7), (A8, H8, 8));
-impl_serves_for_subapi_tuple!((A0, H0, 0), (A1, H1, 1), (A2, H2, 2), (A3, H3, 3), (A4, H4, 4), (A5, H5, 5), (A6, H6, 6), (A7, H7, 7), (A8, H8, 8), (A9, H9, 9));
+impl_serves_for_subapi_tuple!(
+    (A0, H0, 0),
+    (A1, H1, 1),
+    (A2, H2, 2),
+    (A3, H3, 3),
+    (A4, H4, 4)
+);
+impl_serves_for_subapi_tuple!(
+    (A0, H0, 0),
+    (A1, H1, 1),
+    (A2, H2, 2),
+    (A3, H3, 3),
+    (A4, H4, 4),
+    (A5, H5, 5)
+);
+impl_serves_for_subapi_tuple!(
+    (A0, H0, 0),
+    (A1, H1, 1),
+    (A2, H2, 2),
+    (A3, H3, 3),
+    (A4, H4, 4),
+    (A5, H5, 5),
+    (A6, H6, 6)
+);
+impl_serves_for_subapi_tuple!(
+    (A0, H0, 0),
+    (A1, H1, 1),
+    (A2, H2, 2),
+    (A3, H3, 3),
+    (A4, H4, 4),
+    (A5, H5, 5),
+    (A6, H6, 6),
+    (A7, H7, 7)
+);
+impl_serves_for_subapi_tuple!(
+    (A0, H0, 0),
+    (A1, H1, 1),
+    (A2, H2, 2),
+    (A3, H3, 3),
+    (A4, H4, 4),
+    (A5, H5, 5),
+    (A6, H6, 6),
+    (A7, H7, 7),
+    (A8, H8, 8)
+);
+impl_serves_for_subapi_tuple!(
+    (A0, H0, 0),
+    (A1, H1, 1),
+    (A2, H2, 2),
+    (A3, H3, 3),
+    (A4, H4, 4),
+    (A5, H5, 5),
+    (A6, H6, 6),
+    (A7, H7, 7),
+    (A8, H8, 8),
+    (A9, H9, 9)
+);

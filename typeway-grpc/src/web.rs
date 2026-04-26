@@ -284,8 +284,7 @@ where
                 grpc_message.as_deref(),
             );
 
-            let mut combined =
-                BytesMut::with_capacity(body_bytes.len() + trailers_frame.len());
+            let mut combined = BytesMut::with_capacity(body_bytes.len() + trailers_frame.len());
             combined.extend_from_slice(&body_bytes);
             combined.extend_from_slice(&trailers_frame);
 

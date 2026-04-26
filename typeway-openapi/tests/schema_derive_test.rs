@@ -121,7 +121,10 @@ fn unit_only_enum_emits_string_enum() {
     let values = schema.enum_values.as_ref().expect("enum values present");
     let names: Vec<&str> = values.iter().filter_map(|v| v.as_str()).collect();
     assert_eq!(names, vec!["Pending", "Active", "Closed"]);
-    assert_eq!(schema.description.as_deref(), Some("The status of an order."));
+    assert_eq!(
+        schema.description.as_deref(),
+        Some("The status of an order.")
+    );
 }
 
 #[derive(Serialize, Deserialize, TypewaySchema)]
@@ -200,7 +203,10 @@ enum Shape {
 #[test]
 fn internally_tagged_enum_emits_discriminator() {
     let schema = Shape::schema();
-    let disc = schema.discriminator.as_ref().expect("discriminator present");
+    let disc = schema
+        .discriminator
+        .as_ref()
+        .expect("discriminator present");
     assert_eq!(disc.property_name, "kind");
 
     let variants = schema.one_of.as_ref().unwrap();
@@ -266,7 +272,10 @@ fn untagged_enum_emits_bare_payload_one_of() {
 fn one_of_serializes_as_openapi_one_of() {
     let schema = Event::schema();
     let json = serde_json::to_value(&schema).unwrap();
-    assert!(json.get("oneOf").is_some(), "expected `oneOf` key in serialized schema");
+    assert!(
+        json.get("oneOf").is_some(),
+        "expected `oneOf` key in serialized schema"
+    );
 }
 
 #[test]
@@ -300,8 +309,10 @@ fn enum_schema_round_trips_through_openapi3_parser() {
             content,
         },
     );
-    let mut path = PathItem::default();
-    path.get = Some(op);
+    let path = PathItem {
+        get: Some(op),
+        ..Default::default()
+    };
     spec.paths.insert("/events".to_string(), path);
 
     // Serialize and parse back through the codegen path. The parser should
@@ -337,13 +348,21 @@ fn swagger2_downgrades_one_of_to_x_one_of() {
             content,
         },
     );
-    let mut path = PathItem::default();
-    path.get = Some(op);
+    let path = PathItem {
+        get: Some(op),
+        ..Default::default()
+    };
     spec.paths.insert("/events".to_string(), path);
 
     let swagger = to_swagger2_json(&spec);
     let parsed: serde_json::Value = serde_json::from_str(&swagger).unwrap();
     let schema = &parsed["paths"]["/events"]["get"]["responses"]["200"]["schema"];
-    assert!(schema.get("oneOf").is_none(), "Swagger 2.0 must not contain oneOf");
-    assert!(schema.get("x-oneOf").is_some(), "expected x-oneOf vendor extension");
+    assert!(
+        schema.get("oneOf").is_none(),
+        "Swagger 2.0 must not contain oneOf"
+    );
+    assert!(
+        schema.get("x-oneOf").is_some(),
+        "expected x-oneOf vendor extension"
+    );
 }

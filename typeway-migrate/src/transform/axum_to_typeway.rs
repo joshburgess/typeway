@@ -227,28 +227,23 @@ fn emit_validator_structs(model: &ApiModel) -> TokenStream {
             }
 
             let body_type_str = quote!(#body_type).to_string();
-            let doc_line = format!(
-                " TODO: Implement validation logic for {}.",
-                body_type_str
-            );
-            let gen_line =
-                " This validator was auto-generated because the handler contained";
+            let doc_line = format!(" TODO: Implement validation logic for {}.", body_type_str);
+            let gen_line = " This validator was auto-generated because the handler contained";
             let move_line = " manual validation patterns. Move your validation logic here.";
 
             let hints_comment = if hints.is_empty() {
                 TokenStream::new()
             } else {
-                let hint_lines: Vec<TokenStream> = std::iter::once(
-                    "  // Detected patterns in the original handler:".to_string(),
-                )
-                .chain(hints.iter().map(|h| h.to_string()))
-                .map(|line| {
-                    let line_str = line;
-                    quote! {
-                        #[doc = #line_str]
-                    }
-                })
-                .collect();
+                let hint_lines: Vec<TokenStream> =
+                    std::iter::once("  // Detected patterns in the original handler:".to_string())
+                        .chain(hints.iter().map(|h| h.to_string()))
+                        .map(|line| {
+                            let line_str = line;
+                            quote! {
+                                #[doc = #line_str]
+                            }
+                        })
+                        .collect();
                 // We use a different approach: emit as regular comments via a trick.
                 // Since quote! can't emit raw comments, we build them as doc attributes
                 // that will be rendered by prettyplease.
@@ -263,9 +258,8 @@ fn emit_validator_structs(model: &ApiModel) -> TokenStream {
             let pattern_hint = if hints.is_empty() {
                 String::new()
             } else {
-                let mut s = String::from(
-                    "\n        // Detected patterns in the original handler:\n",
-                );
+                let mut s =
+                    String::from("\n        // Detected patterns in the original handler:\n");
                 for h in &hints {
                     s.push_str(&format!("        {}\n", h.trim()));
                 }
@@ -343,13 +337,11 @@ fn emit_api_type(model: &ApiModel) -> TokenStream {
 
             let inner = match ep.method {
                 HttpMethod::Get | HttpMethod::Delete | HttpMethod::Head | HttpMethod::Options => {
-                    let endpoint_name =
-                        format_ident!("{}", ep.method.typeway_endpoint_name());
+                    let endpoint_name = format_ident!("{}", ep.method.typeway_endpoint_name());
                     quote! { #endpoint_name<#path_type, #res_type> }
                 }
                 HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch => {
-                    let endpoint_name =
-                        format_ident!("{}", ep.method.typeway_endpoint_name());
+                    let endpoint_name = format_ident!("{}", ep.method.typeway_endpoint_name());
                     if let Some(ref req_type) = ep.request_body {
                         quote! { #endpoint_name<#path_type, #req_type, #res_type> }
                     } else {
@@ -537,10 +529,7 @@ fn emit_single_handler(endpoint: &EndpointModel) -> TokenStream {
             ExtractorKind::WebSocketUpgrade => {
                 // WebSocket upgrade extractor passes through (untyped).
                 // TODO: Consider using session-typed WebSocket with `TypedWebSocket<Protocol>` for protocol safety.
-                let var = ext
-                    .var_name
-                    .clone()
-                    .unwrap_or_else(|| format_ident!("ws"));
+                let var = ext.var_name.clone().unwrap_or_else(|| format_ident!("ws"));
                 let full_type = &ext.full_type;
                 params.push(quote! { #var: #full_type });
             }

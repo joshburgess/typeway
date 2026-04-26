@@ -60,7 +60,8 @@ impl LitSegment for __lit_health {
 
 type UsersPath = HCons<Lit<__lit_users>, HNil>;
 type UserByIdPath = HCons<Lit<__lit_users>, HCons<Capture<u32>, HNil>>;
-type UserProfilePath = HCons<Lit<__lit_users>, HCons<Capture<u32>, HCons<Lit<__lit_profile>, HNil>>>;
+type UserProfilePath =
+    HCons<Lit<__lit_users>, HCons<Capture<u32>, HCons<Lit<__lit_profile>, HNil>>>;
 type HealthPath = HCons<Lit<__lit_health>, HNil>;
 
 // =========================================================================
@@ -129,10 +130,10 @@ type V2Changes = (
 
 /// The resolved V2 API after applying changes.
 type V2Resolved = (
-    GetEndpoint<UsersPath, Vec<UserV1>>,          // deprecated but still present
-    GetEndpoint<UserByIdPath, UserV2>,             // replaced: V1 → V2
-    GetEndpoint<UserProfilePath, UserProfile>,     // added
-    Requires<RateLimitRequired, GetEndpoint<HealthPath, HealthCheck>>,  // added with effect
+    GetEndpoint<UsersPath, Vec<UserV1>>, // deprecated but still present
+    GetEndpoint<UserByIdPath, UserV2>,   // replaced: V1 → V2
+    GetEndpoint<UserProfilePath, UserProfile>, // added
+    Requires<RateLimitRequired, GetEndpoint<HealthPath, HealthCheck>>, // added with effect
 );
 
 /// V2 = V1 + changes, resolving to V2Resolved.
@@ -144,18 +145,39 @@ type V2 = VersionedApi<V1, V2Changes, V2Resolved>;
 
 async fn list_users() -> Json<Vec<UserV1>> {
     Json(vec![
-        UserV1 { id: 1, name: "Alice".into() },
-        UserV1 { id: 2, name: "Bob".into() },
-        UserV1 { id: 3, name: "Charlie".into() },
+        UserV1 {
+            id: 1,
+            name: "Alice".into(),
+        },
+        UserV1 {
+            id: 2,
+            name: "Bob".into(),
+        },
+        UserV1 {
+            id: 3,
+            name: "Charlie".into(),
+        },
     ])
 }
 
 async fn get_user(path: Path<UserByIdPath>) -> Result<Json<UserV2>, http::StatusCode> {
     let (id,) = path.0;
     match id {
-        1 => Ok(Json(UserV2 { id: 1, name: "Alice".into(), email: "alice@example.com".into() })),
-        2 => Ok(Json(UserV2 { id: 2, name: "Bob".into(), email: "bob@example.com".into() })),
-        3 => Ok(Json(UserV2 { id: 3, name: "Charlie".into(), email: "charlie@example.com".into() })),
+        1 => Ok(Json(UserV2 {
+            id: 1,
+            name: "Alice".into(),
+            email: "alice@example.com".into(),
+        })),
+        2 => Ok(Json(UserV2 {
+            id: 2,
+            name: "Bob".into(),
+            email: "bob@example.com".into(),
+        })),
+        3 => Ok(Json(UserV2 {
+            id: 3,
+            name: "Charlie".into(),
+            email: "charlie@example.com".into(),
+        })),
         _ => Err(http::StatusCode::NOT_FOUND),
     }
 }
@@ -220,12 +242,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         bind::<_, _, _>(get_profile),
         bind::<_, _, _>(health_check),
     ))
-    .provide::<RateLimitRequired>()  // discharge the effect
+    .provide::<RateLimitRequired>() // discharge the effect
     .layer(tower_http::timeout::TimeoutLayer::with_status_code(
         http::StatusCode::REQUEST_TIMEOUT,
         Duration::from_secs(30),
     ))
-    .ready()  // compiles only because RateLimitRequired is provided
+    .ready() // compiles only because RateLimitRequired is provided
     .serve("0.0.0.0:3000".parse()?)
     .await
 }

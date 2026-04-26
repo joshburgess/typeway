@@ -207,10 +207,7 @@ async fn test_call_full_returns_metadata() {
     let port = start_server().await;
     let client = Client::new(&format!("http://127.0.0.1:{port}")).unwrap();
 
-    let resp = client
-        .call_full::<ListUsersEndpoint>(())
-        .await
-        .unwrap();
+    let resp = client.call_full::<ListUsersEndpoint>(()).await.unwrap();
 
     assert_eq!(resp.status, StatusCode::OK);
     assert_eq!(resp.body.len(), 2);

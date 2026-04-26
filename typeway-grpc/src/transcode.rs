@@ -5,7 +5,7 @@
 //! requests. Standard gRPC clients use binary protobuf by default, so this
 //! module enables interop without requiring clients to switch to JSON mode.
 //!
-//! Transcoding is driven by the [`GrpcServiceSpec`](crate::spec::GrpcServiceSpec)
+//! Transcoding is driven by the [`crate::spec::GrpcServiceSpec`]
 //! generated at startup from the API type. The spec provides message field
 //! definitions which the [`ProtoTranscoder`] uses to convert between JSON and
 //! protobuf binary at the wire level.
@@ -90,7 +90,10 @@ impl ProtoTranscoder {
     ///
     /// The path should be in the form `/package.Service/MethodName`.
     pub fn find_method(&self, full_path: &str) -> Option<&MethodSpec> {
-        self.spec.methods.values().find(|m| m.full_path == full_path)
+        self.spec
+            .methods
+            .values()
+            .find(|m| m.full_path == full_path)
     }
 
     /// Get the field definitions for a message type.
@@ -250,8 +253,7 @@ pub fn is_proto_binary_content_type(content_type: &str) -> bool {
     // `application/grpc` (no suffix) defaults to proto binary.
     // `application/grpc+proto` is explicitly proto binary.
     // `application/grpc+json` is JSON.
-    content_type == "application/grpc"
-        || content_type == "application/grpc+proto"
+    content_type == "application/grpc" || content_type == "application/grpc+proto"
 }
 
 /// Return `true` if the content-type indicates gRPC JSON encoding.
@@ -405,7 +407,9 @@ mod tests {
         let proto_bytes = proto_codec::json_to_proto_binary(&json_in, &fields).unwrap();
 
         // Decode via the transcoder.
-        let json_out = tc.decode_request("/test.v1.Svc/GetUser", &proto_bytes).unwrap();
+        let json_out = tc
+            .decode_request("/test.v1.Svc/GetUser", &proto_bytes)
+            .unwrap();
         assert_eq!(json_out["id"], 42);
     }
 
@@ -441,7 +445,10 @@ mod tests {
 
         let result = tc.decode_request("/test.v1.Svc/DeleteUser", &[]);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), TranscodeError::MethodNotFound(_)));
+        assert!(matches!(
+            result.unwrap_err(),
+            TranscodeError::MethodNotFound(_)
+        ));
     }
 
     #[test]
@@ -467,14 +474,18 @@ mod tests {
         let req_proto = proto_codec::json_to_proto_binary(&req_json, &req_fields).unwrap();
 
         // 2. Bridge decodes to JSON for the handler.
-        let handler_input = tc.decode_request("/test.v1.Svc/GetUser", &req_proto).unwrap();
+        let handler_input = tc
+            .decode_request("/test.v1.Svc/GetUser", &req_proto)
+            .unwrap();
         assert_eq!(handler_input["id"], 7);
 
         // 3. Handler returns JSON.
         let handler_output = serde_json::json!({"id": 7, "name": "Bob"});
 
         // 4. Bridge encodes response to binary proto.
-        let resp_proto = tc.encode_response("/test.v1.Svc/GetUser", &handler_output).unwrap();
+        let resp_proto = tc
+            .encode_response("/test.v1.Svc/GetUser", &handler_output)
+            .unwrap();
 
         // 5. Client decodes binary proto response.
         let resp_fields = tc.message_fields("User").unwrap();

@@ -68,8 +68,14 @@ fn validate_proto_file(file: &ProtoFile, errors: &mut Vec<ProtoValidationError>)
     for service in &file.services {
         for method in &service.methods {
             // Strip "stream " prefix if present (parser may include it).
-            let input = method.input_type.strip_prefix("stream ").unwrap_or(&method.input_type);
-            let output = method.output_type.strip_prefix("stream ").unwrap_or(&method.output_type);
+            let input = method
+                .input_type
+                .strip_prefix("stream ")
+                .unwrap_or(&method.input_type);
+            let output = method
+                .output_type
+                .strip_prefix("stream ")
+                .unwrap_or(&method.output_type);
 
             if input != "google.protobuf.Empty" && !message_names.contains(input) {
                 errors.push(ProtoValidationError {
@@ -91,8 +97,23 @@ fn validate_proto_file(file: &ProtoFile, errors: &mut Vec<ProtoValidationError>)
 
 /// Proto reserved words that cannot be used as field names.
 const PROTO_RESERVED_WORDS: &[&str] = &[
-    "syntax", "import", "package", "option", "message", "enum", "service", "rpc", "returns",
-    "stream", "repeated", "optional", "map", "oneof", "reserved", "extensions", "extend",
+    "syntax",
+    "import",
+    "package",
+    "option",
+    "message",
+    "enum",
+    "service",
+    "rpc",
+    "returns",
+    "stream",
+    "repeated",
+    "optional",
+    "map",
+    "oneof",
+    "reserved",
+    "extensions",
+    "extend",
 ];
 
 /// Valid protobuf scalar type names.

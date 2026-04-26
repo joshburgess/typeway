@@ -5,8 +5,8 @@
 //! JSON or YAML and used to generate documentation.
 //!
 //! [`ApiToGrpcSpec`] derives a spec from the API type at startup, reusing the
-//! same [`CollectRpcs`](crate::proto_gen::CollectRpcs) and
-//! [`ApiToProto`](crate::proto_gen::ApiToProto) machinery used for `.proto`
+//! same [`crate::proto_gen::CollectRpcs`] and
+//! [`crate::proto_gen::ApiToProto`] machinery used for `.proto`
 //! generation.
 //!
 //! # Example

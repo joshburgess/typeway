@@ -13,15 +13,24 @@ use typeway_server::*;
 typeway_path!(type UsersPath = "users");
 
 #[derive(serde::Serialize)]
-struct UserV1 { name: String }
+struct UserV1 {
+    name: String,
+}
 #[derive(serde::Serialize)]
-struct UserV2 { name: String, email: String }
+struct UserV2 {
+    name: String,
+    email: String,
+}
 
 struct V1;
-impl ApiVersion for V1 { const PREFIX: &'static str = "v1"; }
+impl ApiVersion for V1 {
+    const PREFIX: &'static str = "v1";
+}
 
 struct V2;
-impl ApiVersion for V2 { const PREFIX: &'static str = "v2"; }
+impl ApiVersion for V2 {
+    const PREFIX: &'static str = "v2";
+}
 
 // Two versioned endpoints in the same API.
 type API = (
@@ -30,11 +39,16 @@ type API = (
 );
 
 async fn get_users_v1() -> Json<Vec<UserV1>> {
-    Json(vec![UserV1 { name: "Alice".into() }])
+    Json(vec![UserV1 {
+        name: "Alice".into(),
+    }])
 }
 
 async fn get_users_v2() -> Json<Vec<UserV2>> {
-    Json(vec![UserV2 { name: "Alice".into(), email: "alice@example.com".into() }])
+    Json(vec![UserV2 {
+        name: "Alice".into(),
+        email: "alice@example.com".into(),
+    }])
 }
 
 async fn start_server() -> u16 {

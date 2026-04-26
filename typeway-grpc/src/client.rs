@@ -108,8 +108,7 @@ impl Default for GrpcRetryPolicy {
 
 impl GrpcRetryPolicy {
     fn backoff_for(&self, attempt: u32) -> Duration {
-        let base = self.initial_backoff.as_millis() as f64
-            * self.multiplier.powi(attempt as i32);
+        let base = self.initial_backoff.as_millis() as f64 * self.multiplier.powi(attempt as i32);
         let capped = base.min(self.max_backoff.as_millis() as f64);
         let jitter = capped * 0.25 * pseudo_random_f64();
         Duration::from_millis((capped + jitter) as u64)
@@ -124,10 +123,12 @@ fn pseudo_random_f64() -> f64 {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
     let mut hasher = RandomState::new().build_hasher();
-    hasher.write_u64(std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64);
+    hasher.write_u64(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64,
+    );
     (hasher.finish() % 1000) as f64 / 1000.0
 }
 
@@ -150,7 +151,11 @@ struct CircuitBreakerState {
 }
 
 #[derive(Debug, PartialEq)]
-enum BreakerState { Closed, Open, HalfOpen }
+enum BreakerState {
+    Closed,
+    Open,
+    HalfOpen,
+}
 
 impl CircuitBreaker {
     /// Create a circuit breaker.
@@ -354,11 +359,7 @@ impl ClientStream {
 
 impl GrpcClient {
     /// Create a new native gRPC client with the default JSON codec.
-    pub fn new(
-        base_url: &str,
-        service_name: &str,
-        package: &str,
-    ) -> Result<Self, GrpcClientError> {
+    pub fn new(base_url: &str, service_name: &str, package: &str) -> Result<Self, GrpcClientError> {
         Self::with_codec(base_url, service_name, package, Arc::new(JsonCodec))
     }
 
@@ -386,8 +387,8 @@ impl GrpcClient {
         codec: Arc<dyn GrpcCodec>,
         config: GrpcClientConfig,
     ) -> Result<Self, GrpcClientError> {
-        let base_url = url::Url::parse(base_url)
-            .map_err(|e| GrpcClientError::InvalidUrl(e.to_string()))?;
+        let base_url =
+            url::Url::parse(base_url).map_err(|e| GrpcClientError::InvalidUrl(e.to_string()))?;
 
         let http_client = reqwest::Client::builder()
             .http2_prior_knowledge()
@@ -412,8 +413,8 @@ impl GrpcClient {
         package: &str,
         client: reqwest::Client,
     ) -> Result<Self, GrpcClientError> {
-        let base_url = url::Url::parse(base_url)
-            .map_err(|e| GrpcClientError::InvalidUrl(e.to_string()))?;
+        let base_url =
+            url::Url::parse(base_url).map_err(|e| GrpcClientError::InvalidUrl(e.to_string()))?;
         let service_path = format!("{package}.{service_name}");
 
         Ok(GrpcClient {
@@ -478,7 +479,10 @@ impl GrpcClient {
         method: &str,
         request: &serde_json::Value,
     ) -> Result<Bytes, GrpcClientError> {
-        let max_attempts = self.config.retry.as_ref()
+        let max_attempts = self
+            .config
+            .retry
+            .as_ref()
             .map(|r| r.max_retries + 1)
             .unwrap_or(1);
 
@@ -536,9 +540,9 @@ impl GrpcClient {
             }
         }
 
-        Err(last_err.unwrap_or_else(|| GrpcClientError::Transport(
-            "all retry attempts exhausted".to_string(),
-        )))
+        Err(last_err.unwrap_or_else(|| {
+            GrpcClientError::Transport("all retry attempts exhausted".to_string())
+        }))
     }
 
     /// Send a single gRPC request (no retry).
@@ -823,8 +827,8 @@ impl GrpcClientPool {
         codec: Arc<dyn GrpcCodec>,
         config: GrpcClientConfig,
     ) -> Result<GrpcClient, GrpcClientError> {
-        let base_url = url::Url::parse(base_url)
-            .map_err(|e| GrpcClientError::InvalidUrl(e.to_string()))?;
+        let base_url =
+            url::Url::parse(base_url).map_err(|e| GrpcClientError::InvalidUrl(e.to_string()))?;
         let service_path = format!("{package}.{service_name}");
 
         Ok(GrpcClient {
@@ -887,21 +891,13 @@ mod tests {
 
     #[test]
     fn native_client_construction() {
-        let result = GrpcClient::new(
-            "http://localhost:50051",
-            "UserService",
-            "users.v1",
-        );
+        let result = GrpcClient::new("http://localhost:50051", "UserService", "users.v1");
         assert!(result.is_ok());
     }
 
     #[test]
     fn native_client_invalid_url() {
-        let result = GrpcClient::new(
-            "not a url",
-            "Svc",
-            "pkg",
-        );
+        let result = GrpcClient::new("not a url", "Svc", "pkg");
         assert!(result.is_err());
     }
 }

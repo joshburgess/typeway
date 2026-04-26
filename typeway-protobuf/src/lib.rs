@@ -18,9 +18,8 @@ use bytes::Bytes;
 // Export the codec traits and helpers from this crate (the canonical location).
 pub use codec::{
     tw_decode_varint, tw_encode_tag, tw_encode_varint, tw_encode_varint_array,
-    tw_encode_varint_unchecked, tw_skip_wire_value, tw_tag_len,
-    tw_varint_len, tw_zigzag_decode, tw_zigzag_encode, TypewayDecode, TypewayDecodeError,
-    TypewayEncode,
+    tw_encode_varint_unchecked, tw_skip_wire_value, tw_tag_len, tw_varint_len, tw_zigzag_decode,
+    tw_zigzag_encode, TypewayDecode, TypewayDecodeError, TypewayEncode,
 };
 
 // Re-export submodules.
@@ -41,7 +40,12 @@ pub trait ProtoMessage:
 }
 
 impl<T> ProtoMessage for T where
-    T: TypewayEncode + TypewayDecode + serde::Serialize + serde::de::DeserializeOwned + Send + Sized
+    T: TypewayEncode
+        + TypewayDecode
+        + serde::Serialize
+        + serde::de::DeserializeOwned
+        + Send
+        + Sized
 {
 }
 
@@ -171,13 +175,17 @@ impl std::fmt::Debug for BytesStr {
 
 impl From<String> for BytesStr {
     fn from(s: String) -> Self {
-        BytesStr { inner: Bytes::from(s) }
+        BytesStr {
+            inner: Bytes::from(s),
+        }
     }
 }
 
 impl From<&'static str> for BytesStr {
     fn from(s: &'static str) -> Self {
-        BytesStr { inner: Bytes::from_static(s.as_bytes()) }
+        BytesStr {
+            inner: Bytes::from_static(s.as_bytes()),
+        }
     }
 }
 
@@ -268,8 +276,7 @@ impl TypewayDecode for BytesStr {
 
     fn typeway_decode_bytes(bytes: Bytes) -> Result<Self, TypewayDecodeError> {
         // Zero-copy: validate UTF-8, then wrap the Bytes directly.
-        BytesStr::from_utf8(bytes)
-            .map_err(|_| TypewayDecodeError::InvalidUtf8("BytesStr"))
+        BytesStr::from_utf8(bytes).map_err(|_| TypewayDecodeError::InvalidUtf8("BytesStr"))
     }
 }
 
@@ -382,9 +389,7 @@ pub struct PooledBuf<'a> {
 impl BufPool {
     /// Create a new pool with `count` pre-allocated buffers of `capacity` bytes each.
     pub fn new(count: usize, capacity: usize) -> Self {
-        let bufs = (0..count)
-            .map(|_| Vec::with_capacity(capacity))
-            .collect();
+        let bufs = (0..count).map(|_| Vec::with_capacity(capacity)).collect();
         BufPool {
             bufs: std::sync::Mutex::new(bufs),
             default_capacity: capacity,
@@ -497,8 +502,8 @@ pub struct ViewStr<'buf> {
 impl<'buf> ViewStr<'buf> {
     /// Create a ViewStr from a byte slice, validating UTF-8.
     pub fn from_bytes(bytes: &'buf [u8]) -> Result<Self, TypewayDecodeError> {
-        let s = std::str::from_utf8(bytes)
-            .map_err(|_| TypewayDecodeError::InvalidUtf8("ViewStr"))?;
+        let s =
+            std::str::from_utf8(bytes).map_err(|_| TypewayDecodeError::InvalidUtf8("ViewStr"))?;
         Ok(ViewStr { inner: s })
     }
 
@@ -615,9 +620,13 @@ mod tests {
         use crate::{tw_encode_tag, tw_encode_varint};
 
         // Manual TypewayEncode for testing.
-        struct Small { id: u32 }
+        struct Small {
+            id: u32,
+        }
         impl TypewayEncode for Small {
-            fn encoded_len(&self) -> usize { 1 + crate::tw_varint_len(self.id as u64) }
+            fn encoded_len(&self) -> usize {
+                1 + crate::tw_varint_len(self.id as u64)
+            }
             fn encode_to(&self, buf: &mut Vec<u8>) {
                 tw_encode_tag(buf, 1, 0);
                 tw_encode_varint(buf, self.id as u64);
@@ -636,9 +645,13 @@ mod tests {
     fn encode_buf_preserves_capacity() {
         use crate::{tw_encode_tag, tw_encode_varint};
 
-        struct Msg { id: u32 }
+        struct Msg {
+            id: u32,
+        }
         impl TypewayEncode for Msg {
-            fn encoded_len(&self) -> usize { 1 + crate::tw_varint_len(self.id as u64) }
+            fn encoded_len(&self) -> usize {
+                1 + crate::tw_varint_len(self.id as u64)
+            }
             fn encode_to(&self, buf: &mut Vec<u8>) {
                 tw_encode_tag(buf, 1, 0);
                 tw_encode_varint(buf, self.id as u64);
@@ -648,15 +661,13 @@ mod tests {
         let mut buf = EncodeBuf::new();
         buf.encode(&Msg { id: 1 });
         buf.encode(&Msg { id: 999999 }); // larger varint
-        // Third encode should reuse without realloc.
+                                         // Third encode should reuse without realloc.
         let result = buf.encode(&Msg { id: 1 });
         assert_eq!(result.len(), 2);
     }
 
     #[test]
     fn repeated_field_with_typeway_encode() {
-        use crate::{tw_encode_tag, tw_encode_varint};
-
         let mut field = RepeatedField::new();
         field.push(10u32);
         field.push(20u32);

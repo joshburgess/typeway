@@ -49,8 +49,7 @@ fn summarize_axum(source: &str) -> ApiSummary {
 
 /// Extract a structural summary from a Typeway source string.
 fn summarize_typeway(source: &str) -> ApiSummary {
-    let model =
-        parse::typeway::parse_typeway_file(source).expect("should parse Typeway source");
+    let model = parse::typeway::parse_typeway_file(source).expect("should parse Typeway source");
     ApiSummary {
         handler_names: model
             .endpoints
@@ -170,8 +169,8 @@ fn typeway_to_axum_to_typeway_roundtrip() {
     let original_summary = summarize_typeway(TYPEWAY_FIXTURE);
 
     // Step 2: Convert Typeway -> Axum.
-    let axum_source = typeway_migrate::typeway_to_axum(TYPEWAY_FIXTURE)
-        .expect("Typeway -> Axum should succeed");
+    let axum_source =
+        typeway_migrate::typeway_to_axum(TYPEWAY_FIXTURE).expect("Typeway -> Axum should succeed");
     assert_valid_rust(&axum_source, "Typeway -> Axum output");
 
     // Step 3: Convert the Axum output back to Typeway.
@@ -214,8 +213,8 @@ fn axum_to_typeway_intermediate_has_expected_constructs() {
 
 #[test]
 fn typeway_to_axum_intermediate_has_expected_constructs() {
-    let axum_source = typeway_migrate::typeway_to_axum(TYPEWAY_FIXTURE)
-        .expect("conversion should succeed");
+    let axum_source =
+        typeway_migrate::typeway_to_axum(TYPEWAY_FIXTURE).expect("conversion should succeed");
 
     // The intermediate Axum source should have these structural markers.
     let has_router = axum_source.contains("Router") || axum_source.contains("router");
@@ -285,8 +284,8 @@ fn auth_axum_to_typeway_to_axum_roundtrip() {
 
 #[test]
 fn auth_intermediate_typeway_has_protected_wrappers() {
-    let typeway_source = typeway_migrate::axum_to_typeway(AUTH_AXUM_FIXTURE)
-        .expect("conversion should succeed");
+    let typeway_source =
+        typeway_migrate::axum_to_typeway(AUTH_AXUM_FIXTURE).expect("conversion should succeed");
 
     // Count Protected<> occurrences (there should be at least 3).
     let protected_count = typeway_source.matches("Protected").count();
@@ -332,10 +331,7 @@ fn effects_axum_to_typeway_to_axum_roundtrip() {
     // Step 3: Convert the Typeway output back to Axum.
     let axum_roundtripped = typeway_migrate::typeway_to_axum(&typeway_source)
         .expect("Effects Typeway -> Axum roundtrip should succeed");
-    assert_valid_rust(
-        &axum_roundtripped,
-        "Effects Axum -> Typeway -> Axum output",
-    );
+    assert_valid_rust(&axum_roundtripped, "Effects Axum -> Typeway -> Axum output");
 
     // Step 4: Parse the roundtripped Axum source and compare structurally.
     let roundtripped_summary = summarize_axum(&axum_roundtripped);
@@ -356,8 +352,8 @@ fn effects_axum_to_typeway_to_axum_roundtrip() {
 
 #[test]
 fn effects_intermediate_typeway_has_effect_markers() {
-    let typeway_source = typeway_migrate::axum_to_typeway(EFFECTS_AXUM_FIXTURE)
-        .expect("conversion should succeed");
+    let typeway_source =
+        typeway_migrate::axum_to_typeway(EFFECTS_AXUM_FIXTURE).expect("conversion should succeed");
 
     // Verify both CORS and Tracing effects are present.
     assert!(
@@ -464,9 +460,16 @@ fn full_featured_model_has_correct_auth_counts() {
         .expect("should parse full-featured Axum");
 
     let auth_count = model.endpoints.iter().filter(|ep| ep.requires_auth).count();
-    let public_count = model.endpoints.iter().filter(|ep| !ep.requires_auth).count();
+    let public_count = model
+        .endpoints
+        .iter()
+        .filter(|ep| !ep.requires_auth)
+        .count();
 
-    assert_eq!(auth_count, 3, "expected 3 auth endpoints (get_user, create_user, delete_user)");
+    assert_eq!(
+        auth_count, 3,
+        "expected 3 auth endpoints (get_user, create_user, delete_user)"
+    );
     assert_eq!(public_count, 1, "expected 1 public endpoint (list_users)");
 
     // Verify auth type is detected as AuthUser.

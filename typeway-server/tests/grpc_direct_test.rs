@@ -33,8 +33,12 @@ struct CreateItem {
 }
 
 impl ToProtoType for CreateItem {
-    fn proto_type_name() -> &'static str { "CreateItem" }
-    fn is_message() -> bool { true }
+    fn proto_type_name() -> &'static str {
+        "CreateItem"
+    }
+    fn is_message() -> bool {
+        true
+    }
     fn message_definition() -> Option<String> {
         Some("message CreateItem {\n  string name = 1;\n  uint32 quantity = 2;\n}".to_string())
     }
@@ -51,17 +55,29 @@ struct Item {
 }
 
 impl ToProtoType for Item {
-    fn proto_type_name() -> &'static str { "Item" }
-    fn is_message() -> bool { true }
+    fn proto_type_name() -> &'static str {
+        "Item"
+    }
+    fn is_message() -> bool {
+        true
+    }
     fn message_definition() -> Option<String> {
-        Some("message Item {\n  uint32 id = 1;\n  string name = 2;\n  uint32 quantity = 3;\n}".to_string())
+        Some(
+            "message Item {\n  uint32 id = 1;\n  string name = 2;\n  uint32 quantity = 3;\n}"
+                .to_string(),
+        )
     }
 }
 
 // --- Handlers ---
 
+#[allow(dead_code)]
 async fn create_item_json(body: Json<CreateItem>) -> Json<Item> {
-    Json(Item { id: 1, name: body.0.name, quantity: body.0.quantity })
+    Json(Item {
+        id: 1,
+        name: body.0.name,
+        quantity: body.0.quantity,
+    })
 }
 
 // --- Helpers ---
@@ -70,21 +86,29 @@ type ItemAPI = (PostEndpoint<ItemsPath, CreateItem, Item>,);
 
 async fn start_direct_server() -> u16 {
     let direct = into_direct_handler(|req: CreateItem| async move {
-        Item { id: 1, name: req.name, quantity: req.quantity }
+        Item {
+            id: 1,
+            name: req.name,
+            quantity: req.quantity,
+        }
     });
 
-    let descriptor = <ItemAPI as typeway_grpc::service::ApiToServiceDescriptor>::service_descriptor("ItemService", "test.v1");
-    let router = Router::new();
-    let mut grpc_router = typeway_server::grpc_dispatch::GrpcRouter::from_router(&router, &descriptor);
-    grpc_router.add_direct_handler(
-        "/test.v1.ItemService/CreateItem".to_string(),
-        direct,
+    let descriptor = <ItemAPI as typeway_grpc::service::ApiToServiceDescriptor>::service_descriptor(
+        "ItemService",
+        "test.v1",
     );
+    let router = Router::new();
+    let mut grpc_router =
+        typeway_server::grpc_dispatch::GrpcRouter::from_router(&router, &descriptor);
+    grpc_router.add_direct_handler("/test.v1.ItemService/CreateItem".to_string(), direct);
 
     let multiplexer = typeway_server::grpc_dispatch::GrpcMultiplexer::new(
         RouterService::new(Arc::new(Router::new())),
         Arc::new(grpc_router),
-        Arc::new(typeway_grpc::ReflectionService::from_api::<ItemAPI>("ItemService", "test.v1")),
+        Arc::new(typeway_grpc::ReflectionService::from_api::<ItemAPI>(
+            "ItemService",
+            "test.v1",
+        )),
         typeway_grpc::HealthService::new(),
         false,
         None,
@@ -100,9 +124,11 @@ async fn start_direct_server() -> u16 {
             let io = hyper_util::rt::TokioIo::new(stream);
             let svc = multiplexer.clone();
             tokio::spawn(async move {
-                let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
-                    .serve_connection(io, hyper_util::service::TowerToHyperService::new(svc))
-                    .await;
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                )
+                .serve_connection(io, hyper_util::service::TowerToHyperService::new(svc))
+                .await;
             });
         }
     });
@@ -118,7 +144,10 @@ async fn start_direct_server() -> u16 {
 async fn direct_handler_roundtrip() {
     let port = start_direct_server().await;
 
-    let req = CreateItem { name: "Widget".into(), quantity: 10 };
+    let req = CreateItem {
+        name: "Widget".into(),
+        quantity: 10,
+    };
     let binary = req.encode_to_vec();
     let framed = typeway_grpc::framing::encode_grpc_frame(&binary);
 
@@ -128,7 +157,9 @@ async fn direct_handler_roundtrip() {
         .unwrap();
 
     let resp = client
-        .post(format!("http://127.0.0.1:{port}/test.v1.ItemService/CreateItem"))
+        .post(format!(
+            "http://127.0.0.1:{port}/test.v1.ItemService/CreateItem"
+        ))
         .header("content-type", "application/grpc+proto")
         .header("te", "trailers")
         .body(framed)
@@ -137,10 +168,7 @@ async fn direct_handler_roundtrip() {
         .unwrap();
 
     assert_eq!(resp.status(), 200);
-    assert_eq!(
-        resp.headers().get("grpc-status").unwrap(),
-        "0"
-    );
+    assert_eq!(resp.headers().get("grpc-status").unwrap(), "0");
 
     let body = resp.bytes().await.unwrap();
     let unframed = typeway_grpc::framing::decode_grpc_frame(&body).unwrap();
@@ -163,7 +191,9 @@ async fn direct_handler_invalid_input() {
         .unwrap();
 
     let resp = client
-        .post(format!("http://127.0.0.1:{port}/test.v1.ItemService/CreateItem"))
+        .post(format!(
+            "http://127.0.0.1:{port}/test.v1.ItemService/CreateItem"
+        ))
         .header("content-type", "application/grpc+proto")
         .header("te", "trailers")
         .body(garbage)
@@ -173,7 +203,9 @@ async fn direct_handler_invalid_input() {
 
     assert_eq!(resp.status(), 200);
     // Should have non-zero grpc-status (InvalidArgument).
-    let status = resp.headers().get("grpc-status")
+    let status = resp
+        .headers()
+        .get("grpc-status")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<i32>().ok())
         .unwrap_or(0);
@@ -191,7 +223,9 @@ async fn direct_handler_unimplemented() {
         .unwrap();
 
     let resp = client
-        .post(format!("http://127.0.0.1:{port}/test.v1.ItemService/DeleteItem"))
+        .post(format!(
+            "http://127.0.0.1:{port}/test.v1.ItemService/DeleteItem"
+        ))
         .header("content-type", "application/grpc+proto")
         .header("te", "trailers")
         .body(vec![])
@@ -200,7 +234,9 @@ async fn direct_handler_unimplemented() {
         .unwrap();
 
     assert_eq!(resp.status(), 200);
-    let status = resp.headers().get("grpc-status")
+    let status = resp
+        .headers()
+        .get("grpc-status")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<i32>().ok())
         .unwrap_or(0);

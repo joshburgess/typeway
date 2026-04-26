@@ -107,7 +107,10 @@ fn encode_decode_bool_field() {
     // false — proto3 default, omitted from wire, absent in decoded JSON
     let json = serde_json::json!({"flag": false});
     let bytes = json_to_proto_binary(&json, &fields).unwrap();
-    assert!(bytes.is_empty(), "false is proto3 default, should not be encoded");
+    assert!(
+        bytes.is_empty(),
+        "false is proto3 default, should not be encoded"
+    );
     let decoded = proto_binary_to_json(&bytes, &fields).unwrap();
     assert!(decoded["flag"].is_null(), "absent field returns null");
 }
@@ -265,7 +268,10 @@ fn unknown_fields_skipped() {
 
     assert_eq!(decoded["a"], 10);
     assert_eq!(decoded["c"], true);
-    assert!(decoded.get("b").is_none(), "unknown field 'b' should be skipped");
+    assert!(
+        decoded.get("b").is_none(),
+        "unknown field 'b' should be skipped"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -411,5 +417,8 @@ fn sint32_roundtrip() {
     // 0 is proto3 default — omitted from wire
     let json = serde_json::json!({"delta": 0});
     let bytes = json_to_proto_binary(&json, &fields).unwrap();
-    assert!(bytes.is_empty(), "sint32 zero is proto3 default, should not be encoded");
+    assert!(
+        bytes.is_empty(),
+        "sint32 zero is proto3 default, should not be encoded"
+    );
 }

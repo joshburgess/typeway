@@ -45,10 +45,7 @@ pub fn generate_docs_html(spec: &GrpcServiceSpec) -> String {
     // Header
     html.push_str("<div class=\"container\">\n");
     html.push_str("<header>\n");
-    html.push_str(&format!(
-        "<h1>{}</h1>\n",
-        escape_html(&spec.service.name)
-    ));
+    html.push_str(&format!("<h1>{}</h1>\n", escape_html(&spec.service.name)));
     html.push_str(&format!(
         "<p class=\"package\">Package: <code>{}</code></p>\n",
         escape_html(&spec.service.package)
@@ -110,10 +107,7 @@ pub fn generate_docs_html(spec: &GrpcServiceSpec) -> String {
                 "<div class=\"message\" id=\"msg-{}\">\n",
                 escape_html(&msg.name)
             ));
-            html.push_str(&format!(
-                "<h3>{}</h3>\n",
-                escape_html(&msg.name)
-            ));
+            html.push_str(&format!("<h3>{}</h3>\n", escape_html(&msg.name)));
             if let Some(ref desc) = msg.description {
                 html.push_str(&format!("<p>{}</p>\n", escape_html(desc)));
             }
@@ -199,10 +193,7 @@ fn render_method_detail(html: &mut String, method: &MethodSpec) {
         "<section class=\"method-detail\" id=\"method-{}\">\n",
         escape_html(&method.name)
     ));
-    html.push_str(&format!(
-        "<h3>{}</h3>\n",
-        escape_html(&method.name)
-    ));
+    html.push_str(&format!("<h3>{}</h3>\n", escape_html(&method.name)));
     html.push_str("<dl>\n");
 
     html.push_str(&format!(
@@ -238,10 +229,7 @@ fn render_method_detail(html: &mut String, method: &MethodSpec) {
             .iter()
             .map(|t| format!("<span class=\"tag\">{}</span>", escape_html(t)))
             .collect();
-        html.push_str(&format!(
-            "<dt>Tags</dt><dd>{}</dd>\n",
-            tags_html.join(" ")
-        ));
+        html.push_str(&format!("<dt>Tags</dt><dd>{}</dd>\n", tags_html.join(" ")));
     }
 
     html.push_str("</dl>\n");

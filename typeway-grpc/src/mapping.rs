@@ -357,14 +357,15 @@ impl ProtoField {
             } else {
                 ""
             };
-            format!("  {}{} {} = {};", prefix, self.proto_type, self.name, self.tag)
+            format!(
+                "  {}{} {} = {};",
+                prefix, self.proto_type, self.name, self.tag
+            )
         };
         match &self.doc {
             Some(doc) if !doc.is_empty() => {
-                let comment_lines: Vec<String> = doc
-                    .lines()
-                    .map(|line| format!("  // {}", line))
-                    .collect();
+                let comment_lines: Vec<String> =
+                    doc.lines().map(|line| format!("  // {}", line)).collect();
                 let mut result = comment_lines.join("\n");
                 result.push('\n');
                 result.push_str(&field_line);

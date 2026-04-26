@@ -20,10 +20,9 @@ help: the following other types implement trait `HasEffect<E, Idx>`
    |   impl<E: Effect, Tail> HasEffect<E, EHere> for ECons<E, Tail> {}
    |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `ECons<E, Tail>` implements `HasEffect<E, EHere>`
 ...
-   | / impl<E: Effect, Head: Effect, Tail, Idx> HasEffect<E, EThere<Idx>> for ECons<Head, Tail>
-   | | where
-   | |     Tail: HasEffect<E, Idx>,
-   | |____________________________^ `ECons<Head, Tail>` implements `HasEffect<E, EThere<Idx>>`
+   | / impl<E: Effect, Head: Effect, Tail, Idx> HasEffect<E, EThere<Idx>> for ECons<Head, Tail> where
+   | |     Tail: HasEffect<E, Idx>
+   | |___________________________^ `ECons<Head, Tail>` implements `HasEffect<E, EThere<Idx>>`
    = note: required for `ECons<CacheRequired<UserCache>, ENil>` to implement `HasEffect<CacheRequired<ItemCache>, EThere<_>>`
    = note: required for `typeway::Requires<CacheRequired<ItemCache>, Endpoint<Get, HCons<Lit<__lit_items>, HNil>, NoBody, std::string::String>>` to implement `AllProvided<ECons<CacheRequired<UserCache>, ENil>, (EThere<_>, ())>`
    = note: 1 redundant requirement hidden

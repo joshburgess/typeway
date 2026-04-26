@@ -11,8 +11,7 @@ use toml_edit::{DocumentMut, InlineTable, Item, Value};
 /// Shared dependencies (`tower-http`, `tokio`, `serde`, `serde_json`) are kept.
 /// Returns the modified TOML string.
 pub fn update_cargo_for_typeway(cargo_path: &Path) -> Result<String> {
-    let content =
-        std::fs::read_to_string(cargo_path).context("failed to read Cargo.toml")?;
+    let content = std::fs::read_to_string(cargo_path).context("failed to read Cargo.toml")?;
 
     let mut doc: DocumentMut = content
         .parse()
@@ -49,8 +48,7 @@ pub fn update_cargo_for_typeway(cargo_path: &Path) -> Result<String> {
 /// Adds `axum` and `axum-extra` dependencies, comments out `typeway` if present.
 /// Returns the modified TOML string.
 pub fn update_cargo_for_axum(cargo_path: &Path) -> Result<String> {
-    let content =
-        std::fs::read_to_string(cargo_path).context("failed to read Cargo.toml")?;
+    let content = std::fs::read_to_string(cargo_path).context("failed to read Cargo.toml")?;
 
     let mut doc: DocumentMut = content
         .parse()
@@ -76,9 +74,7 @@ pub fn update_cargo_for_axum(cargo_path: &Path) -> Result<String> {
         }
         deps.insert_formatted(
             &decor,
-            Item::Value(Value::String(toml_edit::Formatted::new(
-                "0.8".to_string(),
-            ))),
+            Item::Value(Value::String(toml_edit::Formatted::new("0.8".to_string()))),
         );
     }
 
@@ -86,9 +82,7 @@ pub fn update_cargo_for_axum(cargo_path: &Path) -> Result<String> {
     if !deps.contains_key("axum-extra") {
         deps.insert(
             "axum-extra",
-            Item::Value(Value::String(toml_edit::Formatted::new(
-                "0.10".to_string(),
-            ))),
+            Item::Value(Value::String(toml_edit::Formatted::new("0.10".to_string()))),
         );
     }
 
@@ -132,7 +126,12 @@ fn prepend_comment_to_key(deps: &mut toml_edit::Table, key_name: &str, comment: 
     if let Some((_key, item)) = deps.get_key_value_mut(key_name) {
         let existing = item
             .as_value()
-            .map(|v| v.decor().prefix().map(|p| p.as_str().unwrap_or("")).unwrap_or(""))
+            .map(|v| {
+                v.decor()
+                    .prefix()
+                    .map(|p| p.as_str().unwrap_or(""))
+                    .unwrap_or("")
+            })
             .unwrap_or("");
         let new_prefix = format!("{}{}", comment, existing);
         if let Some(val) = item.as_value_mut() {

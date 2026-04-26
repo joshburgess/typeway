@@ -62,9 +62,13 @@ type NoEffectAPI = (
 // --- Helpers ---
 
 #[allow(clippy::type_complexity)]
-async fn start_effectful_server(handlers: (BoundHandler<Requires<AuthRequired, GetEndpoint<UsersPath, Vec<User>>>>, BoundHandler<GetEndpoint<HealthPath, String>>)) -> u16 {
-    let server = EffectfulServer::<EffectfulAPI>::new(handlers)
-        .provide::<AuthRequired>();
+async fn start_effectful_server(
+    handlers: (
+        BoundHandler<Requires<AuthRequired, GetEndpoint<UsersPath, Vec<User>>>>,
+        BoundHandler<GetEndpoint<HealthPath, String>>,
+    ),
+) -> u16 {
+    let server = EffectfulServer::<EffectfulAPI>::new(handlers).provide::<AuthRequired>();
 
     let inner_server = server.ready();
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -181,8 +185,8 @@ fn extra_effects_are_harmless() {
     fn assert_compiles() {
         let _server = EffectfulServer::<EffectfulAPI>::new((bind!(get_users), bind!(health)))
             .provide::<AuthRequired>()
-            .provide::<CorsRequired>()    // not required but harmless
-            .provide::<TracingRequired>()  // not required but harmless
+            .provide::<CorsRequired>() // not required but harmless
+            .provide::<TracingRequired>() // not required but harmless
             .ready();
     }
     let _ = assert_compiles;

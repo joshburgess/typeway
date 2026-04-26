@@ -342,10 +342,7 @@ pub fn tw_zigzag_decode(value: u64) -> i64 {
 /// Skip a wire value by wire type, returning bytes consumed.
 #[inline]
 #[doc(hidden)]
-pub fn tw_skip_wire_value(
-    bytes: &[u8],
-    wire_type: u8,
-) -> Result<usize, TypewayDecodeError> {
+pub fn tw_skip_wire_value(bytes: &[u8], wire_type: u8) -> Result<usize, TypewayDecodeError> {
     match wire_type {
         0 => {
             // Varint — scan for terminator.

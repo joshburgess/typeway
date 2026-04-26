@@ -254,8 +254,5 @@ fn apply_handler_docs_multiple_docs() {
 
     let post_op = users.post.as_ref().unwrap();
     assert_eq!(post_op.summary.as_deref(), Some("Create a user"));
-    assert_eq!(
-        post_op.tags,
-        vec!["users".to_string(), "admin".to_string()]
-    );
+    assert_eq!(post_op.tags, vec!["users".to_string(), "admin".to_string()]);
 }

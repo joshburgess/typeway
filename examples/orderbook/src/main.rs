@@ -50,7 +50,7 @@ use tokio::sync::{broadcast, Mutex};
 use typeway_core::endpoint::*;
 use typeway_core::path::{HCons, HNil, Lit, LitSegment};
 use typeway_grpc::streaming::ServerStream;
-use typeway_macros::{TypewayCodec, ToProtoType};
+use typeway_macros::{ToProtoType, TypewayCodec};
 use typeway_protobuf::BytesStr;
 use typeway_server::grpc_direct::into_direct_handler;
 use typeway_server::*;
@@ -244,10 +244,13 @@ impl Exchange {
 
 /// Submit an order — the hot path.
 ///
-/// This uses the standard handler path (Json<T>) for dual-protocol
+/// This uses the standard handler path (`Json<T>`) for dual-protocol
 /// compatibility. For maximum throughput, see the direct handler
 /// registered below.
-async fn submit_order(state: State<Exchange>, body: Json<Order>) -> (http::StatusCode, Json<OrderAck>) {
+async fn submit_order(
+    state: State<Exchange>,
+    body: Json<Order>,
+) -> (http::StatusCode, Json<OrderAck>) {
     let ack = OrderAck {
         order_id: BytesStr::from(state.0.next_order_id()),
         symbol: body.0.symbol.clone(),
@@ -260,8 +263,12 @@ async fn submit_order(state: State<Exchange>, body: Json<Order>) -> (http::Statu
 
     tracing::info!(
         "{} {} {}x{} @ {:.2} → {}",
-        ack.side, ack.symbol, ack.quantity, ack.price,
-        ack.order_id, ack.status,
+        ack.side,
+        ack.symbol,
+        ack.quantity,
+        ack.price,
+        ack.order_id,
+        ack.status,
     );
 
     // Publish price update.
@@ -295,7 +302,10 @@ async fn cancel_order(state: State<Exchange>, body: Json<CancelRequest>) -> Json
 }
 
 /// Get order book snapshot.
-async fn get_order_book(state: State<Exchange>, body: Json<SymbolQuery>) -> Json<OrderBookSnapshot> {
+async fn get_order_book(
+    state: State<Exchange>,
+    body: Json<SymbolQuery>,
+) -> Json<OrderBookSnapshot> {
     let orders = state.0.orders.lock().await;
     let symbol_orders: Vec<_> = orders
         .iter()
@@ -390,7 +400,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     // Build the server with both standard and direct handlers.
-    let _descriptor = <OrderBookAPI as typeway_grpc::service::ApiToServiceDescriptor>::service_descriptor("OrderBook", "trading.v1");
+    let _descriptor =
+        <OrderBookAPI as typeway_grpc::service::ApiToServiceDescriptor>::service_descriptor(
+            "OrderBook",
+            "trading.v1",
+        );
 
     // Register standard handlers for REST compatibility.
     let server = Server::<OrderBookAPI>::new((

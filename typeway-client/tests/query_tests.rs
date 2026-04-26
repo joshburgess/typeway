@@ -181,10 +181,7 @@ async fn test_accept_header_is_present() {
 /// `enable_tracing` compiles and does not panic.
 #[tokio::test]
 async fn test_enable_tracing_does_not_panic() {
-    let port = start_mock_server(move |_req| async {
-        json_response(StatusCode::OK, "[]")
-    })
-    .await;
+    let port = start_mock_server(move |_req| async { json_response(StatusCode::OK, "[]") }).await;
 
     let config = ClientConfig::default()
         .no_timeout()

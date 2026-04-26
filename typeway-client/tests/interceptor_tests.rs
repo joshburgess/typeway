@@ -5,7 +5,9 @@ use std::time::Duration;
 use http::StatusCode;
 use serde::{Deserialize, Serialize};
 
-use typeway_client::{Client, ClientConfig, ClientError, RequestInterceptor, ResponseInterceptor, RetryPolicy};
+use typeway_client::{
+    Client, ClientConfig, ClientError, RequestInterceptor, ResponseInterceptor, RetryPolicy,
+};
 use typeway_core::*;
 use typeway_macros::*;
 
@@ -145,9 +147,7 @@ async fn test_multiple_request_interceptors() {
 
     let headers = received_headers.lock().unwrap().clone();
     assert!(headers.iter().any(|(k, v)| k == "x-int-first" && v == "1"));
-    assert!(headers
-        .iter()
-        .any(|(k, v)| k == "x-int-second" && v == "2"));
+    assert!(headers.iter().any(|(k, v)| k == "x-int-second" && v == "2"));
 }
 
 /// A response interceptor is called with the response.

@@ -9,6 +9,7 @@ pub mod axum_interop;
 pub mod body;
 pub mod effects;
 pub mod error;
+pub mod extract;
 #[cfg(feature = "grpc")]
 pub mod grpc;
 #[cfg(feature = "protobuf")]
@@ -17,22 +18,21 @@ pub mod grpc_direct;
 pub mod grpc_dispatch;
 #[cfg(feature = "grpc")]
 pub mod grpc_stream;
-#[cfg(feature = "protobuf")]
-pub mod proto_extract;
-pub mod extract;
 pub mod handler;
 pub mod handler_for;
+pub mod mount;
 #[cfg(feature = "multipart")]
 pub mod multipart;
-pub mod mount;
 pub mod negotiate;
 #[cfg(feature = "openapi")]
 pub mod openapi;
 pub mod production;
+#[cfg(feature = "protobuf")]
+pub mod proto_extract;
 pub mod request_id;
 pub mod response;
-pub mod secure_headers;
 pub mod router;
+pub mod secure_headers;
 pub mod server;
 pub mod serves;
 pub mod sse;
@@ -47,6 +47,7 @@ pub mod typed_ws;
 pub mod ws;
 
 pub use body::{body_from_stream, empty_body, sse_body, BoxBody};
+pub use effects::{EffectfulLayeredServer, EffectfulServer};
 pub use error::JsonError;
 pub use extract::{
     Cookie, CookieJar, Extension, FromRequest, FromRequestParts, Header, NamedCookie, NamedHeader,
@@ -54,27 +55,26 @@ pub use extract::{
 };
 pub use handler::{into_boxed_handler, BoxedHandler, Handler, ResponseFuture};
 pub use handler_for::{bind, BindableEndpoint, BoundHandler};
+pub use mount::ServerBuilder;
 pub use negotiate::{
-    AcceptHeader, CsvFormat, HtmlFormat, JsonFormat, NegotiateFormats, NegotiatedResponse, RenderAs,
-    RenderAsXml, TextFormat, XmlFormat,
+    AcceptHeader, CsvFormat, HtmlFormat, JsonFormat, NegotiateFormats, NegotiatedResponse,
+    RenderAs, RenderAsXml, TextFormat, XmlFormat,
 };
 pub use response::{IntoResponse, Json};
-pub use sse::{keep_alive, SseEvent, SseResponse};
 pub use router::{Router, RouterService};
 pub use secure_headers::SecureHeadersLayer;
-pub use effects::{EffectfulLayeredServer, EffectfulServer};
 pub use server::{serve, LayeredServer, Server};
-pub use mount::ServerBuilder;
 pub use serves::{Serves, SubApi};
+pub use sse::{keep_alive, SseEvent, SseResponse};
 
 #[cfg(feature = "grpc")]
 pub use grpc::{GrpcServer, LayeredGrpcServer};
+#[cfg(feature = "protobuf")]
+pub use grpc_direct::into_direct_handler;
 #[cfg(feature = "grpc")]
 pub use grpc_stream::{GrpcStream, GrpcStreamSender};
 #[cfg(feature = "protobuf")]
 pub use proto_extract::Proto;
-#[cfg(feature = "protobuf")]
-pub use grpc_direct::into_direct_handler;
 
 /// Re-export tower-http for middleware layers.
 pub use tower_http;

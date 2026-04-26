@@ -6,7 +6,11 @@ const USERS_V2: &str = include_str!("fixtures/users_v2.proto");
 #[test]
 fn no_changes_detected() {
     let changes = diff_protos(USERS_V1, USERS_V1).unwrap();
-    assert!(changes.is_empty(), "Expected no changes, got: {:?}", changes);
+    assert!(
+        changes.is_empty(),
+        "Expected no changes, got: {:?}",
+        changes
+    );
 }
 
 #[test]
@@ -333,16 +337,18 @@ fn mixed_changes() {
 
     // Breaking: DeleteUser RPC removed
     assert!(
-        breaking.iter().any(|c| c.description == "RPC method removed"
-            && c.location.contains("DeleteUser")),
+        breaking
+            .iter()
+            .any(|c| c.description == "RPC method removed" && c.location.contains("DeleteUser")),
         "Expected DeleteUser removal as breaking: {:?}",
         breaking
     );
 
     // Compatible: UpdateUser RPC added
     assert!(
-        compatible.iter().any(|c| c.description == "RPC method added"
-            && c.location.contains("UpdateUser")),
+        compatible
+            .iter()
+            .any(|c| c.description == "RPC method added" && c.location.contains("UpdateUser")),
         "Expected UpdateUser addition as compatible: {:?}",
         compatible
     );

@@ -3,7 +3,7 @@
 //! When the `tonic-compat` feature is enabled, this module provides:
 //!
 //! - [`Protobuf<T>`] -- an extractor and response type for protobuf-encoded bodies
-//! - [`impl_proto_type_for_prost!`] -- bridges prost `Message` types with typeway's
+//! - `impl_proto_type_for_prost!` -- bridges prost `Message` types with typeway's
 //!   [`ToProtoType`](crate::ToProtoType) trait
 //! - [`prost_to_json`] and [`json_to_prost`] -- conversion helpers between prost
 //!   messages and serde JSON values
@@ -189,8 +189,7 @@ pub fn json_to_prost<T: prost::Message + Default>(
 
 /// Encode bytes as standard base64 (RFC 4648).
 pub fn base64_encode(bytes: &[u8]) -> String {
-    const CHARS: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    const CHARS: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for chunk in bytes.chunks(3) {
         let b0 = chunk[0] as u32;
@@ -296,8 +295,7 @@ mod tests {
 
     #[test]
     fn protobuf_error_is_error_trait() {
-        let err: Box<dyn std::error::Error> =
-            Box::new(ProtobufError::Decode("test".into()));
+        let err: Box<dyn std::error::Error> = Box::new(ProtobufError::Decode("test".into()));
         assert!(err.to_string().contains("test"));
     }
 

@@ -5,8 +5,8 @@
 
 use indexmap::IndexMap;
 
-use typeway_core::*;
 use typeway_core::effects::{Effect, Requires};
+use typeway_core::*;
 
 use crate::spec::*;
 
@@ -694,7 +694,9 @@ pub fn collect_security_schemes(spec: &mut OpenApiSpec) {
         .collect();
 
         ops.iter().any(|op| {
-            op.security.iter().any(|req| req.0.contains_key("bearerAuth"))
+            op.security
+                .iter()
+                .any(|req| req.0.contains_key("bearerAuth"))
         })
     });
 
@@ -777,7 +779,7 @@ impl_collect_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 
 /// Patch an OpenAPI spec with handler documentation metadata.
 ///
-/// For each [`HandlerDoc`](typeway_core::HandlerDoc) in the slice, finds the
+/// For each [`typeway_core::HandlerDoc`] in the slice, finds the
 /// operation whose `operation_id` matches (or whose method+path combination
 /// can be matched) and sets its `summary`, `description`, `operation_id`, and
 /// `tags` fields. Existing values are overwritten.

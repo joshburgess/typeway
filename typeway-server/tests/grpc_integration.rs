@@ -374,9 +374,7 @@ async fn grpc_test_client_list_users() {
     let port = start_grpc_server().await;
 
     let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
-    let resp = client
-        .call_empty("users.v1.UserService", "ListUser")
-        .await;
+    let resp = client.call_empty("users.v1.UserService", "ListUser").await;
 
     assert!(resp.is_ok());
     assert_eq!(resp.grpc_code(), typeway_grpc::GrpcCode::Ok);
@@ -457,11 +455,7 @@ async fn grpc_response_is_framed() {
 
     let declared_len =
         u32::from_be_bytes([body_bytes[1], body_bytes[2], body_bytes[3], body_bytes[4]]) as usize;
-    assert_eq!(
-        body_bytes.len(),
-        5 + declared_len,
-        "frame length mismatch"
-    );
+    assert_eq!(body_bytes.len(), 5 + declared_len, "frame length mismatch");
 
     // Decode the frame and verify it's valid JSON.
     let unframed = typeway_grpc::framing::decode_grpc_frame(&body_bytes).unwrap();
@@ -579,9 +573,7 @@ async fn grpc_e2e_list_users() {
     let port = start_grpc_server().await;
 
     let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
-    let resp = client
-        .call_empty("users.v1.UserService", "ListUser")
-        .await;
+    let resp = client.call_empty("users.v1.UserService", "ListUser").await;
 
     assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
     assert_eq!(resp.grpc_code(), typeway_grpc::GrpcCode::Ok);
@@ -626,16 +618,11 @@ async fn grpc_e2e_health_check() {
     let port = start_grpc_server().await;
 
     let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
-    let resp = client
-        .call_empty("grpc.health.v1.Health", "Check")
-        .await;
+    let resp = client.call_empty("grpc.health.v1.Health", "Check").await;
 
     assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
     let body = resp.json();
-    assert_eq!(
-        body["status"], "SERVING",
-        "expected SERVING, got {body}"
-    );
+    assert_eq!(body["status"], "SERVING", "expected SERVING, got {body}");
 }
 
 /// E2E: Call the reflection endpoint and verify service names in response.
@@ -729,9 +716,7 @@ async fn grpc_e2e_404_maps_correctly() {
     let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
     // GetUser's rest_path contains a placeholder "{}" that won't parse as a u32,
     // so the REST router returns 404 which maps to NOT_FOUND.
-    let resp = client
-        .call_empty("users.v1.UserService", "GetUser")
-        .await;
+    let resp = client.call_empty("users.v1.UserService", "GetUser").await;
 
     // The native dispatch returns an error for an empty GetUser call
     // (no path capture provided). The exact error code varies — the
@@ -768,12 +753,10 @@ async fn grpc_with_effectful_server_and_cors() {
         GetEndpoint<HealthPath, String>,
     );
 
-    let state: AppState = Arc::new(std::sync::Mutex::new(vec![
-        User {
-            id: 1,
-            name: "Alice".into(),
-        },
-    ]));
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![User {
+        id: 1,
+        name: "Alice".into(),
+    }]));
 
     let server = EffectfulServer::<EffAPI>::new((
         bind::<_, _, _>(list_users),
@@ -810,9 +793,7 @@ async fn grpc_with_effectful_server_and_cors() {
 
     // Verify gRPC works.
     let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
-    let resp = client
-        .call_empty("eff.v1.EffService", "ListUser")
-        .await;
+    let resp = client.call_empty("eff.v1.EffService", "ListUser").await;
     assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
     let body = resp.json();
     assert!(body.is_array());
@@ -837,22 +818,21 @@ async fn grpc_with_validated_endpoint() {
 
     type ValidatedAPI = (
         GetEndpoint<UsersPath, Vec<User>>,
-        typeway_server::typed::Validated<CreateUserValidator, PostEndpoint<UsersPath, CreateUser, User>>,
+        typeway_server::typed::Validated<
+            CreateUserValidator,
+            PostEndpoint<UsersPath, CreateUser, User>,
+        >,
     );
 
-    let state: AppState = Arc::new(std::sync::Mutex::new(vec![
-        User {
-            id: 1,
-            name: "Alice".into(),
-        },
-    ]));
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![User {
+        id: 1,
+        name: "Alice".into(),
+    }]));
 
-    let grpc_server = Server::<ValidatedAPI>::new((
-        bind::<_, _, _>(list_users),
-        bind::<_, _, _>(create_user),
-    ))
-    .with_state(state)
-    .with_grpc("ValidatedService", "val.v1");
+    let grpc_server =
+        Server::<ValidatedAPI>::new((bind::<_, _, _>(list_users), bind::<_, _, _>(create_user)))
+            .with_state(state)
+            .with_grpc("ValidatedService", "val.v1");
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -896,16 +876,17 @@ async fn grpc_with_nested_wrappers() {
         GetEndpoint<UsersPath, Vec<User>>,
         Requires<
             CorsRequired,
-            typeway_server::typed::Validated<SimpleValidator, PostEndpoint<UsersPath, CreateUser, User>>,
+            typeway_server::typed::Validated<
+                SimpleValidator,
+                PostEndpoint<UsersPath, CreateUser, User>,
+            >,
         >,
     );
 
-    let state: AppState = Arc::new(std::sync::Mutex::new(vec![
-        User {
-            id: 1,
-            name: "Alice".into(),
-        },
-    ]));
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![User {
+        id: 1,
+        name: "Alice".into(),
+    }]));
 
     let server = EffectfulServer::<NestedAPI>::new((
         bind::<_, _, _>(list_users),
@@ -964,17 +945,24 @@ async fn grpc_streaming_splits_json_array() {
     );
 
     let state: AppState = Arc::new(std::sync::Mutex::new(vec![
-        User { id: 1, name: "Alice".into() },
-        User { id: 2, name: "Bob".into() },
-        User { id: 3, name: "Charlie".into() },
+        User {
+            id: 1,
+            name: "Alice".into(),
+        },
+        User {
+            id: 2,
+            name: "Bob".into(),
+        },
+        User {
+            id: 3,
+            name: "Charlie".into(),
+        },
     ]));
 
-    let grpc_server = Server::<StreamingAPI>::new((
-        bind::<_, _, _>(list_users),
-        bind::<_, _, _>(health_handler),
-    ))
-    .with_state(state)
-    .with_grpc("StreamService", "stream.v1");
+    let grpc_server =
+        Server::<StreamingAPI>::new((bind::<_, _, _>(list_users), bind::<_, _, _>(health_handler)))
+            .with_state(state)
+            .with_grpc("StreamService", "stream.v1");
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -1019,16 +1007,15 @@ async fn grpc_non_streaming_returns_single_frame() {
         GetEndpoint<UserByIdPath, User>,
     );
 
-    let state: AppState = Arc::new(std::sync::Mutex::new(vec![
-        User { id: 1, name: "Alice".into() },
-    ]));
+    let state: AppState = Arc::new(std::sync::Mutex::new(vec![User {
+        id: 1,
+        name: "Alice".into(),
+    }]));
 
-    let grpc_server = Server::<MixedStreamAPI>::new((
-        bind::<_, _, _>(list_users),
-        bind::<_, _, _>(get_user),
-    ))
-    .with_state(state)
-    .with_grpc("MixedService", "mixed.v1");
+    let grpc_server =
+        Server::<MixedStreamAPI>::new((bind::<_, _, _>(list_users), bind::<_, _, _>(get_user)))
+            .with_state(state)
+            .with_grpc("MixedService", "mixed.v1");
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -1059,9 +1046,7 @@ async fn grpc_non_streaming_returns_single_frame() {
 
     // The non-streaming endpoint (GetUser via call) returns a single
     // unary response — verify via the normal call method.
-    let resp = client
-        .call_empty("mixed.v1.MixedService", "GetUser")
-        .await;
+    let resp = client.call_empty("mixed.v1.MixedService", "GetUser").await;
     // GetUser's rest_path has a placeholder but no body was sent, so the
     // native dispatch can't extract the path capture. It returns an error
     // (the exact code depends on how far the request gets — the important
@@ -1073,8 +1058,8 @@ async fn grpc_non_streaming_returns_single_frame() {
 /// `server_streaming: true`.
 #[test]
 fn streaming_descriptor_has_server_streaming_flag() {
-    use typeway_grpc::streaming::ServerStream;
     use typeway_grpc::service::ApiToServiceDescriptor;
+    use typeway_grpc::streaming::ServerStream;
 
     type StreamAPI = (
         ServerStream<GetEndpoint<UsersPath, Vec<User>>>,
@@ -1097,7 +1082,11 @@ fn streaming_descriptor_has_server_streaming_flag() {
 
     // The second method (ListHealth) should NOT be streaming.
     // GET /health with no captures generates "ListHealth" as the RPC name.
-    let health_method = desc.methods.iter().find(|m| m.name == "ListHealth").unwrap();
+    let health_method = desc
+        .methods
+        .iter()
+        .find(|m| m.name == "ListHealth")
+        .unwrap();
     assert!(
         !health_method.server_streaming,
         "expected GetHealth to NOT be server_streaming"
@@ -1172,15 +1161,12 @@ async fn grpc_docs_endpoint_serves_html() {
 
     let body = resp.text().await.unwrap();
     assert!(body.contains("<!DOCTYPE html>"), "expected HTML document");
-    assert!(body.contains("UserService"), "expected service name in HTML");
     assert!(
-        body.contains("ListUser"),
-        "expected method name in HTML"
+        body.contains("UserService"),
+        "expected service name in HTML"
     );
-    assert!(
-        body.contains("GetUser"),
-        "expected method name in HTML"
-    );
+    assert!(body.contains("ListUser"), "expected method name in HTML");
+    assert!(body.contains("GetUser"), "expected method name in HTML");
 }
 
 /// GET /grpc-spec should return a JSON service specification.
@@ -1213,10 +1199,7 @@ async fn grpc_spec_endpoint_serves_json() {
     assert!(spec.methods.contains_key("GetUser"));
     assert!(spec.methods.contains_key("CreateUser"));
     assert!(spec.methods.contains_key("DeleteUser"));
-    assert!(
-        !spec.proto.is_empty(),
-        "expected proto content in spec"
-    );
+    assert!(!spec.proto.is_empty(), "expected proto content in spec");
 }
 
 /// Without .with_grpc_docs(), /grpc-docs and /grpc-spec should 404.
@@ -1250,8 +1233,6 @@ async fn grpc_docs_does_not_break_rest_or_grpc() {
 
     // gRPC still works.
     let client = typeway_grpc::GrpcTestClient::new(&format!("http://127.0.0.1:{port}"));
-    let resp = client
-        .call_empty("users.v1.UserService", "ListUser")
-        .await;
+    let resp = client.call_empty("users.v1.UserService", "ListUser").await;
     assert!(resp.is_ok(), "expected gRPC OK, got {:?}", resp.grpc_code());
 }

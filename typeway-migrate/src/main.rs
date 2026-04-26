@@ -94,7 +94,11 @@ fn main() -> Result<()> {
                 let source = std::fs::read_to_string(&path)
                     .with_context(|| format!("failed to read {}", path.display()))?;
 
-                match typeway_migrate::axum_to_typeway_with_options(&source, interactive, partial.as_deref()) {
+                match typeway_migrate::axum_to_typeway_with_options(
+                    &source,
+                    interactive,
+                    partial.as_deref(),
+                ) {
                     Ok(output) => {
                         if dry_run {
                             println!("// === {} ===\n{}", path.display(), output);
@@ -105,9 +109,8 @@ fn main() -> Result<()> {
                                 format!("failed to create backup {}", backup.display())
                             })?;
 
-                            std::fs::write(&path, &output).with_context(|| {
-                                format!("failed to write {}", path.display())
-                            })?;
+                            std::fs::write(&path, &output)
+                                .with_context(|| format!("failed to write {}", path.display()))?;
 
                             eprintln!(
                                 "Converted {} (backup: {})",
@@ -118,7 +121,12 @@ fn main() -> Result<()> {
                         print_conversion_summary(&source);
                     }
                     Err(e) => {
-                        eprintln!("{} {} \u{2014} {}", style("Skipping").red(), style(path.display()).bold(), e);
+                        eprintln!(
+                            "{} {} \u{2014} {}",
+                            style("Skipping").red(),
+                            style(path.display()).bold(),
+                            e
+                        );
                     }
                 }
             }
@@ -126,19 +134,15 @@ fn main() -> Result<()> {
             if update_cargo {
                 let cargo_path = find_cargo_toml(file.as_deref(), &dir)?;
                 let updated = typeway_migrate::cargo_editor::update_cargo_for_typeway(&cargo_path)
-                    .with_context(|| {
-                        format!("failed to update {}", cargo_path.display())
-                    })?;
+                    .with_context(|| format!("failed to update {}", cargo_path.display()))?;
                 if dry_run {
                     println!("// === {} ===\n{}", cargo_path.display(), updated);
                 } else {
                     let backup = cargo_path.with_extension("toml.bak");
-                    std::fs::copy(&cargo_path, &backup).with_context(|| {
-                        format!("failed to create backup {}", backup.display())
-                    })?;
-                    std::fs::write(&cargo_path, &updated).with_context(|| {
-                        format!("failed to write {}", cargo_path.display())
-                    })?;
+                    std::fs::copy(&cargo_path, &backup)
+                        .with_context(|| format!("failed to create backup {}", backup.display()))?;
+                    std::fs::write(&cargo_path, &updated)
+                        .with_context(|| format!("failed to write {}", cargo_path.display()))?;
                     eprintln!(
                         "Updated {} (backup: {})",
                         cargo_path.display(),
@@ -171,9 +175,8 @@ fn main() -> Result<()> {
                                 format!("failed to create backup {}", backup.display())
                             })?;
 
-                            std::fs::write(&path, &output).with_context(|| {
-                                format!("failed to write {}", path.display())
-                            })?;
+                            std::fs::write(&path, &output)
+                                .with_context(|| format!("failed to write {}", path.display()))?;
 
                             eprintln!(
                                 "Converted {} (backup: {})",
@@ -184,7 +187,12 @@ fn main() -> Result<()> {
                         print_conversion_summary(&source);
                     }
                     Err(e) => {
-                        eprintln!("{} {} \u{2014} {}", style("Skipping").red(), style(path.display()).bold(), e);
+                        eprintln!(
+                            "{} {} \u{2014} {}",
+                            style("Skipping").red(),
+                            style(path.display()).bold(),
+                            e
+                        );
                     }
                 }
             }
@@ -192,19 +200,15 @@ fn main() -> Result<()> {
             if update_cargo {
                 let cargo_path = find_cargo_toml(file.as_deref(), &dir)?;
                 let updated = typeway_migrate::cargo_editor::update_cargo_for_axum(&cargo_path)
-                    .with_context(|| {
-                        format!("failed to update {}", cargo_path.display())
-                    })?;
+                    .with_context(|| format!("failed to update {}", cargo_path.display()))?;
                 if dry_run {
                     println!("// === {} ===\n{}", cargo_path.display(), updated);
                 } else {
                     let backup = cargo_path.with_extension("toml.bak");
-                    std::fs::copy(&cargo_path, &backup).with_context(|| {
-                        format!("failed to create backup {}", backup.display())
-                    })?;
-                    std::fs::write(&cargo_path, &updated).with_context(|| {
-                        format!("failed to write {}", cargo_path.display())
-                    })?;
+                    std::fs::copy(&cargo_path, &backup)
+                        .with_context(|| format!("failed to create backup {}", backup.display()))?;
+                    std::fs::write(&cargo_path, &updated)
+                        .with_context(|| format!("failed to write {}", cargo_path.display()))?;
                     eprintln!(
                         "Updated {} (backup: {})",
                         cargo_path.display(),
@@ -244,10 +248,7 @@ fn main() -> Result<()> {
 
                         let framework = if is_typeway { "Typeway" } else { "Axum" };
                         println!("{} ({} source):", style(path.display()).bold(), framework);
-                        println!(
-                            "  {} endpoints found:",
-                            style(model.endpoints.len()).bold()
-                        );
+                        println!("  {} endpoints found:", style(model.endpoints.len()).bold());
                         for ep in &model.endpoints {
                             println!(
                                 "    {} {} \u{2192} {}",
@@ -275,10 +276,7 @@ fn main() -> Result<()> {
                         if !auth_endpoints.is_empty() {
                             println!("  Auth detection:");
                             for ep in &auth_endpoints {
-                                let auth_ty = ep
-                                    .auth_type
-                                    .as_deref()
-                                    .unwrap_or("unknown");
+                                let auth_ty = ep.auth_type.as_deref().unwrap_or("unknown");
                                 println!(
                                     "    {}: Protected ({})",
                                     style(&ep.handler.name).green(),
@@ -329,23 +327,15 @@ fn main() -> Result<()> {
                                 ep.handler
                                     .extractors
                                     .iter()
-                                    .any(|e| {
-                                        e.kind
-                                            == typeway_migrate::model::ExtractorKind::Query
-                                    })
+                                    .any(|e| e.kind == typeway_migrate::model::ExtractorKind::Query)
                             })
                             .collect();
                         if !query_endpoints.is_empty() {
                             println!("  Query extractors:");
                             for ep in &query_endpoints {
-                                let query_ext = ep
-                                    .handler
-                                    .extractors
-                                    .iter()
-                                    .find(|e| {
-                                        e.kind
-                                            == typeway_migrate::model::ExtractorKind::Query
-                                    });
+                                let query_ext = ep.handler.extractors.iter().find(|e| {
+                                    e.kind == typeway_migrate::model::ExtractorKind::Query
+                                });
                                 let type_str = if let Some(ext) = query_ext {
                                     if let Some(ref inner) = ext.inner_type {
                                         let ts = quote::quote! { #inner };
@@ -356,10 +346,7 @@ fn main() -> Result<()> {
                                 } else {
                                     "Query<...>".to_string()
                                 };
-                                println!(
-                                    "    {}: {}",
-                                    ep.handler.name, type_str
-                                );
+                                println!("    {}: {}", ep.handler.name, type_str);
                             }
                         }
 
@@ -368,36 +355,28 @@ fn main() -> Result<()> {
                             .endpoints
                             .iter()
                             .filter(|ep| {
-                                ep.handler
-                                    .extractors
-                                    .iter()
-                                    .any(|e| {
-                                        e.kind == typeway_migrate::model::ExtractorKind::Cookie
-                                            || e.kind == typeway_migrate::model::ExtractorKind::CookieJar
-                                    })
+                                ep.handler.extractors.iter().any(|e| {
+                                    e.kind == typeway_migrate::model::ExtractorKind::Cookie
+                                        || e.kind
+                                            == typeway_migrate::model::ExtractorKind::CookieJar
+                                })
                             })
                             .collect();
                         if !cookie_endpoints.is_empty() {
                             println!("  Cookie extractors:");
                             for ep in &cookie_endpoints {
-                                let ext = ep
-                                    .handler
-                                    .extractors
-                                    .iter()
-                                    .find(|e| {
-                                        e.kind == typeway_migrate::model::ExtractorKind::Cookie
-                                            || e.kind == typeway_migrate::model::ExtractorKind::CookieJar
-                                    });
+                                let ext = ep.handler.extractors.iter().find(|e| {
+                                    e.kind == typeway_migrate::model::ExtractorKind::Cookie
+                                        || e.kind
+                                            == typeway_migrate::model::ExtractorKind::CookieJar
+                                });
                                 let type_str = if let Some(ext) = ext {
                                     let ty = &ext.full_type;
                                     format!("{}", quote::quote! { #ty })
                                 } else {
                                     "Cookie".to_string()
                                 };
-                                println!(
-                                    "    {}: {}",
-                                    ep.handler.name, type_str
-                                );
+                                println!("    {}: {}", ep.handler.name, type_str);
                             }
                         }
 
@@ -406,36 +385,28 @@ fn main() -> Result<()> {
                             .endpoints
                             .iter()
                             .filter(|ep| {
-                                ep.handler
-                                    .extractors
-                                    .iter()
-                                    .any(|e| {
-                                        e.kind == typeway_migrate::model::ExtractorKind::Form
-                                            || e.kind == typeway_migrate::model::ExtractorKind::Multipart
-                                    })
+                                ep.handler.extractors.iter().any(|e| {
+                                    e.kind == typeway_migrate::model::ExtractorKind::Form
+                                        || e.kind
+                                            == typeway_migrate::model::ExtractorKind::Multipart
+                                })
                             })
                             .collect();
                         if !form_endpoints.is_empty() {
                             println!("  Form/Multipart extractors:");
                             for ep in &form_endpoints {
-                                let ext = ep
-                                    .handler
-                                    .extractors
-                                    .iter()
-                                    .find(|e| {
-                                        e.kind == typeway_migrate::model::ExtractorKind::Form
-                                            || e.kind == typeway_migrate::model::ExtractorKind::Multipart
-                                    });
+                                let ext = ep.handler.extractors.iter().find(|e| {
+                                    e.kind == typeway_migrate::model::ExtractorKind::Form
+                                        || e.kind
+                                            == typeway_migrate::model::ExtractorKind::Multipart
+                                });
                                 let type_str = if let Some(ext) = ext {
                                     let ty = &ext.full_type;
                                     format!("{}", quote::quote! { #ty })
                                 } else {
                                     "Form/Multipart".to_string()
                                 };
-                                println!(
-                                    "    {}: {}",
-                                    ep.handler.name, type_str
-                                );
+                                println!("    {}: {}", ep.handler.name, type_str);
                             }
                         }
 
@@ -455,10 +426,7 @@ fn main() -> Result<()> {
                         if !ws_endpoints.is_empty() {
                             println!("  WebSocket endpoints:");
                             for ep in &ws_endpoints {
-                                println!(
-                                    "    {}: WebSocketUpgrade",
-                                    ep.handler.name
-                                );
+                                println!("    {}: WebSocketUpgrade", ep.handler.name);
                             }
                         }
 
@@ -467,17 +435,24 @@ fn main() -> Result<()> {
                             let bind_count = model
                                 .endpoints
                                 .iter()
-                                .filter(|ep| ep.bind_macro == typeway_migrate::model::BindMacro::Bind)
+                                .filter(|ep| {
+                                    ep.bind_macro == typeway_migrate::model::BindMacro::Bind
+                                })
                                 .count();
                             let bind_auth_count = model
                                 .endpoints
                                 .iter()
-                                .filter(|ep| ep.bind_macro == typeway_migrate::model::BindMacro::BindAuth)
+                                .filter(|ep| {
+                                    ep.bind_macro == typeway_migrate::model::BindMacro::BindAuth
+                                })
                                 .count();
                             let bind_validated_count = model
                                 .endpoints
                                 .iter()
-                                .filter(|ep| ep.bind_macro == typeway_migrate::model::BindMacro::BindValidated)
+                                .filter(|ep| {
+                                    ep.bind_macro
+                                        == typeway_migrate::model::BindMacro::BindValidated
+                                })
                                 .count();
 
                             if bind_auth_count > 0 || bind_validated_count > 0 {
@@ -583,7 +558,12 @@ fn main() -> Result<()> {
                         println!();
                     }
                     Err(e) => {
-                        eprintln!("{} {} \u{2014} {}", style("Skipping").red(), style(path.display()).bold(), e);
+                        eprintln!(
+                            "{} {} \u{2014} {}",
+                            style("Skipping").red(),
+                            style(path.display()).bold(),
+                            e
+                        );
                     }
                 }
             }
@@ -655,11 +635,18 @@ fn print_conversion_summary(source: &str) {
     }
 
     let auth_count = model.endpoints.iter().filter(|ep| ep.requires_auth).count();
-    let validated_count = model.endpoints.iter().filter(|ep| ep.has_validation).count();
+    let validated_count = model
+        .endpoints
+        .iter()
+        .filter(|ep| ep.has_validation)
+        .count();
     let public_count = model.endpoints.len() - auth_count;
 
     eprintln!("\n{}", style("Conversion summary:").bold());
-    eprintln!("  {} endpoints converted", style(model.endpoints.len()).green().bold());
+    eprintln!(
+        "  {} endpoints converted",
+        style(model.endpoints.len()).green().bold()
+    );
     eprintln!("    {} protected", style(auth_count).yellow());
     eprintln!("    {} validated", style(validated_count).yellow());
     eprintln!("    {} public", style(public_count).green());

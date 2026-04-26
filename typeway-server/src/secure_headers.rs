@@ -54,10 +54,7 @@ impl SecureHeadersLayer {
     pub fn new() -> Self {
         SecureHeadersLayer {
             headers: vec![
-                (
-                    "x-content-type-options".to_string(),
-                    "nosniff".to_string(),
-                ),
+                ("x-content-type-options".to_string(), "nosniff".to_string()),
                 ("x-frame-options".to_string(), "DENY".to_string()),
                 ("x-xss-protection".to_string(), "0".to_string()),
                 (

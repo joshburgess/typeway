@@ -464,10 +464,9 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for RouterServ
         Box::pin(async move {
             use futures::FutureExt;
 
-            let result =
-                std::panic::AssertUnwindSafe(router.route(req))
-                    .catch_unwind()
-                    .await;
+            let result = std::panic::AssertUnwindSafe(router.route(req))
+                .catch_unwind()
+                .await;
 
             match result {
                 Ok(response) => Ok(response),
@@ -482,9 +481,8 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for RouterServ
 
                     tracing::error!("handler panicked: {message}");
 
-                    let mut res = http::Response::new(body_from_string(
-                        "Internal Server Error".to_string(),
-                    ));
+                    let mut res =
+                        http::Response::new(body_from_string("Internal Server Error".to_string()));
                     *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                     Ok(res)
                 }

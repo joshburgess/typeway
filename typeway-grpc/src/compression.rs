@@ -195,8 +195,7 @@ mod tests {
         let message = b"test message";
         let frame = encode_compressed_frame(message, Compression::Gzip).unwrap();
         assert_eq!(frame[0], 1); // compression flag
-        let decoded =
-            decode_frame_with_decompression(&frame, Some(Compression::Gzip)).unwrap();
+        let decoded = decode_frame_with_decompression(&frame, Some(Compression::Gzip)).unwrap();
         assert_eq!(decoded, message);
     }
 
@@ -215,7 +214,10 @@ mod tests {
     #[test]
     fn negotiate_gzip() {
         let mut headers = http::HeaderMap::new();
-        headers.insert("grpc-accept-encoding", "gzip, deflate, identity".parse().unwrap());
+        headers.insert(
+            "grpc-accept-encoding",
+            "gzip, deflate, identity".parse().unwrap(),
+        );
         assert_eq!(negotiate_compression(&headers), Some(Compression::Gzip));
     }
 

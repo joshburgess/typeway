@@ -467,10 +467,7 @@ mod tests {
     fn best_match_quality_order() {
         let supported = &["application/json", "text/plain; charset=utf-8"];
         assert_eq!(
-            best_match(
-                Some("text/plain;q=0.9, application/json;q=0.5"),
-                supported
-            ),
+            best_match(Some("text/plain;q=0.9, application/json;q=0.5"), supported),
             1
         );
     }
@@ -537,8 +534,7 @@ mod tests {
         let user = test_user();
         let (_bytes, ct) =
             <(JsonFormat, TextFormat) as NegotiateFormats<TestUser>>::negotiate_and_render(
-                &user,
-                None,
+                &user, None,
             )
             .unwrap();
         assert_eq!(ct, "application/json");
@@ -591,8 +587,7 @@ mod tests {
 
     #[test]
     fn supported_types_lists_all() {
-        let types =
-            <(JsonFormat, TextFormat) as NegotiateFormats<TestUser>>::supported_types();
+        let types = <(JsonFormat, TextFormat) as NegotiateFormats<TestUser>>::supported_types();
         assert_eq!(types, vec!["application/json", "text/plain; charset=utf-8"]);
     }
 }

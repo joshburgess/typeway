@@ -42,10 +42,7 @@ impl<T> GrpcSender<T> {
     ///
     /// Returns `Err` if the receiver has been dropped (client disconnected).
     pub async fn send(&self, item: T) -> Result<(), StreamSendError> {
-        self.tx
-            .send(Ok(item))
-            .await
-            .map_err(|_| StreamSendError)
+        self.tx.send(Ok(item)).await.map_err(|_| StreamSendError)
     }
 
     /// Send an error to the stream.
@@ -53,10 +50,7 @@ impl<T> GrpcSender<T> {
     /// The error will be conveyed as a gRPC status to the client.
     /// After sending an error, the stream should be considered finished.
     pub async fn send_error(&self, status: GrpcStatus) -> Result<(), StreamSendError> {
-        self.tx
-            .send(Err(status))
-            .await
-            .map_err(|_| StreamSendError)
+        self.tx.send(Err(status)).await.map_err(|_| StreamSendError)
     }
 }
 

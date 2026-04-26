@@ -360,10 +360,7 @@ mod tests {
     #[test]
     fn success_codes_map_to_ok() {
         assert_eq!(http_to_grpc_code(http::StatusCode::OK), GrpcCode::Ok);
-        assert_eq!(
-            http_to_grpc_code(http::StatusCode::CREATED),
-            GrpcCode::Ok
-        );
+        assert_eq!(http_to_grpc_code(http::StatusCode::CREATED), GrpcCode::Ok);
         assert_eq!(
             http_to_grpc_code(http::StatusCode::NO_CONTENT),
             GrpcCode::Ok
@@ -424,10 +421,7 @@ mod tests {
             http_to_grpc_code(http::StatusCode::IM_A_TEAPOT),
             GrpcCode::Unknown
         );
-        assert_eq!(
-            http_to_grpc_code(http::StatusCode::GONE),
-            GrpcCode::Unknown
-        );
+        assert_eq!(http_to_grpc_code(http::StatusCode::GONE), GrpcCode::Unknown);
     }
 
     #[test]

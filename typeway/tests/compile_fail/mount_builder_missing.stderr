@@ -7,13 +7,11 @@ error[E0277]: the trait bound `MNil: HasMount<(Endpoint<Get, HCons<Lit<__lit_ite
 help: the following other types implement trait `HasMount<A, Idx>`
   --> $WORKSPACE/typeway-server/src/mount.rs
    |
-   |   impl<A, Tail> HasMount<A, MHere> for MCons<A, Tail> {}
-   |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MCons<A, Tail>` implements `HasMount<A, MHere>`
+   | impl<A, Tail> HasMount<A, MHere> for MCons<A, Tail> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MCons<A, Tail>` implements `HasMount<A, MHere>`
    |
-   | / impl<A, Head, Tail, Idx> HasMount<A, MThere<Idx>> for MCons<Head, Tail>
-   | | where
-   | |     Tail: HasMount<A, Idx>,
-   | |___________________________^ `MCons<Head, Tail>` implements `HasMount<A, MThere<Idx>>`
+   | impl<A, Head, Tail, Idx> HasMount<A, MThere<Idx>> for MCons<Head, Tail> where Tail: HasMount<A, Idx> {}
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MCons<Head, Tail>` implements `HasMount<A, MThere<Idx>>`
    = note: required for `MCons<(Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>,), MNil>` to implement `HasMount<(Endpoint<Get, HCons<Lit<__lit_items>, HNil>, NoBody, std::string::String>,), MThere<_>>`
    = note: required for `((Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>,), (Endpoint<Get, HCons<Lit<__lit_items>, HNil>, NoBody, std::string::String>,))` to implement `AllMounted<MCons<(Endpoint<Get, HCons<Lit<__lit_users>, HNil>, NoBody, std::string::String>,), MNil>, (MHere, MThere<_>)>`
 note: required by a bound in `ServerBuilder::<A, M, P>::build`

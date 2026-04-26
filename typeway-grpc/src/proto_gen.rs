@@ -483,8 +483,7 @@ fn path_to_rpc_name(method: &str, path: &str) -> String {
     // For GET, check if the last segment is a capture — that signals a
     // single-resource fetch ("Get") vs a collection fetch ("List").
     let last_segment = path.split('/').rfind(|s| !s.is_empty());
-    let last_is_capture = last_segment
-        .is_some_and(|s| s.starts_with('{'));
+    let last_is_capture = last_segment.is_some_and(|s| s.starts_with('{'));
 
     let prefix = match method {
         "GET" => {

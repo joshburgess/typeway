@@ -224,10 +224,7 @@ impl SecurityRequirement {
 /// Top-level components section of an OpenAPI spec.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Components {
-    #[serde(
-        rename = "securitySchemes",
-        skip_serializing_if = "IndexMap::is_empty"
-    )]
+    #[serde(rename = "securitySchemes", skip_serializing_if = "IndexMap::is_empty")]
     pub security_schemes: IndexMap<String, SecurityScheme>,
 }
 

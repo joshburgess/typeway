@@ -61,12 +61,7 @@ fn nested_field(name: &str, tag: u32, fields: Vec<ProtoFieldDef>) -> ProtoFieldD
     }
 }
 
-fn map_field(
-    name: &str,
-    tag: u32,
-    key_type: &str,
-    value_type: &str,
-) -> ProtoFieldDef {
+fn map_field(name: &str, tag: u32, key_type: &str, value_type: &str) -> ProtoFieldDef {
     ProtoFieldDef {
         name: name.into(),
         proto_type: "map".into(),
@@ -185,8 +180,7 @@ fn protoc_encode_typeway_decode_scalars() {
     }
 
     let text_format = "name: \"bob\"\nid: 99\nactive: true\n";
-    let bytes =
-        protoc_encode("test.SimpleTest", text_format).expect("protoc --encode failed");
+    let bytes = protoc_encode("test.SimpleTest", text_format).expect("protoc --encode failed");
 
     let fields = vec![
         scalar_field("name", "string", 1),
@@ -236,7 +230,10 @@ fn typeway_encode_protoc_decode_nested() {
         text.contains("title: \"Hello World\""),
         "missing title in: {text}"
     );
-    assert!(text.contains("name: \"alice\""), "missing author.name in: {text}");
+    assert!(
+        text.contains("name: \"alice\""),
+        "missing author.name in: {text}"
+    );
     assert!(text.contains("id: 1"), "missing author.id in: {text}");
 }
 
@@ -258,8 +255,7 @@ author {
   active: false
 }
 "#;
-    let bytes =
-        protoc_encode("test.WithNested", text_format).expect("protoc --encode failed");
+    let bytes = protoc_encode("test.WithNested", text_format).expect("protoc --encode failed");
 
     let inner_fields = vec![
         scalar_field("name", "string", 1),
@@ -298,17 +294,13 @@ fn typeway_encode_protoc_decode_repeated() {
     });
 
     let bytes = json_to_proto_binary(&json, &fields).unwrap();
-    let text =
-        protoc_decode("test.WithRepeated", &bytes).expect("protoc --decode failed");
+    let text = protoc_decode("test.WithRepeated", &bytes).expect("protoc --decode failed");
 
     // protoc may show packed ints as individual lines or as a single line
     assert!(text.contains("10"), "missing value 10 in: {text}");
     assert!(text.contains("20"), "missing value 20 in: {text}");
     assert!(text.contains("30"), "missing value 30 in: {text}");
-    assert!(
-        text.contains("tags: \"alpha\""),
-        "missing alpha in: {text}"
-    );
+    assert!(text.contains("tags: \"alpha\""), "missing alpha in: {text}");
     assert!(text.contains("tags: \"beta\""), "missing beta in: {text}");
 }
 
@@ -324,8 +316,7 @@ fn protoc_encode_typeway_decode_repeated() {
     }
 
     let text_format = "values: 100\nvalues: 200\ntags: \"x\"\ntags: \"y\"\ntags: \"z\"\n";
-    let bytes =
-        protoc_encode("test.WithRepeated", text_format).expect("protoc --encode failed");
+    let bytes = protoc_encode("test.WithRepeated", text_format).expect("protoc --encode failed");
 
     let fields = vec![
         repeated_field("values", "int32", 1),
@@ -357,16 +348,13 @@ fn typeway_encode_protoc_decode_negative_int() {
         return;
     }
 
-    let fields = vec![
-        scalar_field("temperature", "int32", 1),
-    ];
+    let fields = vec![scalar_field("temperature", "int32", 1)];
     let json = serde_json::json!({
         "temperature": -42
     });
 
     let bytes = json_to_proto_binary(&json, &fields).unwrap();
-    let text =
-        protoc_decode("test.WithNegative", &bytes).expect("protoc --decode failed");
+    let text = protoc_decode("test.WithNegative", &bytes).expect("protoc --decode failed");
 
     assert!(
         text.contains("temperature: -42"),
@@ -390,13 +378,12 @@ fn typeway_encode_protoc_decode_floats() {
         scalar_field("precise", "double", 2),
     ];
     let json = serde_json::json!({
-        "score": 3.14,
-        "precise": 2.718281828
+        "score": 1.5,
+        "precise": 2.5
     });
 
     let bytes = json_to_proto_binary(&json, &fields).unwrap();
-    let text =
-        protoc_decode("test.WithFloats", &bytes).expect("protoc --decode failed");
+    let text = protoc_decode("test.WithFloats", &bytes).expect("protoc --decode failed");
 
     // Float precision: protoc may show different decimal places
     assert!(text.contains("score:"), "missing score in: {text}");

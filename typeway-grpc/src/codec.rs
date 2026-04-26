@@ -189,23 +189,23 @@ impl GrpcCodec for BinaryCodec {
         })?;
 
         match self.direction {
-            CodecDirection::Response => {
-                self.transcoder
-                    .encode_response(method_path, value)
-                    .map_err(|e| CodecError {
-                        kind: CodecErrorKind::Encode,
-                        message: e.to_string(),
-                    })
-            }
+            CodecDirection::Response => self
+                .transcoder
+                .encode_response(method_path, value)
+                .map_err(|e| CodecError {
+                    kind: CodecErrorKind::Encode,
+                    message: e.to_string(),
+                }),
             CodecDirection::Request => {
                 // Encoding a request (client-side) — use the request message type.
                 // For now, look up the method and encode using the request message fields.
-                let method = self.transcoder.find_method(method_path).ok_or_else(|| {
-                    CodecError {
-                        kind: CodecErrorKind::Encode,
-                        message: format!("method not found: {method_path}"),
-                    }
-                })?;
+                let method =
+                    self.transcoder
+                        .find_method(method_path)
+                        .ok_or_else(|| CodecError {
+                            kind: CodecErrorKind::Encode,
+                            message: format!("method not found: {method_path}"),
+                        })?;
                 let msg_name = method.request_type.clone();
                 self.transcoder
                     .encode_message(&msg_name, value)
@@ -234,12 +234,13 @@ impl GrpcCodec for BinaryCodec {
             }
             CodecDirection::Response => {
                 // Decoding a response (client-side) — use the response message fields.
-                let method = self.transcoder.find_method(method_path).ok_or_else(|| {
-                    CodecError {
-                        kind: CodecErrorKind::Decode,
-                        message: format!("method not found: {method_path}"),
-                    }
-                })?;
+                let method =
+                    self.transcoder
+                        .find_method(method_path)
+                        .ok_or_else(|| CodecError {
+                            kind: CodecErrorKind::Decode,
+                            message: format!("method not found: {method_path}"),
+                        })?;
                 let fields = self
                     .transcoder
                     .message_fields(&method.response_type)

@@ -80,10 +80,7 @@ pub type GrpcMiddleware = Arc<
         ) -> std::pin::Pin<
             Box<
                 dyn std::future::Future<
-                        Output = Result<
-                            (http::request::Parts, Bytes),
-                            http::Response<BoxBody>,
-                        >,
+                        Output = Result<(http::request::Parts, Bytes), http::Response<BoxBody>>,
                     > + Send,
             >,
         > + Send
@@ -97,17 +94,13 @@ impl GrpcRouter {
     /// REST handler by matching `http_method` and `rest_path`. Since
     /// `BoxedHandler` is `Arc`-wrapped, the handler is shared between
     /// REST and gRPC dispatch (cheap clone).
-    pub fn from_router(
-        router: &Router,
-        descriptor: &GrpcServiceDescriptor,
-    ) -> Self {
+    pub fn from_router(router: &Router, descriptor: &GrpcServiceDescriptor) -> Self {
         let mut handlers = HashMap::new();
 
         for method in &descriptor.methods {
-            if let Some(handler) = router.find_handler_by_pattern(
-                &method.http_method,
-                &method.rest_path,
-            ) {
+            if let Some(handler) =
+                router.find_handler_by_pattern(&method.http_method, &method.rest_path)
+            {
                 handlers.insert(
                     method.full_path.clone(),
                     GrpcRouteEntry::Standard {
@@ -141,7 +134,8 @@ impl GrpcRouter {
         grpc_path: String,
         handler: crate::grpc_direct::DirectHandler,
     ) {
-        self.handlers.insert(grpc_path, GrpcRouteEntry::Direct(handler));
+        self.handlers
+            .insert(grpc_path, GrpcRouteEntry::Direct(handler));
     }
 
     /// Register per-RPC middleware for a specific gRPC method.
@@ -220,8 +214,7 @@ fn build_synthetic_request(
     state_injector: Option<&StateInjector>,
 ) -> (http::request::Parts, Bytes) {
     // Start with a synthetic request matching the REST endpoint.
-    let mut builder = http::Request::builder()
-        .method(method_desc.http_method.clone());
+    let mut builder = http::Request::builder().method(method_desc.http_method.clone());
 
     // Build the URI by substituting captures into the rest_path template.
     let rest_path = &method_desc.rest_path;
@@ -252,12 +245,10 @@ fn build_synthetic_request(
     // Copy relevant headers from the original gRPC request.
     parts.headers = original_parts.headers.clone();
     // Override content-type for REST handler.
-    parts
-        .headers
-        .insert(
-            http::header::CONTENT_TYPE,
-            http::HeaderValue::from_static("application/json"),
-        );
+    parts.headers.insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_static("application/json"),
+    );
 
     // Copy extensions from original request.
     parts.extensions = original_parts.extensions.clone();
@@ -269,9 +260,7 @@ fn build_synthetic_request(
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
         .collect();
-    parts
-        .extensions
-        .insert(PathSegments(Arc::new(segments)));
+    parts.extensions.insert(PathSegments(Arc::new(segments)));
 
     // Inject state if available.
     if let Some(injector) = state_injector {
@@ -383,9 +372,9 @@ pub struct GrpcMultiplexer {
 impl GrpcMultiplexer {
     /// Construct a new `GrpcMultiplexer` from its components.
     ///
-    /// Prefer [`GrpcServer::build`](crate::grpc::GrpcServer::build) for
-    /// production use. This constructor is available for benchmarks and tests
-    /// that need fine-grained control.
+    /// Prefer the `GrpcServer` builder API (in `crate::grpc`) for production
+    /// use. This constructor is available for benchmarks and tests that need
+    /// fine-grained control.
     pub fn new(
         rest: RouterService,
         grpc_router: Arc<GrpcRouter>,
@@ -414,10 +403,8 @@ fn grpc_json_response(json_body: &str) -> http::Response<BoxBody> {
     let framed = framing::encode_grpc_frame(json_body.as_bytes());
     let mut res = http::Response::new(body_from_bytes(Bytes::from(framed)));
     *res.status_mut() = http::StatusCode::OK;
-    res.headers_mut().insert(
-        "grpc-status",
-        http::HeaderValue::from_static("0"),
-    );
+    res.headers_mut()
+        .insert("grpc-status", http::HeaderValue::from_static("0"));
     res.headers_mut().insert(
         "content-type",
         http::HeaderValue::from_static("application/grpc+json"),
@@ -441,7 +428,9 @@ fn encode_response_bytes(
     json_bytes: &[u8],
     _grpc_path: &str,
     _use_proto_binary: bool,
-    #[cfg(feature = "grpc-proto-binary")] transcoder: &Option<Arc<typeway_grpc::transcode::ProtoTranscoder>>,
+    #[cfg(feature = "grpc-proto-binary")] transcoder: &Option<
+        Arc<typeway_grpc::transcode::ProtoTranscoder>,
+    >,
 ) -> (Vec<u8>, &'static str) {
     #[cfg(feature = "grpc-proto-binary")]
     if _use_proto_binary {
@@ -451,7 +440,11 @@ fn encode_response_bytes(
             match tc.encode_response(_grpc_path, &json_val) {
                 Ok(proto_bytes) => return (proto_bytes, "application/grpc+proto"),
                 Err(e) => {
-                    tracing::warn!("proto-binary response encode failed for {}: {}", _grpc_path, e);
+                    tracing::warn!(
+                        "proto-binary response encode failed for {}: {}",
+                        _grpc_path,
+                        e
+                    );
                     // Fall back to JSON.
                 }
             }
@@ -466,7 +459,9 @@ async fn wrap_response_as_grpc(
     method_desc: &GrpcMethodDescriptor,
     grpc_path: &str,
     use_proto_binary: bool,
-    #[cfg(feature = "grpc-proto-binary")] transcoder: &Option<Arc<typeway_grpc::transcode::ProtoTranscoder>>,
+    #[cfg(feature = "grpc-proto-binary")] transcoder: &Option<
+        Arc<typeway_grpc::transcode::ProtoTranscoder>,
+    >,
 ) -> http::Response<BoxBody> {
     let (res_parts, res_body) = rest_response.into_parts();
 
@@ -498,55 +493,55 @@ async fn wrap_response_as_grpc(
     };
 
     // Build gRPC-framed body, optionally transcoding to binary protobuf.
-    let (framed, response_content_type) = if method_desc.server_streaming
-        && grpc_code == GrpcCode::Ok
-    {
-        // Server-streaming: split JSON array into individual frames.
-        match serde_json::from_slice::<serde_json::Value>(&res_bytes) {
-            Ok(serde_json::Value::Array(items)) => {
-                let mut buf = Vec::new();
-                let mut ct = "application/grpc+json";
-                for item in &items {
-                    let item_bytes = serde_json::to_vec(item).unwrap_or_default();
-                    let (encoded, content_type) = encode_response_bytes(
-                        &item_bytes,
+    let (framed, response_content_type) =
+        if method_desc.server_streaming && grpc_code == GrpcCode::Ok {
+            // Server-streaming: split JSON array into individual frames.
+            match serde_json::from_slice::<serde_json::Value>(&res_bytes) {
+                Ok(serde_json::Value::Array(items)) => {
+                    let mut buf = Vec::new();
+                    let mut ct = "application/grpc+json";
+                    for item in &items {
+                        let item_bytes = serde_json::to_vec(item).unwrap_or_default();
+                        let (encoded, content_type) = encode_response_bytes(
+                            &item_bytes,
+                            grpc_path,
+                            use_proto_binary,
+                            #[cfg(feature = "grpc-proto-binary")]
+                            transcoder,
+                        );
+                        ct = content_type;
+                        buf.extend_from_slice(&framing::encode_grpc_frame(&encoded));
+                    }
+                    (buf, ct)
+                }
+                _ => {
+                    let (encoded, ct) = encode_response_bytes(
+                        &res_bytes,
                         grpc_path,
                         use_proto_binary,
                         #[cfg(feature = "grpc-proto-binary")]
                         transcoder,
                     );
-                    ct = content_type;
-                    buf.extend_from_slice(&framing::encode_grpc_frame(&encoded));
+                    (framing::encode_grpc_frame(&encoded), ct)
                 }
-                (buf, ct)
             }
-            _ => {
-                let (encoded, ct) = encode_response_bytes(
-                    &res_bytes,
-                    grpc_path,
-                    use_proto_binary,
-                    #[cfg(feature = "grpc-proto-binary")]
-                    transcoder,
-                );
-                (framing::encode_grpc_frame(&encoded), ct)
-            }
-        }
-    } else {
-        let (encoded, ct) = encode_response_bytes(
-            &res_bytes,
-            grpc_path,
-            use_proto_binary,
-            #[cfg(feature = "grpc-proto-binary")]
-            transcoder,
-        );
-        (framing::encode_grpc_frame(&encoded), ct)
-    };
+        } else {
+            let (encoded, ct) = encode_response_bytes(
+                &res_bytes,
+                grpc_path,
+                use_proto_binary,
+                #[cfg(feature = "grpc-proto-binary")]
+                transcoder,
+            );
+            (framing::encode_grpc_frame(&encoded), ct)
+        };
 
     // Build response with GrpcBody (real HTTP/2 trailers).
     let grpc_body = GrpcBody::with_status(Bytes::from(framed), grpc_status);
-    let boxed_body: BoxBody = http_body_util::BodyExt::boxed_unsync(
-        http_body_util::BodyExt::map_err(grpc_body, |e| match e {}),
-    );
+    let boxed_body: BoxBody =
+        http_body_util::BodyExt::boxed_unsync(http_body_util::BodyExt::map_err(grpc_body, |e| {
+            match e {}
+        }));
 
     let mut response = http::Response::new(boxed_body);
     *response.status_mut() = http::StatusCode::OK;
@@ -573,9 +568,10 @@ fn grpc_error_response(status: GrpcStatus) -> http::Response<BoxBody> {
     let code = status.code;
     let message = status.message.clone();
     let grpc_body = GrpcBody::error(status);
-    let boxed_body: BoxBody = http_body_util::BodyExt::boxed_unsync(
-        http_body_util::BodyExt::map_err(grpc_body, |e| match e {}),
-    );
+    let boxed_body: BoxBody =
+        http_body_util::BodyExt::boxed_unsync(http_body_util::BodyExt::map_err(grpc_body, |e| {
+            match e {}
+        }));
     let mut res = http::Response::new(boxed_body);
     *res.status_mut() = http::StatusCode::OK;
     res.headers_mut().insert(
@@ -612,9 +608,9 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
         if req.method() == http::Method::GET && path == "/grpc-spec" {
             if let Some(spec_json) = self.grpc_spec_json.clone() {
                 return Box::pin(async move {
-                    let mut res = http::Response::new(body_from_bytes(
-                        Bytes::from(spec_json.as_bytes().to_vec()),
-                    ));
+                    let mut res = http::Response::new(body_from_bytes(Bytes::from(
+                        spec_json.as_bytes().to_vec(),
+                    )));
                     res.headers_mut().insert(
                         http::header::CONTENT_TYPE,
                         http::HeaderValue::from_static("application/json; charset=utf-8"),
@@ -626,9 +622,9 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
         if req.method() == http::Method::GET && path == "/grpc-docs" {
             if let Some(docs_html) = self.grpc_docs_html.clone() {
                 return Box::pin(async move {
-                    let mut res = http::Response::new(body_from_bytes(
-                        Bytes::from(docs_html.as_bytes().to_vec()),
-                    ));
+                    let mut res = http::Response::new(body_from_bytes(Bytes::from(
+                        docs_html.as_bytes().to_vec(),
+                    )));
                     res.headers_mut().insert(
                         http::header::CONTENT_TYPE,
                         http::HeaderValue::from_static("text/html; charset=utf-8"),
@@ -662,8 +658,7 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                         Ok(collected) => collected.to_bytes(),
                         Err(_) => Bytes::new(),
                     };
-                    let unframed = framing::decode_grpc_frame(&body_bytes)
-                        .unwrap_or(&body_bytes);
+                    let unframed = framing::decode_grpc_frame(&body_bytes).unwrap_or(&body_bytes);
                     let body_str = String::from_utf8_lossy(unframed);
                     let _ = parts;
                     let response_json = reflection.handle_request(&body_str);
@@ -675,9 +670,10 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                 let entry = match entry {
                     Some(e) => e,
                     None => {
-                        let status = GrpcStatus::unimplemented(
-                            &format!("method '{}' not found in service", grpc_path),
-                        );
+                        let status = GrpcStatus::unimplemented(&format!(
+                            "method '{}' not found in service",
+                            grpc_path
+                        ));
                         return Ok(grpc_error_response(status));
                     }
                 };
@@ -690,17 +686,22 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                         Ok(collected) => collected.to_bytes(),
                         Err(_) => Bytes::new(),
                     };
-                    return Ok(crate::grpc_direct::dispatch_direct(
-                        &direct_handler,
-                        body_bytes,
-                    ).await);
+                    return Ok(
+                        crate::grpc_direct::dispatch_direct(&direct_handler, body_bytes).await,
+                    );
                 }
 
                 // Standard handler: extractor pipeline.
                 let (method_desc, handler, rpc_middleware) = match entry {
-                    GrpcRouteEntry::Standard { handler, method_descriptor, middleware } => {
-                        (method_descriptor.clone(), handler.clone(), middleware.clone())
-                    }
+                    GrpcRouteEntry::Standard {
+                        handler,
+                        method_descriptor,
+                        middleware,
+                    } => (
+                        method_descriptor.clone(),
+                        handler.clone(),
+                        middleware.clone(),
+                    ),
                     #[cfg(feature = "protobuf")]
                     GrpcRouteEntry::Direct(_) => unreachable!(),
                 };
@@ -714,10 +715,13 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
 
                 // Detect whether the client sent binary protobuf or JSON.
                 #[cfg(feature = "grpc-proto-binary")]
-                let incoming_content_type = typeway_grpc::transcode::grpc_content_type(req.headers()).to_string();
+                let incoming_content_type =
+                    typeway_grpc::transcode::grpc_content_type(req.headers()).to_string();
                 #[cfg(feature = "grpc-proto-binary")]
                 let use_proto_binary = transcoder.is_some()
-                    && typeway_grpc::transcode::is_proto_binary_content_type(&incoming_content_type);
+                    && typeway_grpc::transcode::is_proto_binary_content_type(
+                        &incoming_content_type,
+                    );
 
                 // Collect body and decode gRPC frame.
                 let (parts, body) = req.into_parts();
@@ -734,8 +738,7 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                 // bytes directly to the handler. If the handler uses Proto<T>,
                 // it will decode via TypewayDecode — no JSON intermediate.
                 #[cfg(feature = "grpc-proto-binary")]
-                let binary_fast_path = use_proto_binary
-                    && !method_desc.rest_path.contains("{}");
+                let binary_fast_path = use_proto_binary && !method_desc.rest_path.contains("{}");
 
                 #[cfg(not(feature = "grpc-proto-binary"))]
                 let binary_fast_path = false;
@@ -744,10 +747,8 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                     // Fast path: pass raw binary bytes with protobuf content-type.
                     // Proto<T> extractor detects this and uses TypewayDecode.
                     // Lightweight: reuses original parts, no header/extension cloning.
-                    let mut synthetic = build_synthetic_request_raw(
-                        parts,
-                        grpc_router.state_injector.as_ref(),
-                    );
+                    let mut synthetic =
+                        build_synthetic_request_raw(parts, grpc_router.state_injector.as_ref());
                     synthetic.headers.insert(
                         http::header::CONTENT_TYPE,
                         http::HeaderValue::from_static("application/grpc+proto"),
@@ -807,7 +808,10 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                     let mut body = body_bytes;
                     for mw in &rpc_middleware {
                         match mw(parts, body).await {
-                            Ok((p, b)) => { parts = p; body = b; }
+                            Ok((p, b)) => {
+                                parts = p;
+                                body = b;
+                            }
                             Err(resp) => return Ok(resp),
                         }
                     }
@@ -848,7 +852,8 @@ impl tower_service::Service<http::Request<hyper::body::Incoming>> for GrpcMultip
                     use_binary,
                     #[cfg(feature = "grpc-proto-binary")]
                     &transcoder,
-                ).await)
+                )
+                .await)
             })
         } else {
             // Regular REST request.

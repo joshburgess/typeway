@@ -79,7 +79,9 @@ const AUTH_TYPE_SUFFIXES: &[&str] = &["Auth", "User", "Claims", "Token", "Sessio
 
 /// Check whether a type name looks like an auth extractor.
 pub fn is_auth_type_name(name: &str) -> bool {
-    AUTH_TYPE_SUFFIXES.iter().any(|suffix| name.ends_with(suffix))
+    AUTH_TYPE_SUFFIXES
+        .iter()
+        .any(|suffix| name.ends_with(suffix))
 }
 
 /// HTTP methods.
@@ -117,7 +119,7 @@ impl HttpMethod {
             Self::Put => "PutEndpoint",
             Self::Delete => "DeleteEndpoint",
             Self::Patch => "PatchEndpoint",
-            Self::Head => "GetEndpoint",    // HEAD uses GET endpoint type
+            Self::Head => "GetEndpoint", // HEAD uses GET endpoint type
             Self::Options => "GetEndpoint", // OPTIONS uses GET endpoint type
         }
     }
@@ -162,10 +164,7 @@ impl PathModel {
             .split('/')
             .filter(|s| !s.is_empty())
             .map(|seg| {
-                if let Some(name) = seg
-                    .strip_prefix('{')
-                    .and_then(|s| s.strip_suffix('}'))
-                {
+                if let Some(name) = seg.strip_prefix('{').and_then(|s| s.strip_suffix('}')) {
                     // Also handle Axum's :param syntax
                     PathSegment::Capture {
                         name: name.to_string(),
@@ -207,10 +206,7 @@ pub enum PathSegment {
     /// A literal segment, e.g., "users".
     Literal(String),
     /// A captured segment with a name and (optionally resolved) type.
-    Capture {
-        name: String,
-        ty: Option<Box<Type>>,
-    },
+    Capture { name: String, ty: Option<Box<Type>> },
 }
 
 /// A handler function.
@@ -226,7 +222,7 @@ pub struct HandlerModel {
     pub return_type: Type,
     /// Function body statements.
     pub body: Vec<syn::Stmt>,
-    /// Any attributes on the function (e.g., #[handler]).
+    /// Any attributes on the function (e.g., `#[handler]`).
     pub attrs: Vec<syn::Attribute>,
 }
 

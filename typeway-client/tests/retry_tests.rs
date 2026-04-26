@@ -283,14 +283,8 @@ async fn test_exponential_backoff_timing() {
     // Each gap should be roughly double the previous (with some tolerance
     // for jitter and scheduling). The base values are 50ms, 100ms, 200ms.
     // We just check that each gap is longer than the previous.
-    assert!(
-        gap2 > gap1,
-        "gap2 ({gap2:?}) should be > gap1 ({gap1:?})"
-    );
-    assert!(
-        gap3 > gap2,
-        "gap3 ({gap3:?}) should be > gap2 ({gap2:?})"
-    );
+    assert!(gap2 > gap1, "gap2 ({gap2:?}) should be > gap1 ({gap1:?})");
+    assert!(gap3 > gap2, "gap3 ({gap3:?}) should be > gap2 ({gap2:?})");
 
     // Sanity: gap1 should be at least ~40ms (the 50ms base minus scheduling).
     assert!(

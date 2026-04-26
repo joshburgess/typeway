@@ -22,7 +22,7 @@
 //! # Limitations
 //!
 //! - Nested messages are encoded as JSON bytes within a length-delimited
-//!   field unless a [`MessageFieldResolver`] is provided.
+//!   field unless a `MessageFieldResolver` is provided.
 //! - `sint32` and `sint64` ZigZag encoding is supported for decoding but
 //!   fields are encoded as plain varints unless the proto type is explicitly
 //!   `sint32`/`sint64`.
@@ -166,8 +166,8 @@ pub fn wire_type_for(proto_type: &str) -> u8 {
 /// encoded on the wire.
 fn is_proto3_default(value: &serde_json::Value, proto_type: &str) -> bool {
     match proto_type {
-        "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64"
-        | "fixed32" | "fixed64" | "sfixed32" | "sfixed64" | "enum" => {
+        "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64" | "fixed32" | "fixed64"
+        | "sfixed32" | "sfixed64" | "enum" => {
             value.as_i64() == Some(0) || value.as_u64() == Some(0) || value.as_f64() == Some(0.0)
         }
         "float" | "double" => value.as_f64() == Some(0.0),
@@ -257,7 +257,11 @@ fn decode_wire_value(bytes: &[u8], wire_type: u8) -> Result<(WireValue, usize), 
 // ---------------------------------------------------------------------------
 
 /// Convert a raw [`WireValue`] to a [`serde_json::Value`] based on the proto type.
-fn wire_value_to_json(wv: &WireValue, proto_type: &str, nested_fields: Option<&[ProtoFieldDef]>) -> Result<serde_json::Value, CodecError> {
+fn wire_value_to_json(
+    wv: &WireValue,
+    proto_type: &str,
+    nested_fields: Option<&[ProtoFieldDef]>,
+) -> Result<serde_json::Value, CodecError> {
     match (wv, proto_type) {
         // Varint types
         (WireValue::Varint(v), "uint32" | "uint64") => Ok(serde_json::json!(*v)),
@@ -269,23 +273,15 @@ fn wire_value_to_json(wv: &WireValue, proto_type: &str, nested_fields: Option<&[
         (WireValue::Varint(v), "enum") => Ok(serde_json::json!(*v)),
 
         // 64-bit types
-        (WireValue::Fixed64(bytes), "double") => {
-            Ok(serde_json::json!(f64::from_le_bytes(*bytes)))
-        }
-        (WireValue::Fixed64(bytes), "fixed64") => {
-            Ok(serde_json::json!(u64::from_le_bytes(*bytes)))
-        }
+        (WireValue::Fixed64(bytes), "double") => Ok(serde_json::json!(f64::from_le_bytes(*bytes))),
+        (WireValue::Fixed64(bytes), "fixed64") => Ok(serde_json::json!(u64::from_le_bytes(*bytes))),
         (WireValue::Fixed64(bytes), "sfixed64") => {
             Ok(serde_json::json!(i64::from_le_bytes(*bytes)))
         }
 
         // 32-bit types
-        (WireValue::Fixed32(bytes), "float") => {
-            Ok(serde_json::json!(f32::from_le_bytes(*bytes)))
-        }
-        (WireValue::Fixed32(bytes), "fixed32") => {
-            Ok(serde_json::json!(u32::from_le_bytes(*bytes)))
-        }
+        (WireValue::Fixed32(bytes), "float") => Ok(serde_json::json!(f32::from_le_bytes(*bytes))),
+        (WireValue::Fixed32(bytes), "fixed32") => Ok(serde_json::json!(u32::from_le_bytes(*bytes))),
         (WireValue::Fixed32(bytes), "sfixed32") => {
             Ok(serde_json::json!(i32::from_le_bytes(*bytes)))
         }
@@ -672,7 +668,8 @@ pub fn proto_binary_to_json(
         if let Some(field) = field {
             // Handle packed repeated fields: a repeated scalar field may arrive
             // as a single length-delimited blob containing concatenated values.
-            if field.repeated && matches!(wire_val, WireValue::LengthDelimited(_))
+            if field.repeated
+                && matches!(wire_val, WireValue::LengthDelimited(_))
                 && is_packable_type(&field.proto_type)
             {
                 if let WireValue::LengthDelimited(ref data) = wire_val {
@@ -714,10 +711,20 @@ pub fn proto_binary_to_json(
 fn is_packable_type(proto_type: &str) -> bool {
     matches!(
         proto_type,
-        "int32" | "int64" | "uint32" | "uint64"
-            | "sint32" | "sint64" | "bool" | "enum"
-            | "fixed32" | "sfixed32" | "float"
-            | "fixed64" | "sfixed64" | "double"
+        "int32"
+            | "int64"
+            | "uint32"
+            | "uint64"
+            | "sint32"
+            | "sint64"
+            | "bool"
+            | "enum"
+            | "fixed32"
+            | "sfixed32"
+            | "float"
+            | "fixed64"
+            | "sfixed64"
+            | "double"
     )
 }
 
@@ -727,8 +734,7 @@ fn unpack_scalars(data: &[u8], proto_type: &str) -> Result<Vec<serde_json::Value
     let mut offset = 0;
     while offset < data.len() {
         match proto_type {
-            "int32" | "int64" | "uint32" | "uint64"
-            | "sint32" | "sint64" | "bool" | "enum" => {
+            "int32" | "int64" | "uint32" | "uint64" | "sint32" | "sint64" | "bool" | "enum" => {
                 let (val, consumed) = decode_varint(&data[offset..])?;
                 offset += consumed;
                 let wv = WireValue::Varint(val);
@@ -754,9 +760,11 @@ fn unpack_scalars(data: &[u8], proto_type: &str) -> Result<Vec<serde_json::Value
                 let wv = WireValue::Fixed64(arr);
                 results.push(wire_value_to_json(&wv, proto_type, None)?);
             }
-            _ => return Err(CodecError::EncodingFailed(
-                format!("cannot unpack type: {proto_type}"),
-            )),
+            _ => {
+                return Err(CodecError::EncodingFailed(format!(
+                    "cannot unpack type: {proto_type}"
+                )))
+            }
         }
     }
     Ok(results)

@@ -76,11 +76,8 @@ async fn hello() -> &'static str {
 
 /// Start a server with both GET and POST routes and a custom body limit.
 async fn start_get_post_server(max: usize) -> u16 {
-    let server = Server::<GetAndPostAPI>::new((
-        bind::<_, _, _>(hello),
-        bind::<_, _, _>(echo_body),
-    ))
-    .max_body_size(max);
+    let server = Server::<GetAndPostAPI>::new((bind::<_, _, _>(hello), bind::<_, _, _>(echo_body)))
+        .max_body_size(max);
     spawn_router(server.into_router()).await
 }
 
@@ -103,10 +100,10 @@ async fn send_raw(port: u16, request: &[u8]) -> String {
     // Read with a timeout to avoid hanging forever.
     loop {
         match tokio::time::timeout(Duration::from_secs(3), stream.read(&mut buf)).await {
-            Ok(Ok(0)) => break,             // EOF
+            Ok(Ok(0)) => break, // EOF
             Ok(Ok(n)) => response.extend_from_slice(&buf[..n]),
-            Ok(Err(_)) => break,            // read error
-            Err(_) => break,                // timeout
+            Ok(Err(_)) => break, // read error
+            Err(_) => break,     // timeout
         }
     }
 
@@ -288,7 +285,10 @@ async fn chunked_encoding_exceeding_limit_returns_413() {
     );
 
     let raw = send_raw(port, request.as_bytes()).await;
-    assert!(!raw.is_empty(), "server should respond, not drop connection");
+    assert!(
+        !raw.is_empty(),
+        "server should respond, not drop connection"
+    );
     let status = extract_status(&raw);
     assert_eq!(
         status, 413,

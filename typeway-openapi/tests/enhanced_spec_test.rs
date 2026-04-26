@@ -128,8 +128,8 @@ fn example_field_not_serialized_when_none() {
 
     // The "example" key should not appear for types without examples.
     let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-    let media = &parsed["paths"]["/articles"]["get"]["responses"]["200"]["content"]
-        ["application/json"];
+    let media =
+        &parsed["paths"]["/articles"]["get"]["responses"]["200"]["content"]["application/json"];
     assert!(media.get("example").is_none());
 }
 
@@ -291,11 +291,13 @@ fn auto_tag_ignores_parameter_only_paths() {
 
     let mut spec = OpenApiSpec::new("Test", "1.0");
     let mut op = Operation::new();
-    op.responses
-        .insert("200".to_string(), Response {
+    op.responses.insert(
+        "200".to_string(),
+        Response {
             description: "ok".to_string(),
             content: IndexMap::new(),
-        });
+        },
+    );
 
     let mut path_item = PathItem::default();
     path_item.get = Some(op);
@@ -307,7 +309,10 @@ fn auto_tag_ignores_parameter_only_paths() {
 
     let item = spec.paths.get("/{id}").unwrap();
     let get_op = item.get.as_ref().unwrap();
-    assert!(get_op.tags.is_empty(), "parameter-only paths should not get auto-tags");
+    assert!(
+        get_op.tags.is_empty(),
+        "parameter-only paths should not get auto-tags"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -398,9 +403,8 @@ fn full_enhanced_spec_serializes_to_valid_json() {
     assert_eq!(parsed["paths"]["/articles"]["get"]["tags"][0], "articles");
 
     // Verify example on User response
-    let user_example =
-        &parsed["paths"]["/users/{}"]["get"]["responses"]["200"]["content"]["application/json"]
-            ["example"];
+    let user_example = &parsed["paths"]["/users/{}"]["get"]["responses"]["200"]["content"]
+        ["application/json"]["example"];
     assert_eq!(user_example["id"], 1);
     assert_eq!(user_example["name"], "Alice");
 }

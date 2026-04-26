@@ -13,10 +13,7 @@ use typeway_server::*;
 typeway_path!(type PanicPath = "panic");
 typeway_path!(type OkPath = "ok");
 
-type PanicAPI = (
-    GetEndpoint<PanicPath, String>,
-    GetEndpoint<OkPath, String>,
-);
+type PanicAPI = (GetEndpoint<PanicPath, String>, GetEndpoint<OkPath, String>);
 
 async fn panicking_handler() -> String {
     panic!("handler exploded");

@@ -169,7 +169,9 @@ mod tests {
 
     #[test]
     fn is_reflection_path_matches() {
-        assert!(ReflectionService::is_reflection_path(REFLECTION_SERVICE_PATH));
+        assert!(ReflectionService::is_reflection_path(
+            REFLECTION_SERVICE_PATH
+        ));
         assert!(ReflectionService::is_reflection_path(
             "/grpc.reflection.v1alpha/foo"
         ));
@@ -177,8 +179,12 @@ mod tests {
 
     #[test]
     fn is_reflection_path_rejects_other_paths() {
-        assert!(!ReflectionService::is_reflection_path("/users.v1.UserService/GetUser"));
-        assert!(!ReflectionService::is_reflection_path("/grpc.health.v1.Health/Check"));
+        assert!(!ReflectionService::is_reflection_path(
+            "/users.v1.UserService/GetUser"
+        ));
+        assert!(!ReflectionService::is_reflection_path(
+            "/grpc.health.v1.Health/Check"
+        ));
     }
 
     #[test]

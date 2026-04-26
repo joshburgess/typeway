@@ -104,12 +104,8 @@ fn main() -> anyhow::Result<()> {
             // Full API type parsing would require syn to walk the Rust AST,
             // which is out of scope for this CLI. Direct users to the
             // programmatic approach instead.
-            eprintln!(
-                "Note: For full API type parsing, use ApiToProto::to_proto() in your code."
-            );
-            eprintln!(
-                "This CLI handles .proto -> Typeway conversion. For the reverse direction,"
-            );
+            eprintln!("Note: For full API type parsing, use ApiToProto::to_proto() in your code.");
+            eprintln!("This CLI handles .proto -> Typeway conversion. For the reverse direction,");
             eprintln!("add this to your code:");
             eprintln!();
             eprintln!(
@@ -327,9 +323,7 @@ fn spec_from_parsed_proto(
                 format!(
                     "{}.{}",
                     package,
-                    service
-                        .map(|s| s.name.as_str())
-                        .unwrap_or("Service")
+                    service.map(|s| s.name.as_str()).unwrap_or("Service")
                 )
             },
             description: None,

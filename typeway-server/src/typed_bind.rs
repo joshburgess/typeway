@@ -82,23 +82,24 @@ where
 
     let inner = into_boxed_handler(handler);
     let expected = C::CONTENT_TYPE;
-    let boxed: BoxedHandler = std::sync::Arc::new(move |parts: http::request::Parts, body: bytes::Bytes| {
-        let ct = parts
-            .headers
-            .get(http::header::CONTENT_TYPE)
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("");
+    let boxed: BoxedHandler =
+        std::sync::Arc::new(move |parts: http::request::Parts, body: bytes::Bytes| {
+            let ct = parts
+                .headers
+                .get(http::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("");
 
-        if !ct.starts_with(expected) {
-            let error = crate::error::JsonError::new(
-                http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
-                format!("expected Content-Type: {expected}, got: {ct}"),
-            );
-            return Box::pin(async move { error.into_response() });
-        }
+            if !ct.starts_with(expected) {
+                let error = crate::error::JsonError::new(
+                    http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                    format!("expected Content-Type: {expected}, got: {ct}"),
+                );
+                return Box::pin(async move { error.into_response() });
+            }
 
-        inner(parts, body)
-    });
+            inner(parts, body)
+        });
 
     BoundHandler::new(method, pattern, match_fn, boxed)
 }

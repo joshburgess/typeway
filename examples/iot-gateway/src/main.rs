@@ -42,8 +42,8 @@
 //! curl http://localhost:3000/gateway/status
 //! ```
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
@@ -89,7 +89,8 @@ impl LitSegment for __lit_feed {
 }
 
 type SensorsPath = HCons<Lit<__lit_sensors>, HNil>;
-type SensorReadingPath = HCons<Lit<__lit_sensors>, HCons<Capture<u32>, HCons<Lit<__lit_reading>, HNil>>>;
+type SensorReadingPath =
+    HCons<Lit<__lit_sensors>, HCons<Capture<u32>, HCons<Lit<__lit_reading>, HNil>>>;
 type GatewayStatusPath = HCons<Lit<__lit_gateway>, HCons<Lit<__lit_status>, HNil>>;
 type SensorFeedPath = HCons<Lit<__lit_sensors>, HCons<Lit<__lit_feed>, HNil>>;
 
@@ -147,9 +148,24 @@ struct AppState {
 impl AppState {
     fn new() -> Self {
         let sensors = vec![
-            Sensor { id: 1, name: "Living Room".into(), location: "Floor 1".into(), online: true },
-            Sensor { id: 2, name: "Greenhouse".into(), location: "Garden".into(), online: true },
-            Sensor { id: 3, name: "Server Room".into(), location: "Basement".into(), online: false },
+            Sensor {
+                id: 1,
+                name: "Living Room".into(),
+                location: "Floor 1".into(),
+                online: true,
+            },
+            Sensor {
+                id: 2,
+                name: "Greenhouse".into(),
+                location: "Garden".into(),
+                online: true,
+            },
+            Sensor {
+                id: 3,
+                name: "Server Room".into(),
+                location: "Basement".into(),
+                online: false,
+            },
         ];
 
         AppState {
@@ -169,18 +185,14 @@ impl AppState {
 type SensorAPI = (
     // GET /sensors — list all sensors (REST: JSON array, gRPC: unary)
     GetEndpoint<SensorsPath, Vec<Sensor>>,
-
     // GET /sensors/:id/reading — latest reading for a sensor
     GetEndpoint<SensorReadingPath, ReadingAck>,
-
     // POST /sensors/:id/reading — submit a reading
     // REST: POST with JSON body
     // gRPC: SubmitSensorReading RPC with protobuf body
     PostEndpoint<SensorReadingPath, SensorReading, ReadingAck>,
-
     // GET /gateway/status — gateway aggregate stats
     GetEndpoint<GatewayStatusPath, GatewayStatus>,
-
     // GET /sensors/feed — streaming sensor feed (gRPC server-streaming)
     // REST: returns JSON array of recent readings
     // gRPC: streams individual readings as frames
@@ -242,7 +254,10 @@ async fn submit_reading(
 
     tracing::info!(
         "Sensor {sensor_id}: temp={:.1}°C humidity={:.0}% battery={}% (reading #{})",
-        ack.temperature, ack.humidity, ack.battery_pct, reading_num
+        ack.temperature,
+        ack.humidity,
+        ack.battery_pct,
+        reading_num
     );
 
     state.0.readings.lock().await.push(ack.clone());
@@ -270,19 +285,25 @@ async fn sensor_feed(state: State<AppState>) -> Json<Vec<ReadingAck>> {
 
 /// Simple timestamp (avoids chrono dependency for this example).
 fn chrono_now() -> String {
-    format!("2026-03-21T{:02}:{:02}:{:02}Z",
+    format!(
+        "2026-03-21T{:02}:{:02}:{:02}Z",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() % 86400 / 3600,
+            .as_secs()
+            % 86400
+            / 3600,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() % 3600 / 60,
+            .as_secs()
+            % 3600
+            / 60,
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() % 60,
+            .as_secs()
+            % 60,
     )
 }
 

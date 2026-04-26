@@ -40,8 +40,7 @@ fn detects_tracing_effect() {
 
 #[test]
 fn output_contains_effectful_server() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("EffectfulServer"),
@@ -66,8 +65,7 @@ fn output_contains_effectful_server() {
 
 #[test]
 fn output_contains_provide_cors() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("provide"),
@@ -81,8 +79,7 @@ fn output_contains_provide_cors() {
 
 #[test]
 fn output_contains_requires_wrapper_in_api_type() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("Requires"),
@@ -92,8 +89,7 @@ fn output_contains_requires_wrapper_in_api_type() {
 
 #[test]
 fn output_contains_ready_call() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("ready"),
@@ -103,8 +99,7 @@ fn output_contains_ready_call() {
 
 #[test]
 fn output_parses_as_valid_rust() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     let parsed: Result<syn::File, _> = syn::parse_str(&output);
     assert!(
@@ -116,8 +111,7 @@ fn output_parses_as_valid_rust() {
 
 #[test]
 fn output_contains_effect_imports() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("typeway_core"),

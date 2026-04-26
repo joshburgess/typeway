@@ -66,10 +66,8 @@ fn recursive_echo_protocol_compiles() {
 #[test]
 fn deeply_nested_offer_compiles() {
     // Offer within offer — multi-level branching.
-    type MultiOffer = Offer<
-        Offer<Send<u32, End>, Recv<u64, End>>,
-        Select<Send<String, End>, Recv<Vec<u8>, End>>,
-    >;
+    type MultiOffer =
+        Offer<Offer<Send<u32, End>, Recv<u64, End>>, Select<Send<String, End>, Recv<Vec<u8>, End>>>;
     assert_session_type::<MultiOffer>();
 }
 

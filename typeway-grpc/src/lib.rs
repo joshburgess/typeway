@@ -50,6 +50,8 @@
 
 #[cfg(feature = "prost-build")]
 pub mod build;
+#[cfg(feature = "grpc-native")]
+pub mod client;
 #[doc(hidden)]
 pub mod codec;
 pub mod codegen;
@@ -62,8 +64,6 @@ pub mod framing;
 pub mod health;
 pub mod mapping;
 pub mod multiplex;
-#[cfg(feature = "grpc-native")]
-pub mod client;
 #[cfg(feature = "grpc-native")]
 pub mod native_streaming;
 #[doc(hidden)]
@@ -91,9 +91,15 @@ pub mod web;
 
 // --- Re-exports ---
 
-pub use codec::{CodecError as GrpcCodecError, CodecErrorKind, GrpcCodec, JsonCodec};
+#[cfg(feature = "grpc-native")]
+pub use client::{
+    CircuitBreaker, ClientStream as GrpcClientStream, GrpcClient, GrpcClientConfig,
+    GrpcClientError, GrpcClientPool, GrpcClientPoolBuilder, GrpcRequestInterceptor,
+    GrpcRetryPolicy,
+};
 #[cfg(feature = "proto-binary")]
 pub use codec::{BinaryCodec, CodecDirection};
+pub use codec::{CodecError as GrpcCodecError, CodecErrorKind, GrpcCodec, JsonCodec};
 pub use codegen::{
     generate_typeway_from_proto, generate_typeway_from_proto_with_codec, proto_to_typeway,
     proto_to_typeway_with_codec,
@@ -114,12 +120,6 @@ pub use framing::{decode_grpc_frame, decode_grpc_frames, encode_grpc_frame, Fram
 pub use health::{HealthService, HealthStatus};
 pub use mapping::{build_message, ProtoField, ToProtoType};
 pub use multiplex::{is_grpc_request, GrpcMultiplexer};
-#[cfg(feature = "grpc-native")]
-pub use client::{
-    CircuitBreaker, ClientStream as GrpcClientStream, GrpcClient, GrpcClientConfig,
-    GrpcClientError, GrpcClientPool, GrpcClientPoolBuilder, GrpcRequestInterceptor,
-    GrpcRetryPolicy,
-};
 #[cfg(feature = "grpc-native")]
 pub use native_streaming::{
     grpc_bidi_channel, grpc_channel, grpc_channel_default, GrpcBiStream, GrpcReceiver, GrpcSender,
@@ -150,14 +150,13 @@ pub use transcode::{
     grpc_content_type, is_grpc_json_content_type, is_proto_binary_content_type, ProtoTranscoder,
     TranscodeError,
 };
+pub use typeway_codec_adapter::TypewayCodecAdapter;
 pub use typeway_protobuf::{
     tw_decode_varint, tw_encode_tag, tw_encode_varint, tw_skip_wire_value, tw_tag_len,
     tw_varint_len, tw_zigzag_decode, tw_zigzag_encode, TypewayDecode, TypewayDecodeError,
     TypewayEncode,
 };
-pub use typeway_codec_adapter::TypewayCodecAdapter;
 pub use validate::{validate_proto, ProtoValidationError};
 pub use web::{
-    encode_trailers_frame, is_grpc_web_request, GrpcWebLayer, GrpcWebService,
-    TRAILERS_FRAME_FLAG,
+    encode_trailers_frame, is_grpc_web_request, GrpcWebLayer, GrpcWebService, TRAILERS_FRAME_FLAG,
 };

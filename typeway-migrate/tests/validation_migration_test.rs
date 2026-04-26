@@ -55,8 +55,7 @@ fn bind_validated_macro_is_used() {
 
 #[test]
 fn output_contains_validator_struct() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("CreateUserValidator"),
@@ -66,8 +65,7 @@ fn output_contains_validator_struct() {
 
 #[test]
 fn output_contains_validate_impl() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("Validate"),
@@ -81,8 +79,7 @@ fn output_contains_validate_impl() {
 
 #[test]
 fn output_contains_validated_wrapper_in_api_type() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("Validated"),
@@ -92,8 +89,7 @@ fn output_contains_validated_wrapper_in_api_type() {
 
 #[test]
 fn output_contains_bind_validated() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("bind_validated"),
@@ -103,8 +99,7 @@ fn output_contains_bind_validated() {
 
 #[test]
 fn output_contains_with_openapi() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("with_openapi"),
@@ -114,8 +109,7 @@ fn output_contains_with_openapi() {
 
 #[test]
 fn output_parses_as_valid_rust() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     // Strip comment lines that are not Rust syntax.
     let code: String = output

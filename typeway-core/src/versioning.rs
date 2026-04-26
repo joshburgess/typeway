@@ -207,7 +207,7 @@ impl_api_changelog_for_tuple!(A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P);
 /// Because type-level set operations are not feasible on stable Rust, the
 /// `Resolved` parameter is specified explicitly. The change markers serve as
 /// machine-readable documentation and enable compile-time assertions via
-/// [`assert_api_compatible!`].
+/// `assert_api_compatible!`.
 pub struct VersionedApi<Base, Changes, Resolved: ApiSpec> {
     _marker: PhantomData<(Base, Changes, Resolved)>,
 }
@@ -217,9 +217,8 @@ impl<B, C, R: ApiSpec> ApiSpec for VersionedApi<B, C, R> {}
 
 /// `VersionedApi` delegates `AllProvided` to the resolved API type.
 /// This allows `EffectfulServer::serve()` to verify effects on versioned APIs.
-impl<B, C, R, P, Idx> crate::effects::AllProvided<P, Idx> for VersionedApi<B, C, R>
-where
-    R: ApiSpec + crate::effects::AllProvided<P, Idx>,
+impl<B, C, R, P, Idx> crate::effects::AllProvided<P, Idx> for VersionedApi<B, C, R> where
+    R: ApiSpec + crate::effects::AllProvided<P, Idx>
 {
 }
 
@@ -235,7 +234,7 @@ where
 /// - Was explicitly handled via [`Replaced`] or [`Removed`] in the change
 ///   set.
 ///
-/// Use [`assert_api_compatible!`] to generate the required impl
+/// Use `assert_api_compatible!` to generate the required impl
 /// automatically.
 pub trait BackwardCompatible<Old> {}
 
@@ -510,7 +509,12 @@ impl_has_endpoint_at!(15, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O], P, [Q])
 impl_has_endpoint_at!(16, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P], Q, []);
 
 // 18-tuple
-impl_has_endpoint_at!(0, [], A, [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R]);
+impl_has_endpoint_at!(
+    0,
+    [],
+    A,
+    [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R]
+);
 impl_has_endpoint_at!(1, [A], B, [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R]);
 impl_has_endpoint_at!(2, [A, B], C, [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R]);
 impl_has_endpoint_at!(3, [A, B, C], D, [E, F, G, H, I, J, K, L, M, N, O, P, Q, R]);
@@ -527,175 +531,950 @@ impl_has_endpoint_at!(13, [A, B, C, D, E, F, G, H, I, J, K, L, M], N, [O, P, Q, 
 impl_has_endpoint_at!(14, [A, B, C, D, E, F, G, H, I, J, K, L, M, N], O, [P, Q, R]);
 impl_has_endpoint_at!(15, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O], P, [Q, R]);
 impl_has_endpoint_at!(16, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P], Q, [R]);
-impl_has_endpoint_at!(17, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q], R, []);
+impl_has_endpoint_at!(
+    17,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q],
+    R,
+    []
+);
 
 // 19-tuple
-impl_has_endpoint_at!(0, [], A, [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(1, [A], B, [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(2, [A, B], C, [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(3, [A, B, C], D, [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(4, [A, B, C, D], E, [F, G, H, I, J, K, L, M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(5, [A, B, C, D, E], F, [G, H, I, J, K, L, M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(6, [A, B, C, D, E, F], G, [H, I, J, K, L, M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(7, [A, B, C, D, E, F, G], H, [I, J, K, L, M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(8, [A, B, C, D, E, F, G, H], I, [J, K, L, M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(9, [A, B, C, D, E, F, G, H, I], J, [K, L, M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(10, [A, B, C, D, E, F, G, H, I, J], K, [L, M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(11, [A, B, C, D, E, F, G, H, I, J, K], L, [M, N, O, P, Q, R, S]);
-impl_has_endpoint_at!(12, [A, B, C, D, E, F, G, H, I, J, K, L], M, [N, O, P, Q, R, S]);
-impl_has_endpoint_at!(13, [A, B, C, D, E, F, G, H, I, J, K, L, M], N, [O, P, Q, R, S]);
-impl_has_endpoint_at!(14, [A, B, C, D, E, F, G, H, I, J, K, L, M, N], O, [P, Q, R, S]);
-impl_has_endpoint_at!(15, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O], P, [Q, R, S]);
-impl_has_endpoint_at!(16, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P], Q, [R, S]);
-impl_has_endpoint_at!(17, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q], R, [S]);
-impl_has_endpoint_at!(18, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R], S, []);
+impl_has_endpoint_at!(
+    0,
+    [],
+    A,
+    [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    1,
+    [A],
+    B,
+    [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    2,
+    [A, B],
+    C,
+    [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    3,
+    [A, B, C],
+    D,
+    [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    4,
+    [A, B, C, D],
+    E,
+    [F, G, H, I, J, K, L, M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    5,
+    [A, B, C, D, E],
+    F,
+    [G, H, I, J, K, L, M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    6,
+    [A, B, C, D, E, F],
+    G,
+    [H, I, J, K, L, M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    7,
+    [A, B, C, D, E, F, G],
+    H,
+    [I, J, K, L, M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    8,
+    [A, B, C, D, E, F, G, H],
+    I,
+    [J, K, L, M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    9,
+    [A, B, C, D, E, F, G, H, I],
+    J,
+    [K, L, M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    10,
+    [A, B, C, D, E, F, G, H, I, J],
+    K,
+    [L, M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    11,
+    [A, B, C, D, E, F, G, H, I, J, K],
+    L,
+    [M, N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    12,
+    [A, B, C, D, E, F, G, H, I, J, K, L],
+    M,
+    [N, O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    13,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M],
+    N,
+    [O, P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    14,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N],
+    O,
+    [P, Q, R, S]
+);
+impl_has_endpoint_at!(
+    15,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O],
+    P,
+    [Q, R, S]
+);
+impl_has_endpoint_at!(
+    16,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P],
+    Q,
+    [R, S]
+);
+impl_has_endpoint_at!(
+    17,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q],
+    R,
+    [S]
+);
+impl_has_endpoint_at!(
+    18,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R],
+    S,
+    []
+);
 
 // 20-tuple
-impl_has_endpoint_at!(0, [], A, [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(1, [A], B, [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(2, [A, B], C, [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(3, [A, B, C], D, [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(4, [A, B, C, D], E, [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(5, [A, B, C, D, E], F, [G, H, I, J, K, L, M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(6, [A, B, C, D, E, F], G, [H, I, J, K, L, M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(7, [A, B, C, D, E, F, G], H, [I, J, K, L, M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(8, [A, B, C, D, E, F, G, H], I, [J, K, L, M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(9, [A, B, C, D, E, F, G, H, I], J, [K, L, M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(10, [A, B, C, D, E, F, G, H, I, J], K, [L, M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(11, [A, B, C, D, E, F, G, H, I, J, K], L, [M, N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(12, [A, B, C, D, E, F, G, H, I, J, K, L], M, [N, O, P, Q, R, S, T]);
-impl_has_endpoint_at!(13, [A, B, C, D, E, F, G, H, I, J, K, L, M], N, [O, P, Q, R, S, T]);
-impl_has_endpoint_at!(14, [A, B, C, D, E, F, G, H, I, J, K, L, M, N], O, [P, Q, R, S, T]);
-impl_has_endpoint_at!(15, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O], P, [Q, R, S, T]);
-impl_has_endpoint_at!(16, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P], Q, [R, S, T]);
-impl_has_endpoint_at!(17, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q], R, [S, T]);
-impl_has_endpoint_at!(18, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R], S, [T]);
-impl_has_endpoint_at!(19, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S], T, []);
+impl_has_endpoint_at!(
+    0,
+    [],
+    A,
+    [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    1,
+    [A],
+    B,
+    [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    2,
+    [A, B],
+    C,
+    [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    3,
+    [A, B, C],
+    D,
+    [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    4,
+    [A, B, C, D],
+    E,
+    [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    5,
+    [A, B, C, D, E],
+    F,
+    [G, H, I, J, K, L, M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    6,
+    [A, B, C, D, E, F],
+    G,
+    [H, I, J, K, L, M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    7,
+    [A, B, C, D, E, F, G],
+    H,
+    [I, J, K, L, M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    8,
+    [A, B, C, D, E, F, G, H],
+    I,
+    [J, K, L, M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    9,
+    [A, B, C, D, E, F, G, H, I],
+    J,
+    [K, L, M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    10,
+    [A, B, C, D, E, F, G, H, I, J],
+    K,
+    [L, M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    11,
+    [A, B, C, D, E, F, G, H, I, J, K],
+    L,
+    [M, N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    12,
+    [A, B, C, D, E, F, G, H, I, J, K, L],
+    M,
+    [N, O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    13,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M],
+    N,
+    [O, P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    14,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N],
+    O,
+    [P, Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    15,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O],
+    P,
+    [Q, R, S, T]
+);
+impl_has_endpoint_at!(
+    16,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P],
+    Q,
+    [R, S, T]
+);
+impl_has_endpoint_at!(
+    17,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q],
+    R,
+    [S, T]
+);
+impl_has_endpoint_at!(
+    18,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R],
+    S,
+    [T]
+);
+impl_has_endpoint_at!(
+    19,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S],
+    T,
+    []
+);
 
 // 21-tuple
-impl_has_endpoint_at!(0, [], A, [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(1, [A], B, [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(2, [A, B], C, [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(3, [A, B, C], D, [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(4, [A, B, C, D], E, [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(5, [A, B, C, D, E], F, [G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(6, [A, B, C, D, E, F], G, [H, I, J, K, L, M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(7, [A, B, C, D, E, F, G], H, [I, J, K, L, M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(8, [A, B, C, D, E, F, G, H], I, [J, K, L, M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(9, [A, B, C, D, E, F, G, H, I], J, [K, L, M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(10, [A, B, C, D, E, F, G, H, I, J], K, [L, M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(11, [A, B, C, D, E, F, G, H, I, J, K], L, [M, N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(12, [A, B, C, D, E, F, G, H, I, J, K, L], M, [N, O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(13, [A, B, C, D, E, F, G, H, I, J, K, L, M], N, [O, P, Q, R, S, T, U]);
-impl_has_endpoint_at!(14, [A, B, C, D, E, F, G, H, I, J, K, L, M, N], O, [P, Q, R, S, T, U]);
-impl_has_endpoint_at!(15, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O], P, [Q, R, S, T, U]);
-impl_has_endpoint_at!(16, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P], Q, [R, S, T, U]);
-impl_has_endpoint_at!(17, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q], R, [S, T, U]);
-impl_has_endpoint_at!(18, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R], S, [T, U]);
-impl_has_endpoint_at!(19, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S], T, [U]);
-impl_has_endpoint_at!(20, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T], U, []);
+impl_has_endpoint_at!(
+    0,
+    [],
+    A,
+    [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    1,
+    [A],
+    B,
+    [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    2,
+    [A, B],
+    C,
+    [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    3,
+    [A, B, C],
+    D,
+    [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    4,
+    [A, B, C, D],
+    E,
+    [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    5,
+    [A, B, C, D, E],
+    F,
+    [G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    6,
+    [A, B, C, D, E, F],
+    G,
+    [H, I, J, K, L, M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    7,
+    [A, B, C, D, E, F, G],
+    H,
+    [I, J, K, L, M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    8,
+    [A, B, C, D, E, F, G, H],
+    I,
+    [J, K, L, M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    9,
+    [A, B, C, D, E, F, G, H, I],
+    J,
+    [K, L, M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    10,
+    [A, B, C, D, E, F, G, H, I, J],
+    K,
+    [L, M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    11,
+    [A, B, C, D, E, F, G, H, I, J, K],
+    L,
+    [M, N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    12,
+    [A, B, C, D, E, F, G, H, I, J, K, L],
+    M,
+    [N, O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    13,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M],
+    N,
+    [O, P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    14,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N],
+    O,
+    [P, Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    15,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O],
+    P,
+    [Q, R, S, T, U]
+);
+impl_has_endpoint_at!(
+    16,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P],
+    Q,
+    [R, S, T, U]
+);
+impl_has_endpoint_at!(
+    17,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q],
+    R,
+    [S, T, U]
+);
+impl_has_endpoint_at!(
+    18,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R],
+    S,
+    [T, U]
+);
+impl_has_endpoint_at!(
+    19,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S],
+    T,
+    [U]
+);
+impl_has_endpoint_at!(
+    20,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T],
+    U,
+    []
+);
 
 // 22-tuple
-impl_has_endpoint_at!(0, [], A, [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(1, [A], B, [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(2, [A, B], C, [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(3, [A, B, C], D, [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(4, [A, B, C, D], E, [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(5, [A, B, C, D, E], F, [G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(6, [A, B, C, D, E, F], G, [H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(7, [A, B, C, D, E, F, G], H, [I, J, K, L, M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(8, [A, B, C, D, E, F, G, H], I, [J, K, L, M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(9, [A, B, C, D, E, F, G, H, I], J, [K, L, M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(10, [A, B, C, D, E, F, G, H, I, J], K, [L, M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(11, [A, B, C, D, E, F, G, H, I, J, K], L, [M, N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(12, [A, B, C, D, E, F, G, H, I, J, K, L], M, [N, O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(13, [A, B, C, D, E, F, G, H, I, J, K, L, M], N, [O, P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(14, [A, B, C, D, E, F, G, H, I, J, K, L, M, N], O, [P, Q, R, S, T, U, V]);
-impl_has_endpoint_at!(15, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O], P, [Q, R, S, T, U, V]);
-impl_has_endpoint_at!(16, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P], Q, [R, S, T, U, V]);
-impl_has_endpoint_at!(17, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q], R, [S, T, U, V]);
-impl_has_endpoint_at!(18, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R], S, [T, U, V]);
-impl_has_endpoint_at!(19, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S], T, [U, V]);
-impl_has_endpoint_at!(20, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T], U, [V]);
-impl_has_endpoint_at!(21, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U], V, []);
+impl_has_endpoint_at!(
+    0,
+    [],
+    A,
+    [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    1,
+    [A],
+    B,
+    [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    2,
+    [A, B],
+    C,
+    [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    3,
+    [A, B, C],
+    D,
+    [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    4,
+    [A, B, C, D],
+    E,
+    [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    5,
+    [A, B, C, D, E],
+    F,
+    [G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    6,
+    [A, B, C, D, E, F],
+    G,
+    [H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    7,
+    [A, B, C, D, E, F, G],
+    H,
+    [I, J, K, L, M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    8,
+    [A, B, C, D, E, F, G, H],
+    I,
+    [J, K, L, M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    9,
+    [A, B, C, D, E, F, G, H, I],
+    J,
+    [K, L, M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    10,
+    [A, B, C, D, E, F, G, H, I, J],
+    K,
+    [L, M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    11,
+    [A, B, C, D, E, F, G, H, I, J, K],
+    L,
+    [M, N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    12,
+    [A, B, C, D, E, F, G, H, I, J, K, L],
+    M,
+    [N, O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    13,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M],
+    N,
+    [O, P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    14,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N],
+    O,
+    [P, Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    15,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O],
+    P,
+    [Q, R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    16,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P],
+    Q,
+    [R, S, T, U, V]
+);
+impl_has_endpoint_at!(
+    17,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q],
+    R,
+    [S, T, U, V]
+);
+impl_has_endpoint_at!(
+    18,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R],
+    S,
+    [T, U, V]
+);
+impl_has_endpoint_at!(
+    19,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S],
+    T,
+    [U, V]
+);
+impl_has_endpoint_at!(
+    20,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T],
+    U,
+    [V]
+);
+impl_has_endpoint_at!(
+    21,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U],
+    V,
+    []
+);
 
 // 23-tuple
-impl_has_endpoint_at!(0, [], A, [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(1, [A], B, [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(2, [A, B], C, [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(3, [A, B, C], D, [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(4, [A, B, C, D], E, [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(5, [A, B, C, D, E], F, [G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(6, [A, B, C, D, E, F], G, [H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(7, [A, B, C, D, E, F, G], H, [I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(8, [A, B, C, D, E, F, G, H], I, [J, K, L, M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(9, [A, B, C, D, E, F, G, H, I], J, [K, L, M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(10, [A, B, C, D, E, F, G, H, I, J], K, [L, M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(11, [A, B, C, D, E, F, G, H, I, J, K], L, [M, N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(12, [A, B, C, D, E, F, G, H, I, J, K, L], M, [N, O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(13, [A, B, C, D, E, F, G, H, I, J, K, L, M], N, [O, P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(14, [A, B, C, D, E, F, G, H, I, J, K, L, M, N], O, [P, Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(15, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O], P, [Q, R, S, T, U, V, W]);
-impl_has_endpoint_at!(16, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P], Q, [R, S, T, U, V, W]);
-impl_has_endpoint_at!(17, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q], R, [S, T, U, V, W]);
-impl_has_endpoint_at!(18, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R], S, [T, U, V, W]);
-impl_has_endpoint_at!(19, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S], T, [U, V, W]);
-impl_has_endpoint_at!(20, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T], U, [V, W]);
-impl_has_endpoint_at!(21, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U], V, [W]);
-impl_has_endpoint_at!(22, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V], W, []);
+impl_has_endpoint_at!(
+    0,
+    [],
+    A,
+    [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    1,
+    [A],
+    B,
+    [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    2,
+    [A, B],
+    C,
+    [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    3,
+    [A, B, C],
+    D,
+    [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    4,
+    [A, B, C, D],
+    E,
+    [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    5,
+    [A, B, C, D, E],
+    F,
+    [G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    6,
+    [A, B, C, D, E, F],
+    G,
+    [H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    7,
+    [A, B, C, D, E, F, G],
+    H,
+    [I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    8,
+    [A, B, C, D, E, F, G, H],
+    I,
+    [J, K, L, M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    9,
+    [A, B, C, D, E, F, G, H, I],
+    J,
+    [K, L, M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    10,
+    [A, B, C, D, E, F, G, H, I, J],
+    K,
+    [L, M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    11,
+    [A, B, C, D, E, F, G, H, I, J, K],
+    L,
+    [M, N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    12,
+    [A, B, C, D, E, F, G, H, I, J, K, L],
+    M,
+    [N, O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    13,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M],
+    N,
+    [O, P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    14,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N],
+    O,
+    [P, Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    15,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O],
+    P,
+    [Q, R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    16,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P],
+    Q,
+    [R, S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    17,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q],
+    R,
+    [S, T, U, V, W]
+);
+impl_has_endpoint_at!(
+    18,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R],
+    S,
+    [T, U, V, W]
+);
+impl_has_endpoint_at!(
+    19,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S],
+    T,
+    [U, V, W]
+);
+impl_has_endpoint_at!(
+    20,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T],
+    U,
+    [V, W]
+);
+impl_has_endpoint_at!(
+    21,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U],
+    V,
+    [W]
+);
+impl_has_endpoint_at!(
+    22,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V],
+    W,
+    []
+);
 
 // 24-tuple
-impl_has_endpoint_at!(0, [], A, [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(1, [A], B, [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(2, [A, B], C, [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(3, [A, B, C], D, [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(4, [A, B, C, D], E, [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(5, [A, B, C, D, E], F, [G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(6, [A, B, C, D, E, F], G, [H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(7, [A, B, C, D, E, F, G], H, [I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(8, [A, B, C, D, E, F, G, H], I, [J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(9, [A, B, C, D, E, F, G, H, I], J, [K, L, M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(10, [A, B, C, D, E, F, G, H, I, J], K, [L, M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(11, [A, B, C, D, E, F, G, H, I, J, K], L, [M, N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(12, [A, B, C, D, E, F, G, H, I, J, K, L], M, [N, O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(13, [A, B, C, D, E, F, G, H, I, J, K, L, M], N, [O, P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(14, [A, B, C, D, E, F, G, H, I, J, K, L, M, N], O, [P, Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(15, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O], P, [Q, R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(16, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P], Q, [R, S, T, U, V, W, X]);
-impl_has_endpoint_at!(17, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q], R, [S, T, U, V, W, X]);
-impl_has_endpoint_at!(18, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R], S, [T, U, V, W, X]);
-impl_has_endpoint_at!(19, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S], T, [U, V, W, X]);
-impl_has_endpoint_at!(20, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T], U, [V, W, X]);
-impl_has_endpoint_at!(21, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U], V, [W, X]);
-impl_has_endpoint_at!(22, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V], W, [X]);
-impl_has_endpoint_at!(23, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W], X, []);
+impl_has_endpoint_at!(
+    0,
+    [],
+    A,
+    [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    1,
+    [A],
+    B,
+    [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    2,
+    [A, B],
+    C,
+    [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    3,
+    [A, B, C],
+    D,
+    [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    4,
+    [A, B, C, D],
+    E,
+    [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    5,
+    [A, B, C, D, E],
+    F,
+    [G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    6,
+    [A, B, C, D, E, F],
+    G,
+    [H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    7,
+    [A, B, C, D, E, F, G],
+    H,
+    [I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    8,
+    [A, B, C, D, E, F, G, H],
+    I,
+    [J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    9,
+    [A, B, C, D, E, F, G, H, I],
+    J,
+    [K, L, M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    10,
+    [A, B, C, D, E, F, G, H, I, J],
+    K,
+    [L, M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    11,
+    [A, B, C, D, E, F, G, H, I, J, K],
+    L,
+    [M, N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    12,
+    [A, B, C, D, E, F, G, H, I, J, K, L],
+    M,
+    [N, O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    13,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M],
+    N,
+    [O, P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    14,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N],
+    O,
+    [P, Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    15,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O],
+    P,
+    [Q, R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    16,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P],
+    Q,
+    [R, S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    17,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q],
+    R,
+    [S, T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    18,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R],
+    S,
+    [T, U, V, W, X]
+);
+impl_has_endpoint_at!(
+    19,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S],
+    T,
+    [U, V, W, X]
+);
+impl_has_endpoint_at!(
+    20,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T],
+    U,
+    [V, W, X]
+);
+impl_has_endpoint_at!(
+    21,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U],
+    V,
+    [W, X]
+);
+impl_has_endpoint_at!(
+    22,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V],
+    W,
+    [X]
+);
+impl_has_endpoint_at!(
+    23,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W],
+    X,
+    []
+);
 
 // 25-tuple
-impl_has_endpoint_at!(0, [], A, [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(1, [A], B, [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(2, [A, B], C, [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(3, [A, B, C], D, [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(4, [A, B, C, D], E, [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(5, [A, B, C, D, E], F, [G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(6, [A, B, C, D, E, F], G, [H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(7, [A, B, C, D, E, F, G], H, [I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(8, [A, B, C, D, E, F, G, H], I, [J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(9, [A, B, C, D, E, F, G, H, I], J, [K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(10, [A, B, C, D, E, F, G, H, I, J], K, [L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(11, [A, B, C, D, E, F, G, H, I, J, K], L, [M, N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(12, [A, B, C, D, E, F, G, H, I, J, K, L], M, [N, O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(13, [A, B, C, D, E, F, G, H, I, J, K, L, M], N, [O, P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(14, [A, B, C, D, E, F, G, H, I, J, K, L, M, N], O, [P, Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(15, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O], P, [Q, R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(16, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P], Q, [R, S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(17, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q], R, [S, T, U, V, W, X, Y]);
-impl_has_endpoint_at!(18, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R], S, [T, U, V, W, X, Y]);
-impl_has_endpoint_at!(19, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S], T, [U, V, W, X, Y]);
-impl_has_endpoint_at!(20, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T], U, [V, W, X, Y]);
-impl_has_endpoint_at!(21, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U], V, [W, X, Y]);
-impl_has_endpoint_at!(22, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V], W, [X, Y]);
-impl_has_endpoint_at!(23, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W], X, [Y]);
-impl_has_endpoint_at!(24, [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X], Y, []);
+impl_has_endpoint_at!(
+    0,
+    [],
+    A,
+    [B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    1,
+    [A],
+    B,
+    [C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    2,
+    [A, B],
+    C,
+    [D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    3,
+    [A, B, C],
+    D,
+    [E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    4,
+    [A, B, C, D],
+    E,
+    [F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    5,
+    [A, B, C, D, E],
+    F,
+    [G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    6,
+    [A, B, C, D, E, F],
+    G,
+    [H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    7,
+    [A, B, C, D, E, F, G],
+    H,
+    [I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    8,
+    [A, B, C, D, E, F, G, H],
+    I,
+    [J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    9,
+    [A, B, C, D, E, F, G, H, I],
+    J,
+    [K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    10,
+    [A, B, C, D, E, F, G, H, I, J],
+    K,
+    [L, M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    11,
+    [A, B, C, D, E, F, G, H, I, J, K],
+    L,
+    [M, N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    12,
+    [A, B, C, D, E, F, G, H, I, J, K, L],
+    M,
+    [N, O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    13,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M],
+    N,
+    [O, P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    14,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N],
+    O,
+    [P, Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    15,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O],
+    P,
+    [Q, R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    16,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P],
+    Q,
+    [R, S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    17,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q],
+    R,
+    [S, T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    18,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R],
+    S,
+    [T, U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    19,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S],
+    T,
+    [U, V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    20,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T],
+    U,
+    [V, W, X, Y]
+);
+impl_has_endpoint_at!(
+    21,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U],
+    V,
+    [W, X, Y]
+);
+impl_has_endpoint_at!(
+    22,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V],
+    W,
+    [X, Y]
+);
+impl_has_endpoint_at!(
+    23,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W],
+    X,
+    [Y]
+);
+impl_has_endpoint_at!(
+    24,
+    [A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X],
+    Y,
+    []
+);
 
 // ---------------------------------------------------------------------------
 // assert_api_compatible! — compile-time backward compatibility check
@@ -745,7 +1524,7 @@ macro_rules! assert_api_compatible {
 /// Internal helper: assert that a single endpoint type is present in an API
 /// tuple. Uses [`HasEndpoint`] with an inferred index witness.
 ///
-/// This is not intended to be called directly; use [`assert_api_compatible!`].
+/// This is not intended to be called directly; use `assert_api_compatible!`.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! _assert_api_has_endpoint {
@@ -754,7 +1533,8 @@ macro_rules! _assert_api_has_endpoint {
             fn _check<Idx>()
             where
                 $api: $crate::versioning::HasEndpoint<$ep, Idx>,
-            {}
+            {
+            }
         };
     };
 }
@@ -889,10 +1669,7 @@ mod tests {
     // Compile-time check: V2Resolved contains all V1 endpoints that were
     // not replaced. ListUsersV1 and CreateUserV1 are still present.
     // GetUserV1 was replaced, so we omit it from the compatibility check.
-    assert_api_compatible!(
-        (ListUsersV1, CreateUserV1),
-        V2Resolved
-    );
+    assert_api_compatible!((ListUsersV1, CreateUserV1), V2Resolved);
 
     #[test]
     fn has_endpoint_works_for_present_endpoint() {

@@ -1,6 +1,6 @@
 //! Unified REST + gRPC serving.
 //!
-//! When the `grpc` feature is enabled, [`Server::with_grpc`] returns a
+//! When the `grpc` feature is enabled, [`crate::Server::with_grpc`] returns a
 //! [`GrpcServer`] that serves both REST and gRPC on the same port. Incoming
 //! requests are routed based on the `content-type` header:
 //!
@@ -160,11 +160,7 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let listener = TcpListener::bind(addr).await?;
         tracing::info!("Listening on http://{addr} (REST + gRPC)");
-        tracing::info!(
-            "  gRPC service: {}.{}",
-            self.package,
-            self.service_name
-        );
+        tracing::info!("  gRPC service: {}.{}", self.package, self.service_name);
         if self.reflection_enabled {
             tracing::info!("  gRPC reflection: enabled");
         }
@@ -276,10 +272,8 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
         direct_handlers: Vec<(String, crate::grpc_direct::DirectHandler)>,
     ) -> crate::grpc_dispatch::GrpcMultiplexer {
         let descriptor = A::service_descriptor(&self.service_name, &self.package);
-        let mut grpc_router = crate::grpc_dispatch::GrpcRouter::from_router(
-            &self.router,
-            &descriptor,
-        );
+        let mut grpc_router =
+            crate::grpc_dispatch::GrpcRouter::from_router(&self.router, &descriptor);
         for (path, handler) in direct_handlers {
             grpc_router.add_direct_handler(path, handler);
         }
@@ -300,10 +294,7 @@ impl<A: ApiSpec + CollectRpcs> GrpcServer<A> {
     /// Build the native multiplexer from the current configuration.
     fn build_multiplexer(self) -> crate::grpc_dispatch::GrpcMultiplexer {
         let descriptor = A::service_descriptor(&self.service_name, &self.package);
-        let grpc_router = crate::grpc_dispatch::GrpcRouter::from_router(
-            &self.router,
-            &descriptor,
-        );
+        let grpc_router = crate::grpc_dispatch::GrpcRouter::from_router(&self.router, &descriptor);
 
         crate::grpc_dispatch::GrpcMultiplexer {
             rest: RouterService::new(self.router),

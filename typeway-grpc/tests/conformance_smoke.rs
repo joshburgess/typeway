@@ -43,11 +43,7 @@ message ListItemsResponse {
 
     // Validate the parsed proto.
     let validation = typeway_grpc::validate::validate_proto(proto_source);
-    assert!(
-        validation.is_empty(),
-        "Validation errors: {:?}",
-        validation
-    );
+    assert!(validation.is_empty(), "Validation errors: {:?}", validation);
 }
 
 /// Verify proto round-trip: generate → parse → validate.
@@ -89,7 +85,10 @@ message EchoResponse {
 
     // Generate Rust code and verify it's non-empty.
     let rust_serde = typeway_grpc::codegen::generate_typeway_from_proto(&proto1);
-    assert!(rust_serde.contains("pub struct PongResponse"), "got:\n{rust_serde}");
+    assert!(
+        rust_serde.contains("pub struct PongResponse"),
+        "got:\n{rust_serde}"
+    );
     assert!(rust_serde.contains("pub struct EchoRequest"));
 
     let rust_codec = typeway_grpc::codegen::generate_typeway_from_proto_with_codec(&proto1);
@@ -262,8 +261,14 @@ service TestService {
 }
 "#;
     let parsed = parse_proto(proto).unwrap();
-    assert_eq!(parsed.services[0].methods[0].input_type, "google.protobuf.Empty");
-    assert_eq!(parsed.services[0].methods[0].output_type, "google.protobuf.Empty");
+    assert_eq!(
+        parsed.services[0].methods[0].input_type,
+        "google.protobuf.Empty"
+    );
+    assert_eq!(
+        parsed.services[0].methods[0].output_type,
+        "google.protobuf.Empty"
+    );
 
     // Codegen should handle Empty → () mapping.
     let rust = typeway_grpc::codegen::generate_typeway_from_proto(&parsed);
@@ -389,11 +394,19 @@ fn interop_retry_defaults() {
 
     let policy = GrpcRetryPolicy::default();
     assert_eq!(policy.max_retries, 3);
-    assert!(policy.retry_on.contains(&typeway_grpc::GrpcCode::Unavailable));
-    assert!(policy.retry_on.contains(&typeway_grpc::GrpcCode::ResourceExhausted));
-    assert!(policy.retry_on.contains(&typeway_grpc::GrpcCode::DeadlineExceeded));
+    assert!(policy
+        .retry_on
+        .contains(&typeway_grpc::GrpcCode::Unavailable));
+    assert!(policy
+        .retry_on
+        .contains(&typeway_grpc::GrpcCode::ResourceExhausted));
+    assert!(policy
+        .retry_on
+        .contains(&typeway_grpc::GrpcCode::DeadlineExceeded));
     // Non-retryable codes should NOT be in the list.
-    assert!(!policy.retry_on.contains(&typeway_grpc::GrpcCode::InvalidArgument));
+    assert!(!policy
+        .retry_on
+        .contains(&typeway_grpc::GrpcCode::InvalidArgument));
     assert!(!policy.retry_on.contains(&typeway_grpc::GrpcCode::NotFound));
 }
 
@@ -401,8 +414,8 @@ fn interop_retry_defaults() {
 #[test]
 #[cfg(feature = "grpc-native")]
 fn interop_circuit_breaker_transitions() {
-    use typeway_grpc::CircuitBreaker;
     use std::time::Duration;
+    use typeway_grpc::CircuitBreaker;
 
     let cb = CircuitBreaker::new(3, Duration::from_millis(50));
 

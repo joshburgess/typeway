@@ -358,7 +358,7 @@ impl Parse for PathRefInput {
 /// - The last argument implements either `FromRequestParts` or `FromRequest`
 /// - The return type implements `IntoResponse`
 ///
-/// The function is emitted unchanged — it already works with [`bind`] and
+/// The function is emitted unchanged. It already works with `bind` and
 /// the blanket `Handler<Args>` impls. This macro exists purely for early,
 /// readable compile errors instead of cryptic trait-resolution failures at
 /// the `Server::new` call site.
@@ -1052,7 +1052,7 @@ fn endpoint_impl(input: EndpointInput) -> syn::Result<TokenStream2> {
 // ---------------------------------------------------------------------------
 
 /// Extracts doc comments from a handler function and generates a companion
-/// `const` of type [`HandlerDoc`](typeway_core::HandlerDoc) containing the
+/// `const` of type `HandlerDoc` (from `typeway_core`) containing the
 /// summary, description, operation ID, and tags.
 ///
 /// The first line of the doc comment becomes the `summary`. All subsequent
@@ -1186,10 +1186,7 @@ fn parse_documented_handler_tags(attr: TokenStream2) -> Vec<String> {
             }
             let key: Ident = input.parse()?;
             if key != "tags" {
-                return Err(syn::Error::new(
-                    key.span(),
-                    "expected `tags = \"...\"`",
-                ));
+                return Err(syn::Error::new(key.span(), "expected `tags = \"...\"`"));
             }
             input.parse::<Token![=]>()?;
             let value: LitStr = input.parse()?;
@@ -1325,14 +1322,13 @@ fn derive_struct_schema(
             let field_ident = field.ident.as_ref().unwrap();
             let field_type = &field.ty;
 
-            let field_name_str =
-                if let Some(rename) = extract_serde_field_rename(&field.attrs) {
-                    rename
-                } else if let Some(strategy) = rename_all {
-                    apply_rename_strategy(&field_ident.to_string(), strategy)
-                } else {
-                    field_ident.to_string()
-                };
+            let field_name_str = if let Some(rename) = extract_serde_field_rename(&field.attrs) {
+                rename
+            } else if let Some(strategy) = rename_all {
+                apply_rename_strategy(&field_ident.to_string(), strategy)
+            } else {
+                field_ident.to_string()
+            };
 
             let field_doc = extract_doc_string(&field.attrs);
 
@@ -1406,9 +1402,7 @@ fn derive_enum_schema(
         .variants
         .iter()
         .map(|v| {
-            let serialized = if let Some(rename) =
-                extract_serde_field_rename(&v.attrs)
-            {
+            let serialized = if let Some(rename) = extract_serde_field_rename(&v.attrs) {
                 rename
             } else if let Some(strategy) = rename_all {
                 apply_rename_strategy(&v.ident.to_string(), strategy)
@@ -1419,7 +1413,9 @@ fn derive_enum_schema(
         })
         .collect();
 
-    let all_unit = variants.iter().all(|(_, v)| matches!(v.fields, syn::Fields::Unit));
+    let all_unit = variants
+        .iter()
+        .all(|(_, v)| matches!(v.fields, syn::Fields::Unit));
 
     let description_setter = match struct_doc {
         Some(doc) => quote! { __sch.description = Some(#doc.to_string()); },
@@ -1579,8 +1575,7 @@ fn bare_payload_schema(fields: &syn::Fields) -> syn::Result<TokenStream2> {
                 .map(|field| {
                     let field_ident = field.ident.as_ref().unwrap();
                     let field_type = &field.ty;
-                    let field_name = if let Some(rename) =
-                        extract_serde_field_rename(&field.attrs)
+                    let field_name = if let Some(rename) = extract_serde_field_rename(&field.attrs)
                     {
                         rename
                     } else {
@@ -1602,10 +1597,7 @@ fn named_field_entries(fields: &syn::Fields) -> syn::Result<Vec<TokenStream2>> {
     let named = match fields {
         syn::Fields::Named(named) => &named.named,
         _ => {
-            return Err(syn::Error::new_spanned(
-                fields,
-                "expected named fields",
-            ));
+            return Err(syn::Error::new_spanned(fields, "expected named fields"));
         }
     };
     Ok(named
@@ -1613,9 +1605,7 @@ fn named_field_entries(fields: &syn::Fields) -> syn::Result<Vec<TokenStream2>> {
         .map(|field| {
             let field_ident = field.ident.as_ref().unwrap();
             let field_type = &field.ty;
-            let field_name = if let Some(rename) =
-                extract_serde_field_rename(&field.attrs)
-            {
+            let field_name = if let Some(rename) = extract_serde_field_rename(&field.attrs) {
                 rename
             } else {
                 field_ident.to_string()
@@ -1704,7 +1694,7 @@ fn extract_serde_field_rename(attrs: &[syn::Attribute]) -> Option<String> {
 
 /// Derives a `ToProtoType` implementation for a struct with named fields.
 ///
-/// Each field is mapped to a [`ProtoField`](typeway_grpc::ProtoField) entry.
+/// Each field is mapped to a `ProtoField` entry (from `typeway_grpc`).
 /// Field tags can be specified explicitly with `#[proto(tag = N)]`; fields
 /// without an explicit tag are auto-numbered based on their 1-indexed position.
 ///
@@ -2069,8 +2059,7 @@ fn is_vec_u8(ty: &syn::Type) -> bool {
                         args.args.first()
                     {
                         if let Some(inner_seg) = inner_path.path.segments.last() {
-                            return inner_seg.ident == "u8"
-                                && inner_seg.arguments.is_none();
+                            return inner_seg.ident == "u8" && inner_seg.arguments.is_none();
                         }
                     }
                 }
@@ -2227,9 +2216,19 @@ fn derive_typestate_builder_impl(input: syn::DeriveInput) -> syn::Result<TokenSt
     let fields = match &input.data {
         syn::Data::Struct(data) => match &data.fields {
             syn::Fields::Named(named) => &named.named,
-            _ => return Err(syn::Error::new_spanned(name, "TypestateBuilder requires named fields")),
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    name,
+                    "TypestateBuilder requires named fields",
+                ))
+            }
         },
-        _ => return Err(syn::Error::new_spanned(name, "TypestateBuilder only supports structs")),
+        _ => {
+            return Err(syn::Error::new_spanned(
+                name,
+                "TypestateBuilder only supports structs",
+            ))
+        }
     };
 
     // Classify fields as required or optional.
@@ -2251,7 +2250,10 @@ fn derive_typestate_builder_impl(input: syn::DeriveInput) -> syn::Result<TokenSt
     let req_type_params: Vec<Ident> = required_fields
         .iter()
         .map(|(ident, _)| {
-            Ident::new(&format!("__{}", ident.to_string().to_uppercase()), ident.span())
+            Ident::new(
+                &format!("__{}", ident.to_string().to_uppercase()),
+                ident.span(),
+            )
         })
         .collect();
 
@@ -2304,7 +2306,11 @@ fn derive_typestate_builder_impl(input: syn::DeriveInput) -> syn::Result<TokenSt
                 .iter()
                 .enumerate()
                 .map(|(i, p)| {
-                    if i == idx { set_type.clone() } else { quote! { #p } }
+                    if i == idx {
+                        set_type.clone()
+                    } else {
+                        quote! { #p }
+                    }
                 })
                 .collect();
             let _ = &mut ret_params; // suppress unused
@@ -2313,7 +2319,11 @@ fn derive_typestate_builder_impl(input: syn::DeriveInput) -> syn::Result<TokenSt
                 .iter()
                 .enumerate()
                 .map(|(i, p)| {
-                    if i == idx { set_type.clone() } else { quote! { #p } }
+                    if i == idx {
+                        set_type.clone()
+                    } else {
+                        quote! { #p }
+                    }
                 })
                 .collect();
 
@@ -2364,7 +2374,10 @@ fn derive_typestate_builder_impl(input: syn::DeriveInput) -> syn::Result<TokenSt
             // For Option<T> fields, accept T directly.
             let inner_ty = is_option_type(ty);
             let (param_ty, wrap) = if let Some(inner) = inner_ty {
-                (inner.clone(), quote! { ::core::option::Option::Some(::core::option::Option::Some(value)) })
+                (
+                    inner.clone(),
+                    quote! { ::core::option::Option::Some(::core::option::Option::Some(value)) },
+                )
             } else {
                 (ty.clone(), quote! { ::core::option::Option::Some(value) })
             };
@@ -2379,10 +2392,7 @@ fn derive_typestate_builder_impl(input: syn::DeriveInput) -> syn::Result<TokenSt
         .collect();
 
     // Build method: only available when all type params are Set.
-    let all_set: Vec<TokenStream2> = req_type_params
-        .iter()
-        .map(|_| set_type.clone())
-        .collect();
+    let all_set: Vec<TokenStream2> = req_type_params.iter().map(|_| set_type.clone()).collect();
 
     let build_fields: Vec<TokenStream2> = fields
         .iter()
@@ -2602,11 +2612,21 @@ fn derive_typeway_codec_oneof_enum(
     let mut len_arms = Vec::new();
     let mut decode_arms = Vec::new();
 
-    for ((ident, tag), ty) in variant_idents.iter().zip(variant_tags.iter()).zip(variant_types.iter()) {
+    for ((ident, tag), ty) in variant_idents
+        .iter()
+        .zip(variant_tags.iter())
+        .zip(variant_types.iter())
+    {
         let kind = oneof_codec_kind(ty);
         let wt = wire_type_for_kind(&kind);
         let tp = emit_tag_push(*tag, wt);
-        let tag_len = if *tag < 16 { 1usize } else if *tag < 2048 { 2 } else { 3 };
+        let tag_len = if *tag < 16 {
+            1usize
+        } else if *tag < 2048 {
+            2
+        } else {
+            3
+        };
 
         let (enc, len_expr, dec) = match &kind {
             CodecKind::Varint => (
@@ -2813,7 +2833,10 @@ fn wire_type_for_kind(kind: &CodecKind) -> u8 {
     match kind {
         CodecKind::Varint | CodecKind::Bool => 0,
         CodecKind::Fixed64 => 1,
-        CodecKind::LenString | CodecKind::LenBytesStr | CodecKind::LenBytes | CodecKind::Message => 2,
+        CodecKind::LenString
+        | CodecKind::LenBytesStr
+        | CodecKind::LenBytes
+        | CodecKind::Message => 2,
         CodecKind::Fixed32 => 5,
         CodecKind::Optional(inner) | CodecKind::Repeated(inner) => wire_type_for_kind(inner),
         CodecKind::OptionalMessage | CodecKind::RepeatedMessage => 2,
@@ -2841,9 +2864,7 @@ fn derive_typeway_codec_struct(
         if let Some(prev_ident) = seen_tags.get(&tag) {
             return Err(syn::Error::new_spanned(
                 &ident,
-                format!(
-                    "duplicate proto tag {tag}: already used by field `{prev_ident}`"
-                ),
+                format!("duplicate proto tag {tag}: already used by field `{prev_ident}`"),
             ));
         }
         seen_tags.insert(tag, ident.to_string());
@@ -2858,16 +2879,10 @@ fn derive_typeway_codec_struct(
     }
 
     // Generate encode_to body.
-    let encode_stmts: Vec<TokenStream2> = codec_fields
-        .iter()
-        .map(gen_encode_field)
-        .collect();
+    let encode_stmts: Vec<TokenStream2> = codec_fields.iter().map(gen_encode_field).collect();
 
     // Generate encoded_len body.
-    let len_stmts: Vec<TokenStream2> = codec_fields
-        .iter()
-        .map(gen_encoded_len_field)
-        .collect();
+    let len_stmts: Vec<TokenStream2> = codec_fields.iter().map(gen_encoded_len_field).collect();
 
     // Generate decode body.
     let field_defaults: Vec<TokenStream2> = codec_fields
@@ -2879,15 +2894,10 @@ fn derive_typeway_codec_struct(
         })
         .collect();
 
-    let decode_arms: Vec<TokenStream2> = codec_fields
-        .iter()
-        .map(gen_decode_arm)
-        .collect();
+    let decode_arms: Vec<TokenStream2> = codec_fields.iter().map(gen_decode_arm).collect();
 
-    let decode_bytes_arms: Vec<TokenStream2> = codec_fields
-        .iter()
-        .map(gen_decode_bytes_arm)
-        .collect();
+    let decode_bytes_arms: Vec<TokenStream2> =
+        codec_fields.iter().map(gen_decode_bytes_arm).collect();
 
     let field_names: Vec<&Ident> = codec_fields.iter().map(|f| &f.ident).collect();
 
@@ -2999,7 +3009,7 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
                     buf.extend_from_slice(&[#tag_byte, 1]);
                 }
             }
-        },
+        }
         CodecKind::Fixed32 => quote! {
             if self.#ident != 0.0 {
                 #tag_push
@@ -3179,7 +3189,10 @@ fn gen_encode_field(f: &CodecField) -> TokenStream2 {
 
 /// Returns true if the inner type can use packed encoding (scalars only).
 fn is_packable(kind: &CodecKind) -> bool {
-    matches!(kind, CodecKind::Varint | CodecKind::Bool | CodecKind::Fixed32 | CodecKind::Fixed64)
+    matches!(
+        kind,
+        CodecKind::Varint | CodecKind::Bool | CodecKind::Fixed32 | CodecKind::Fixed64
+    )
 }
 
 /// Generate the per-item write for packed encoding (no tag per item).
@@ -3315,7 +3328,13 @@ fn gen_encoded_len_field(f: &CodecField) -> TokenStream2 {
     let tag = f.tag;
     // Precompute tag length at macro expansion time.
     let wt = wire_type_for_kind(&f.codec_kind);
-    let tag_byte_count = if tag < 16 { 1usize } else if tag < 2048 { 2 } else { 3 };
+    let tag_byte_count = if tag < 16 {
+        1usize
+    } else if tag < 2048 {
+        2
+    } else {
+        3
+    };
     let tag_len_expr = quote! { #tag_byte_count };
     let _ = wt; // used in computation above conceptually
 
@@ -3416,7 +3435,13 @@ fn gen_encoded_len_field(f: &CodecField) -> TokenStream2 {
 }
 
 fn gen_encoded_len_optional_inner(tag: u32, kind: &CodecKind) -> TokenStream2 {
-    let tl = if tag < 16 { 1usize } else if tag < 2048 { 2 } else { 3 };
+    let tl = if tag < 16 {
+        1usize
+    } else if tag < 2048 {
+        2
+    } else {
+        3
+    };
     let tag_len_expr = quote! { #tl };
     match kind {
         CodecKind::Varint => quote! {
@@ -3435,7 +3460,13 @@ fn gen_encoded_len_optional_inner(tag: u32, kind: &CodecKind) -> TokenStream2 {
 }
 
 fn gen_encoded_len_repeated_item(tag: u32, kind: &CodecKind) -> TokenStream2 {
-    let tl = if tag < 16 { 1usize } else if tag < 2048 { 2 } else { 3 };
+    let tl = if tag < 16 {
+        1usize
+    } else if tag < 2048 {
+        2
+    } else {
+        3
+    };
     let tag_len_expr = quote! { #tl };
     match kind {
         CodecKind::Varint => quote! {

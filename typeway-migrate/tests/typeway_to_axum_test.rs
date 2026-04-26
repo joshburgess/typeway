@@ -104,8 +104,7 @@ fn extracts_handler_names() {
 
 #[test]
 fn full_conversion_produces_valid_rust() {
-    let output =
-        typeway_migrate::typeway_to_axum(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::typeway_to_axum(FIXTURE).expect("conversion should succeed");
 
     // The output should contain key Axum constructs.
     assert!(
@@ -137,8 +136,7 @@ fn full_conversion_produces_valid_rust() {
 
 #[test]
 fn handlers_are_transformed() {
-    let output =
-        typeway_migrate::typeway_to_axum(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::typeway_to_axum(FIXTURE).expect("conversion should succeed");
 
     // Path extractors should use Axum-style destructuring: Path(id): Path<u32>
     assert!(
@@ -161,8 +159,7 @@ fn handlers_are_transformed() {
 
 #[test]
 fn endpoints_grouped_by_path() {
-    let output =
-        typeway_migrate::typeway_to_axum(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::typeway_to_axum(FIXTURE).expect("conversion should succeed");
 
     // Count .route( occurrences — should be 2 (one for /users, one for /users/{id}).
     let route_count = output.matches(".route(").count();

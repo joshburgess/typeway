@@ -42,25 +42,31 @@ type UserAPI = (
 // 4. Write handlers (same handlers serve REST and gRPC)
 async fn list_users() -> Json<Vec<User>> {
     Json(vec![
-        User { id: 1, name: "Alice".into() },
-        User { id: 2, name: "Bob".into() },
+        User {
+            id: 1,
+            name: "Alice".into(),
+        },
+        User {
+            id: 2,
+            name: "Bob".into(),
+        },
     ])
 }
 
 async fn create_user(body: Json<CreateUser>) -> (http::StatusCode, Json<User>) {
-    let user = User { id: 3, name: body.0.name };
+    let user = User {
+        id: 3,
+        name: body.0.name,
+    };
     (http::StatusCode::CREATED, Json(user))
 }
 
 // 5. Serve both REST and gRPC
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    Server::<UserAPI>::new((
-        bind!(list_users),
-        bind!(create_user),
-    ))
-    .with_grpc("UserService", "users.v1")
-    .with_grpc_docs()
-    .serve("0.0.0.0:3000".parse()?)
-    .await
+    Server::<UserAPI>::new((bind!(list_users), bind!(create_user)))
+        .with_grpc("UserService", "users.v1")
+        .with_grpc_docs()
+        .serve("0.0.0.0:3000".parse()?)
+        .await
 }

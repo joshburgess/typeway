@@ -118,8 +118,8 @@ pub fn compile_proto_string(
     proto_content: &str,
     package: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let out_dir = std::env::var("OUT_DIR")
-        .map_err(|_| "OUT_DIR not set — must be called from build.rs")?;
+    let out_dir =
+        std::env::var("OUT_DIR").map_err(|_| "OUT_DIR not set — must be called from build.rs")?;
 
     // Write the proto content to a temporary file.
     let proto_dir = std::path::Path::new(&out_dir).join("typeway_proto");

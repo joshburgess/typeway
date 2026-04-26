@@ -40,8 +40,12 @@ struct User {
     name: String,
 }
 impl ToProtoType for User {
-    fn proto_type_name() -> &'static str { "User" }
-    fn is_message() -> bool { true }
+    fn proto_type_name() -> &'static str {
+        "User"
+    }
+    fn is_message() -> bool {
+        true
+    }
     fn message_definition() -> Option<String> {
         Some("message User {\n  uint32 id = 1;\n  string name = 2;\n}".to_string())
     }
@@ -53,8 +57,12 @@ struct CreateUser {
     name: String,
 }
 impl ToProtoType for CreateUser {
-    fn proto_type_name() -> &'static str { "CreateUser" }
-    fn is_message() -> bool { true }
+    fn proto_type_name() -> &'static str {
+        "CreateUser"
+    }
+    fn is_message() -> bool {
+        true
+    }
     fn message_definition() -> Option<String> {
         Some("message CreateUser {\n  string name = 1;\n}".to_string())
     }
@@ -79,8 +87,12 @@ struct UserProfile {
     level: u32,
 }
 impl ToProtoType for UserProfile {
-    fn proto_type_name() -> &'static str { "UserProfile" }
-    fn is_message() -> bool { true }
+    fn proto_type_name() -> &'static str {
+        "UserProfile"
+    }
+    fn is_message() -> bool {
+        true
+    }
     fn message_definition() -> Option<String> {
         Some("message UserProfile {\n  uint64 id = 1;\n  string username = 2;\n  string email = 3;\n  string bio = 4;\n  bool active = 5;\n  double score = 6;\n  uint32 level = 7;\n}".to_string())
     }
@@ -137,13 +149,25 @@ type TestAPI = (
 
 async fn tw_list_users() -> Json<Vec<User>> {
     Json(vec![
-        User { id: 1, name: "Alice".into() },
-        User { id: 2, name: "Bob".into() },
+        User {
+            id: 1,
+            name: "Alice".into(),
+        },
+        User {
+            id: 2,
+            name: "Bob".into(),
+        },
     ])
 }
 
 async fn tw_create_user(body: Json<CreateUser>) -> (http::StatusCode, Json<User>) {
-    (http::StatusCode::CREATED, Json(User { id: 3, name: body.0.name }))
+    (
+        http::StatusCode::CREATED,
+        Json(User {
+            id: 3,
+            name: body.0.name,
+        }),
+    )
 }
 
 async fn start_typeway_server() -> u16 {
@@ -156,7 +180,10 @@ async fn start_typeway_server() -> u16 {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
-        server.serve_with_shutdown(listener, std::future::pending()).await.unwrap();
+        server
+            .serve_with_shutdown(listener, std::future::pending())
+            .await
+            .unwrap();
     });
     tokio::time::sleep(Duration::from_millis(50)).await;
     port
@@ -167,7 +194,10 @@ async fn start_typeway_server() -> u16 {
 // =========================================================================
 
 async fn tw_create_user_proto(body: Proto<CreateUser>) -> Proto<User> {
-    Proto(User { id: 3, name: body.name.clone() })
+    Proto(User {
+        id: 3,
+        name: body.name.clone(),
+    })
 }
 
 async fn tw_create_profile_proto(body: Proto<UserProfile>) -> Proto<UserProfile> {
@@ -183,19 +213,18 @@ async fn tw_create_profile_proto(body: Proto<UserProfile>) -> Proto<UserProfile>
 }
 
 async fn start_typeway_proto_server() -> u16 {
-    type ProtoAPI = (
-        PostEndpoint<UsersPath, CreateUser, User>,
-    );
+    type ProtoAPI = (PostEndpoint<UsersPath, CreateUser, User>,);
 
-    let server = Server::<ProtoAPI>::new((
-        bind::<_, _, _>(tw_create_user_proto),
-    ))
-    .with_grpc("BenchService", "bench.v1");
+    let server = Server::<ProtoAPI>::new((bind::<_, _, _>(tw_create_user_proto),))
+        .with_grpc("BenchService", "bench.v1");
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(async move {
-        server.serve_with_shutdown(listener, std::future::pending()).await.unwrap();
+        server
+            .serve_with_shutdown(listener, std::future::pending())
+            .await
+            .unwrap();
     });
     tokio::time::sleep(Duration::from_millis(50)).await;
     port
@@ -209,37 +238,40 @@ async fn start_typeway_direct_server() -> u16 {
     use typeway_server::grpc_direct::into_direct_handler;
 
     let direct = into_direct_handler(|req: CreateUser| async move {
-        User { id: 3, name: req.name }
+        User {
+            id: 3,
+            name: req.name,
+        }
     });
 
-    type DirectAPI = (
-        PostEndpoint<UsersPath, CreateUser, User>,
-    );
+    type DirectAPI = (PostEndpoint<UsersPath, CreateUser, User>,);
 
-    let server = Server::<DirectAPI>::new((
-        bind::<_, _, _>(tw_create_user),
-    ))
-    .with_grpc("BenchService", "bench.v1");
+    let _server = Server::<DirectAPI>::new((bind::<_, _, _>(tw_create_user),))
+        .with_grpc("BenchService", "bench.v1");
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
 
-    let addr = listener.local_addr().unwrap();
-    let descriptor = <DirectAPI as typeway_grpc::service::ApiToServiceDescriptor>::service_descriptor("BenchService", "bench.v1");
+    let _addr = listener.local_addr().unwrap();
+    let descriptor =
+        <DirectAPI as typeway_grpc::service::ApiToServiceDescriptor>::service_descriptor(
+            "BenchService",
+            "bench.v1",
+        );
     let mut grpc_router = typeway_server::grpc_dispatch::GrpcRouter::from_router(
         &typeway_server::Router::new(), // empty — direct handler replaces it
         &descriptor,
     );
-    grpc_router.add_direct_handler(
-        "/bench.v1.BenchService/CreateUser".to_string(),
-        direct,
-    );
+    grpc_router.add_direct_handler("/bench.v1.BenchService/CreateUser".to_string(), direct);
 
     // Build multiplexer manually with the direct handler.
     let multiplexer = typeway_server::grpc_dispatch::GrpcMultiplexer::new(
         typeway_server::RouterService::new(std::sync::Arc::new(typeway_server::Router::new())),
         std::sync::Arc::new(grpc_router),
-        std::sync::Arc::new(typeway_grpc::ReflectionService::from_api::<DirectAPI>("BenchService", "bench.v1")),
+        std::sync::Arc::new(typeway_grpc::ReflectionService::from_api::<DirectAPI>(
+            "BenchService",
+            "bench.v1",
+        )),
         typeway_grpc::HealthService::new(),
         false,
         None,
@@ -252,9 +284,11 @@ async fn start_typeway_direct_server() -> u16 {
             let io = hyper_util::rt::TokioIo::new(stream);
             let svc = multiplexer.clone();
             tokio::spawn(async move {
-                let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
-                    .serve_connection(io, hyper_util::service::TowerToHyperService::new(svc))
-                    .await;
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                )
+                .serve_connection(io, hyper_util::service::TowerToHyperService::new(svc))
+                .await;
             });
         }
     });
@@ -353,31 +387,25 @@ impl<T: BenchServiceTonic + Clone> tower_service::Service<http::Request<tonic::b
                         framed.extend_from_slice(&len.to_be_bytes());
                         framed.extend_from_slice(&encoded);
 
-                        let body = tonic::body::BoxBody::new(
-                            http_body_util::BodyExt::map_err(
-                                http_body_util::Full::new(bytes::Bytes::from(framed)),
-                                |e| match e {},
-                            )
-                        );
+                        let body = tonic::body::BoxBody::new(http_body_util::BodyExt::map_err(
+                            http_body_util::Full::new(bytes::Bytes::from(framed)),
+                            |e| match e {},
+                        ));
                         let mut res = http::Response::new(body);
                         *res.status_mut() = http::StatusCode::OK;
                         res.headers_mut().insert(
                             "content-type",
                             http::HeaderValue::from_static("application/grpc+proto"),
                         );
-                        res.headers_mut().insert(
-                            "grpc-status",
-                            http::HeaderValue::from_static("0"),
-                        );
+                        res.headers_mut()
+                            .insert("grpc-status", http::HeaderValue::from_static("0"));
                         Ok(res)
                     }
                     Err(status) => {
-                        let body = tonic::body::BoxBody::new(
-                            http_body_util::BodyExt::map_err(
-                                http_body_util::Empty::<bytes::Bytes>::new(),
-                                |e| match e {},
-                            )
-                        );
+                        let body = tonic::body::BoxBody::new(http_body_util::BodyExt::map_err(
+                            http_body_util::Empty::<bytes::Bytes>::new(),
+                            |e| match e {},
+                        ));
                         let mut res = http::Response::new(body);
                         *res.status_mut() = http::StatusCode::OK;
                         res.headers_mut().insert(
@@ -388,18 +416,14 @@ impl<T: BenchServiceTonic + Clone> tower_service::Service<http::Request<tonic::b
                     }
                 }
             } else {
-                let body = tonic::body::BoxBody::new(
-                    http_body_util::BodyExt::map_err(
-                        http_body_util::Empty::<bytes::Bytes>::new(),
-                        |e| match e {},
-                    )
-                );
+                let body = tonic::body::BoxBody::new(http_body_util::BodyExt::map_err(
+                    http_body_util::Empty::<bytes::Bytes>::new(),
+                    |e| match e {},
+                ));
                 let mut res = http::Response::new(body);
                 *res.status_mut() = http::StatusCode::OK;
-                res.headers_mut().insert(
-                    "grpc-status",
-                    http::HeaderValue::from_static("12"),
-                );
+                res.headers_mut()
+                    .insert("grpc-status", http::HeaderValue::from_static("12"));
                 Ok(res)
             }
         })
@@ -448,7 +472,10 @@ async fn start_baseline_server() -> u16 {
             Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
         >;
 
-        fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+        fn poll_ready(
+            &mut self,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<Result<(), Self::Error>> {
             std::task::Poll::Ready(Ok(()))
         }
 
@@ -460,10 +487,18 @@ async fn start_baseline_server() -> u16 {
                     .unwrap_or_default();
 
                 // Strip gRPC frame, parse JSON, produce JSON response
-                let unframed = if body_bytes.len() >= 5 { &body_bytes[5..] } else { &body_bytes[..] };
+                let unframed = if body_bytes.len() >= 5 {
+                    &body_bytes[5..]
+                } else {
+                    &body_bytes[..]
+                };
                 let input: serde_json::Value = serde_json::from_slice(unframed).unwrap_or_default();
-                let name = input.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
-                let resp_json = serde_json::to_vec(&serde_json::json!({"id": 3, "name": name})).unwrap();
+                let name = input
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                let resp_json =
+                    serde_json::to_vec(&serde_json::json!({"id": 3, "name": name})).unwrap();
 
                 // gRPC frame
                 let len = resp_json.len() as u32;
@@ -472,10 +507,15 @@ async fn start_baseline_server() -> u16 {
                 framed.extend_from_slice(&len.to_be_bytes());
                 framed.extend_from_slice(&resp_json);
 
-                let mut res = http::Response::new(http_body_util::Full::new(bytes::Bytes::from(framed)));
+                let mut res =
+                    http::Response::new(http_body_util::Full::new(bytes::Bytes::from(framed)));
                 *res.status_mut() = http::StatusCode::OK;
-                res.headers_mut().insert("content-type", http::HeaderValue::from_static("application/grpc+json"));
-                res.headers_mut().insert("grpc-status", http::HeaderValue::from_static("0"));
+                res.headers_mut().insert(
+                    "content-type",
+                    http::HeaderValue::from_static("application/grpc+json"),
+                );
+                res.headers_mut()
+                    .insert("grpc-status", http::HeaderValue::from_static("0"));
                 Ok(res)
             })
         }
@@ -488,9 +528,14 @@ async fn start_baseline_server() -> u16 {
             let (stream, _) = listener.accept().await.unwrap();
             let io = hyper_util::rt::TokioIo::new(stream);
             tokio::spawn(async move {
-                let _ = hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
-                    .serve_connection(io, hyper_util::service::TowerToHyperService::new(BaselineSvc))
-                    .await;
+                let _ = hyper_util::server::conn::auto::Builder::new(
+                    hyper_util::rt::TokioExecutor::new(),
+                )
+                .serve_connection(
+                    io,
+                    hyper_util::service::TowerToHyperService::new(BaselineSvc),
+                )
+                .await;
             });
         }
     });
@@ -502,7 +547,13 @@ async fn start_baseline_server() -> u16 {
 // Benchmark
 // =========================================================================
 
-async fn grpc_call(client: &reqwest::Client, port: u16, service: &str, method: &str, body: &[u8]) -> Vec<u8> {
+async fn grpc_call(
+    client: &reqwest::Client,
+    port: u16,
+    service: &str,
+    method: &str,
+    body: &[u8],
+) -> Vec<u8> {
     let framed = typeway_grpc::framing::encode_grpc_frame(body);
     let resp = client
         .post(format!("http://127.0.0.1:{port}/{service}/{method}"))
@@ -515,7 +566,13 @@ async fn grpc_call(client: &reqwest::Client, port: u16, service: &str, method: &
     resp.bytes().await.unwrap().to_vec()
 }
 
-async fn grpc_call_binary(client: &reqwest::Client, port: u16, service: &str, method: &str, body: &[u8]) -> Vec<u8> {
+async fn grpc_call_binary(
+    client: &reqwest::Client,
+    port: u16,
+    service: &str,
+    method: &str,
+    body: &[u8],
+) -> Vec<u8> {
     let framed = typeway_grpc::framing::encode_grpc_frame(body);
     let resp = client
         .post(format!("http://127.0.0.1:{port}/{service}/{method}"))
@@ -543,12 +600,19 @@ fn bench_e2e(c: &mut Criterion) {
         .build()
         .unwrap();
 
-    let create_body = serde_json::json!({"name": "Charlie"}).to_string().into_bytes();
+    let create_body = serde_json::json!({"name": "Charlie"})
+        .to_string()
+        .into_bytes();
 
     // Binary protobuf body for Proto<T> and Tonic comparisons.
     use typeway_protobuf::TypewayEncode;
-    let create_binary = CreateUser { name: "Charlie".into() }.encode_to_vec();
-    let create_prost_binary = prost::Message::encode_to_vec(&ProstCreateUserRequest { name: "Charlie".into() });
+    let create_binary = CreateUser {
+        name: "Charlie".into(),
+    }
+    .encode_to_vec();
+    let create_prost_binary = prost::Message::encode_to_vec(&ProstCreateUserRequest {
+        name: "Charlie".into(),
+    });
 
     let mut group = c.benchmark_group("grpc_e2e");
 
@@ -557,7 +621,14 @@ fn bench_e2e(c: &mut Criterion) {
             let client = client.clone();
             let body = create_body.clone();
             async move {
-                grpc_call(&client, tw_port, "bench.v1.BenchService", "CreateUser", &body).await
+                grpc_call(
+                    &client,
+                    tw_port,
+                    "bench.v1.BenchService",
+                    "CreateUser",
+                    &body,
+                )
+                .await
             }
         })
     });
@@ -567,7 +638,14 @@ fn bench_e2e(c: &mut Criterion) {
             let client = client.clone();
             let body = create_binary.clone();
             async move {
-                grpc_call_binary(&client, tw_proto_port, "bench.v1.BenchService", "CreateUser", &body).await
+                grpc_call_binary(
+                    &client,
+                    tw_proto_port,
+                    "bench.v1.BenchService",
+                    "CreateUser",
+                    &body,
+                )
+                .await
             }
         })
     });
@@ -577,7 +655,14 @@ fn bench_e2e(c: &mut Criterion) {
             let client = client.clone();
             let body = create_binary.clone();
             async move {
-                grpc_call_binary(&client, tw_direct_port, "bench.v1.BenchService", "CreateUser", &body).await
+                grpc_call_binary(
+                    &client,
+                    tw_direct_port,
+                    "bench.v1.BenchService",
+                    "CreateUser",
+                    &body,
+                )
+                .await
             }
         })
     });
@@ -587,7 +672,14 @@ fn bench_e2e(c: &mut Criterion) {
             let client = client.clone();
             let body = create_prost_binary.clone();
             async move {
-                grpc_call_binary(&client, tonic_port, "bench.v1.BenchService", "CreateUser", &body).await
+                grpc_call_binary(
+                    &client,
+                    tonic_port,
+                    "bench.v1.BenchService",
+                    "CreateUser",
+                    &body,
+                )
+                .await
             }
         })
     });
@@ -597,7 +689,14 @@ fn bench_e2e(c: &mut Criterion) {
             let client = client.clone();
             let body = create_body.clone();
             async move {
-                grpc_call(&client, baseline_port, "bench.v1.BenchService", "CreateUser", &body).await
+                grpc_call(
+                    &client,
+                    baseline_port,
+                    "bench.v1.BenchService",
+                    "CreateUser",
+                    &body,
+                )
+                .await
             }
         })
     });
@@ -610,17 +709,16 @@ fn bench_e2e_medium(c: &mut Criterion) {
 
     // Typeway server with Proto<T> for medium message
     let tw_profile_port = rt.block_on(async {
-        type ProfileAPI = (
-            PostEndpoint<ProfilesPath, UserProfile, UserProfile>,
-        );
-        let server = Server::<ProfileAPI>::new((
-            bind::<_, _, _>(tw_create_profile_proto),
-        ))
-        .with_grpc("ProfileService", "bench.v1");
+        type ProfileAPI = (PostEndpoint<ProfilesPath, UserProfile, UserProfile>,);
+        let server = Server::<ProfileAPI>::new((bind::<_, _, _>(tw_create_profile_proto),))
+            .with_grpc("ProfileService", "bench.v1");
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         tokio::spawn(async move {
-            server.serve_with_shutdown(listener, std::future::pending()).await.unwrap();
+            server
+                .serve_with_shutdown(listener, std::future::pending())
+                .await
+                .unwrap();
         });
         tokio::time::sleep(Duration::from_millis(50)).await;
         port
@@ -636,9 +734,14 @@ fn bench_e2e_medium(c: &mut Criterion) {
         impl tower_service::Service<http::Request<tonic::body::BoxBody>> for TonicProfileSvc {
             type Response = http::Response<tonic::body::BoxBody>;
             type Error = Infallible;
-            type Future = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+            type Future = std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<Self::Response, Self::Error>> + Send>,
+            >;
 
-            fn poll_ready(&mut self, _cx: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> {
+            fn poll_ready(
+                &mut self,
+                _cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Result<(), Self::Error>> {
                 std::task::Poll::Ready(Ok(()))
             }
 
@@ -648,9 +751,14 @@ fn bench_e2e_medium(c: &mut Criterion) {
                         .await
                         .map(|c| c.to_bytes())
                         .unwrap_or_default();
-                    let unframed = if body_bytes.len() >= 5 { &body_bytes[5..] } else { &body_bytes[..] };
+                    let unframed = if body_bytes.len() >= 5 {
+                        &body_bytes[5..]
+                    } else {
+                        &body_bytes[..]
+                    };
 
-                    let req_msg = <ProstUserProfile as prost::Message>::decode(unframed).unwrap_or_default();
+                    let req_msg =
+                        <ProstUserProfile as prost::Message>::decode(unframed).unwrap_or_default();
                     let resp_msg = ProstUserProfile {
                         id: req_msg.id + 1,
                         username: req_msg.username,
@@ -668,16 +776,18 @@ fn bench_e2e_medium(c: &mut Criterion) {
                     framed.extend_from_slice(&len.to_be_bytes());
                     framed.extend_from_slice(&encoded);
 
-                    let body = tonic::body::BoxBody::new(
-                        http_body_util::BodyExt::map_err(
-                            http_body_util::Full::new(bytes::Bytes::from(framed)),
-                            |e| match e {},
-                        )
-                    );
+                    let body = tonic::body::BoxBody::new(http_body_util::BodyExt::map_err(
+                        http_body_util::Full::new(bytes::Bytes::from(framed)),
+                        |e| match e {},
+                    ));
                     let mut res = http::Response::new(body);
                     *res.status_mut() = http::StatusCode::OK;
-                    res.headers_mut().insert("content-type", http::HeaderValue::from_static("application/grpc+proto"));
-                    res.headers_mut().insert("grpc-status", http::HeaderValue::from_static("0"));
+                    res.headers_mut().insert(
+                        "content-type",
+                        http::HeaderValue::from_static("application/grpc+proto"),
+                    );
+                    res.headers_mut()
+                        .insert("grpc-status", http::HeaderValue::from_static("0"));
                     Ok(res)
                 })
             }
@@ -715,7 +825,8 @@ fn bench_e2e_medium(c: &mut Criterion) {
         active: true,
         score: 98.5,
         level: 42,
-    }.encode_to_vec();
+    }
+    .encode_to_vec();
 
     let profile_prost_binary = prost::Message::encode_to_vec(&ProstUserProfile {
         id: 12345,
@@ -734,7 +845,14 @@ fn bench_e2e_medium(c: &mut Criterion) {
             let client = client.clone();
             let body = profile_binary.clone();
             async move {
-                grpc_call_binary(&client, tw_profile_port, "bench.v1.ProfileService", "CreateProfile", &body).await
+                grpc_call_binary(
+                    &client,
+                    tw_profile_port,
+                    "bench.v1.ProfileService",
+                    "CreateProfile",
+                    &body,
+                )
+                .await
             }
         })
     });
@@ -744,7 +862,14 @@ fn bench_e2e_medium(c: &mut Criterion) {
             let client = client.clone();
             let body = profile_prost_binary.clone();
             async move {
-                grpc_call_binary(&client, tonic_profile_port, "bench.v1.ProfileService", "CreateProfile", &body).await
+                grpc_call_binary(
+                    &client,
+                    tonic_profile_port,
+                    "bench.v1.ProfileService",
+                    "CreateProfile",
+                    &body,
+                )
+                .await
             }
         })
     });

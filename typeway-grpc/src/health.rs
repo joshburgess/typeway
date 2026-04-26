@@ -175,7 +175,9 @@ mod tests {
 
     #[test]
     fn is_health_path_rejects_other() {
-        assert!(!HealthService::is_health_path("/users.v1.UserService/GetUser"));
+        assert!(!HealthService::is_health_path(
+            "/users.v1.UserService/GetUser"
+        ));
         assert!(!HealthService::is_health_path(
             "/grpc.reflection.v1alpha.ServerReflection/ServerReflectionInfo"
         ));

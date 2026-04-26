@@ -267,7 +267,10 @@ impl Exchange {
     }
 }
 
-async fn submit_order(state: State<Exchange>, body: Json<Order>) -> (http::StatusCode, Json<OrderAck>) {
+async fn submit_order(
+    state: State<Exchange>,
+    body: Json<Order>,
+) -> (http::StatusCode, Json<OrderAck>) {
     let ack = OrderAck {
         order_id: BytesStr::from(state.0.next_order_id()),
         symbol: body.0.symbol.clone(),
@@ -306,7 +309,10 @@ async fn cancel_order(state: State<Exchange>, body: Json<CancelRequest>) -> Json
     })
 }
 
-async fn get_order_book(state: State<Exchange>, body: Json<SymbolQuery>) -> Json<OrderBookSnapshot> {
+async fn get_order_book(
+    state: State<Exchange>,
+    body: Json<SymbolQuery>,
+) -> Json<OrderBookSnapshot> {
     let orders = state.0.orders.lock().await;
     let symbol_orders: Vec<_> = orders
         .iter()
@@ -317,8 +323,16 @@ async fn get_order_book(state: State<Exchange>, body: Json<SymbolQuery>) -> Json
     let mut asks: Vec<PriceLevel> = Vec::new();
 
     for order in &symbol_orders {
-        let level = PriceLevel { price: order.price, quantity: order.quantity, order_count: 1 };
-        if &*order.side == "buy" { bids.push(level); } else { asks.push(level); }
+        let level = PriceLevel {
+            price: order.price,
+            quantity: order.quantity,
+            order_count: 1,
+        };
+        if &*order.side == "buy" {
+            bids.push(level);
+        } else {
+            asks.push(level);
+        }
     }
 
     bids.sort_by(|a, b| b.price.partial_cmp(&a.price).unwrap());
@@ -355,8 +369,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     tracing_subscriber::fmt::init();
 
     // Show what the codegen produces from the proto definition.
-    let generated = typeway_grpc::proto_to_typeway_with_codec(TRADING_PROTO)
-        .expect("proto parse failed");
+    let generated =
+        typeway_grpc::proto_to_typeway_with_codec(TRADING_PROTO).expect("proto parse failed");
     tracing::info!("=== What proto_to_typeway_with_codec() generates ===");
     for line in generated.lines() {
         tracing::info!("  {line}");

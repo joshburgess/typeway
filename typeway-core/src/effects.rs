@@ -130,9 +130,8 @@ pub trait HasEffect<E: Effect, Idx> {}
 impl<E: Effect, Tail> HasEffect<E, EHere> for ECons<E, Tail> {}
 
 /// The effect is somewhere in the tail of the list.
-impl<E: Effect, Head: Effect, Tail, Idx> HasEffect<E, EThere<Idx>> for ECons<Head, Tail>
-where
-    Tail: HasEffect<E, Idx>,
+impl<E: Effect, Head: Effect, Tail, Idx> HasEffect<E, EThere<Idx>> for ECons<Head, Tail> where
+    Tail: HasEffect<E, Idx>
 {
 }
 

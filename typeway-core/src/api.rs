@@ -1,6 +1,6 @@
 //! The [`ApiSpec`] trait — marks a type as a valid API specification.
 //!
-//! An API is a tuple of [`Endpoint`](crate::endpoint::Endpoint) types.
+//! An API is a tuple of [`Endpoint`] types.
 //! `ApiSpec` is implemented for individual endpoints and for tuples of
 //! `ApiSpec` implementors up to arity 16.
 

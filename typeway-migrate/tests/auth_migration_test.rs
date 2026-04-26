@@ -95,8 +95,7 @@ fn query_extractor_is_detected() {
 
 #[test]
 fn full_conversion_contains_protected_wrappers() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("Protected"),
@@ -110,8 +109,7 @@ fn full_conversion_contains_protected_wrappers() {
 
 #[test]
 fn full_conversion_contains_bind_auth() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("bind_auth"),
@@ -121,8 +119,7 @@ fn full_conversion_contains_bind_auth() {
 
 #[test]
 fn full_conversion_contains_plain_bind_for_public() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     // The list_users endpoint should use bind!, not bind_auth!.
     // We verify bind!(list_users) appears (for the public endpoint).
@@ -134,8 +131,7 @@ fn full_conversion_contains_plain_bind_for_public() {
 
 #[test]
 fn query_is_passed_through_in_output() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     assert!(
         output.contains("Query"),
@@ -149,8 +145,7 @@ fn query_is_passed_through_in_output() {
 
 #[test]
 fn output_parses_as_valid_rust() {
-    let output =
-        typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
+    let output = typeway_migrate::axum_to_typeway(FIXTURE).expect("conversion should succeed");
 
     // Strip TODO comment lines — they are not Rust syntax.
     let code: String = output

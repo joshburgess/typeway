@@ -43,13 +43,13 @@ pub struct Recv<T, Next>(PhantomData<(T, Next)>);
 /// Offer a choice between two protocol branches.
 ///
 /// The remote peer decides which branch to take by sending a branch
-/// selection message. Use with [`TypedWebSocket::offer`] on the server.
+/// selection message. Use with `TypedWebSocket::offer` on the server.
 pub struct Offer<Left, Right>(PhantomData<(Left, Right)>);
 
 /// Select one of two protocol branches.
 ///
 /// The local side decides which branch to take. Use with
-/// [`TypedWebSocket::select_left`] or [`TypedWebSocket::select_right`].
+/// `TypedWebSocket::select_left` or `TypedWebSocket::select_right`.
 pub struct Select<Left, Right>(PhantomData<(Left, Right)>);
 
 /// Protocol termination. No further messages can be sent or received.
@@ -173,7 +173,7 @@ mod tests {
                 String, // join msg
                 Offer<
                     Recv<String, Send<String, Rec<Var>>>, // chat loop
-                    Recv<String, End>,                     // leave
+                    Recv<String, End>,                    // leave
                 >,
             >,
         >;

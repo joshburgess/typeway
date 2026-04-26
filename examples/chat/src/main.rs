@@ -197,10 +197,7 @@ async fn handle_chat(upgrade: WebSocketUpgrade, state: State<AppState>) -> impl 
         // Step 2: Send welcome message.
         let ws = match ws
             .send(WelcomeMessage {
-                message: format!(
-                    "Welcome, {username}! {} user(s) online.",
-                    online.len()
-                ),
+                message: format!("Welcome, {username}! {} user(s) online.", online.len()),
                 online_users: online,
             })
             .await

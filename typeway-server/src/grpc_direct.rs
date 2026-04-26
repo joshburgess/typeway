@@ -23,9 +23,7 @@ use crate::body::BoxBody;
 
 /// A type-erased direct gRPC handler.
 pub type DirectHandler = Arc<
-    dyn Fn(Bytes) -> Pin<Box<dyn Future<Output = Result<Bytes, GrpcStatus>> + Send>>
-        + Send
-        + Sync,
+    dyn Fn(Bytes) -> Pin<Box<dyn Future<Output = Result<Bytes, GrpcStatus>> + Send>> + Send + Sync,
 >;
 
 /// Create a `DirectHandler` from an async function `async fn(Req) -> Resp`.
@@ -39,11 +37,10 @@ where
     Arc::new(move |body: Bytes| {
         let h = handler.clone();
         Box::pin(async move {
-            let req = Req::typeway_decode_bytes(body)
-                .map_err(|e| GrpcStatus {
-                    code: GrpcCode::InvalidArgument,
-                    message: format!("decode error: {e}"),
-                })?;
+            let req = Req::typeway_decode_bytes(body).map_err(|e| GrpcStatus {
+                code: GrpcCode::InvalidArgument,
+                message: format!("decode error: {e}"),
+            })?;
             let resp = h(req).await;
             Ok(Bytes::from(resp.encode_to_vec()))
         }) as Pin<Box<dyn Future<Output = Result<Bytes, GrpcStatus>> + Send>>
@@ -82,8 +79,10 @@ pub(crate) async fn dispatch_direct(
             );
             let mut res = http::Response::new(boxed);
             *res.status_mut() = http::StatusCode::OK;
-            res.headers_mut().insert("content-type", CONTENT_TYPE_PROTO.clone());
-            res.headers_mut().insert("grpc-status", GRPC_STATUS_OK.clone());
+            res.headers_mut()
+                .insert("content-type", CONTENT_TYPE_PROTO.clone());
+            res.headers_mut()
+                .insert("grpc-status", GRPC_STATUS_OK.clone());
             res
         }
         Err(status) => {
@@ -94,11 +93,10 @@ pub(crate) async fn dispatch_direct(
             );
             let mut res = http::Response::new(boxed);
             *res.status_mut() = http::StatusCode::OK;
-            res.headers_mut().insert("content-type", CONTENT_TYPE_PROTO.clone());
-            res.headers_mut().insert(
-                "grpc-status",
-                code.as_i32().to_string().parse().unwrap(),
-            );
+            res.headers_mut()
+                .insert("content-type", CONTENT_TYPE_PROTO.clone());
+            res.headers_mut()
+                .insert("grpc-status", code.as_i32().to_string().parse().unwrap());
             res
         }
     }

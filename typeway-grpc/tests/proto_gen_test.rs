@@ -106,11 +106,7 @@ fn proto_is_valid_syntax() {
     // Every opened brace should be closed.
     let opens = proto.matches('{').count();
     let closes = proto.matches('}').count();
-    assert_eq!(
-        opens, closes,
-        "mismatched braces in:\n{}",
-        proto,
-    );
+    assert_eq!(opens, closes, "mismatched braces in:\n{}", proto,);
 }
 
 #[test]

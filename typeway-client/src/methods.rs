@@ -1,4 +1,4 @@
-//! The [`client_api!`] macro for generating named client wrapper structs.
+//! The `client_api!` macro for generating named client wrapper structs.
 //!
 //! Instead of calling `client.call::<EndpointType>(args)` with turbofish
 //! syntax, this macro generates a wrapper struct with a named method for each

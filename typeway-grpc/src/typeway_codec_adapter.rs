@@ -1,4 +1,4 @@
-//! Adapter integrating [`TypewayCodec`](crate::typeway_codec) with the
+//! Adapter integrating `TypewayCodec` with the
 //! [`GrpcCodec`](crate::codec::GrpcCodec) trait system.
 //!
 //! [`TypewayCodecAdapter<T>`] wraps a message type that implements
@@ -114,9 +114,7 @@ fn decode_error_to_string(e: TypewayDecodeError) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use typeway_protobuf::{
-        tw_encode_tag, tw_encode_varint,
-    };
+    use typeway_protobuf::{tw_encode_tag, tw_encode_varint};
 
     // Manual TypewayEncode/TypewayDecode impl for testing
     // (in real usage, #[derive(TypewayCodec)] generates these)
@@ -133,9 +131,8 @@ mod tests {
                 len += 1 + typeway_protobuf::tw_varint_len(self.id as u64);
             }
             if !self.name.is_empty() {
-                len += 1
-                    + typeway_protobuf::tw_varint_len(self.name.len() as u64)
-                    + self.name.len();
+                len +=
+                    1 + typeway_protobuf::tw_varint_len(self.name.len() as u64) + self.name.len();
             }
             len
         }
@@ -158,21 +155,18 @@ mod tests {
             let mut msg = TestMsg::default();
             let mut offset = 0;
             while offset < bytes.len() {
-                let (tag_wire, consumed) =
-                    typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                let (tag_wire, consumed) = typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
                 offset += consumed;
                 let field_number = (tag_wire >> 3) as u32;
                 let wire_type = (tag_wire & 0x07) as u8;
                 match field_number {
                     1 => {
-                        let (val, consumed) =
-                            typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                        let (val, consumed) = typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
                         offset += consumed;
                         msg.id = val as u32;
                     }
                     2 => {
-                        let (len, consumed) =
-                            typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
+                        let (len, consumed) = typeway_protobuf::tw_decode_varint(&bytes[offset..])?;
                         offset += consumed;
                         let len = len as usize;
                         msg.name = String::from_utf8(bytes[offset..offset + len].to_vec())
@@ -180,10 +174,8 @@ mod tests {
                         offset += len;
                     }
                     _ => {
-                        offset += typeway_protobuf::tw_skip_wire_value(
-                            &bytes[offset..],
-                            wire_type,
-                        )?;
+                        offset +=
+                            typeway_protobuf::tw_skip_wire_value(&bytes[offset..], wire_type)?;
                     }
                 }
             }

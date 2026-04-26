@@ -192,10 +192,7 @@ fn parse_import(line: &str) -> Result<String, String> {
         .trim_start_matches("public")
         .trim_start_matches("weak")
         .trim();
-    let path = rest
-        .trim_end_matches(';')
-        .trim()
-        .trim_matches('"');
+    let path = rest.trim_end_matches(';').trim().trim_matches('"');
     if path.is_empty() {
         return Err("empty import path".to_string());
     }
@@ -266,10 +263,7 @@ fn parse_enum_variant(line: &str) -> Option<ParsedEnumVariant> {
 /// let source = std::fs::read_to_string("service.proto").unwrap();
 /// let proto = parse_proto_with_imports(&source, &["proto/"])?;
 /// ```
-pub fn parse_proto_with_imports(
-    source: &str,
-    include_dirs: &[&str],
-) -> Result<ProtoFile, String> {
+pub fn parse_proto_with_imports(source: &str, include_dirs: &[&str]) -> Result<ProtoFile, String> {
     let mut seen = std::collections::HashSet::new();
     parse_proto_recursive(source, include_dirs, &mut seen)
 }

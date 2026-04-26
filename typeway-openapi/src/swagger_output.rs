@@ -1,6 +1,6 @@
 //! Convert an OpenAPI 3.x spec to Swagger 2.0 output.
 //!
-//! Since typeway generates OpenAPI 3.1 specs via [`ApiToSpec`], this module
+//! Since typeway generates OpenAPI 3.1 specs via [`crate::ApiToSpec`], this module
 //! converts that output to Swagger 2.0 format for teams that need it.
 //!
 //! # Example
@@ -211,44 +211,31 @@ fn sanitize_for_swagger2(value: serde_json::Value) -> serde_json::Value {
             if let Some(items) = obj.remove("items") {
                 obj.insert("items".to_string(), sanitize_for_swagger2(items));
             }
-            if let Some(props) = obj.remove("properties") {
-                if let Value::Object(map) = props {
-                    let rewritten: serde_json::Map<String, Value> = map
-                        .into_iter()
-                        .map(|(k, v)| (k, sanitize_for_swagger2(v)))
-                        .collect();
-                    obj.insert("properties".to_string(), Value::Object(rewritten));
-                }
+            if let Some(Value::Object(map)) = obj.remove("properties") {
+                let rewritten: serde_json::Map<String, Value> = map
+                    .into_iter()
+                    .map(|(k, v)| (k, sanitize_for_swagger2(v)))
+                    .collect();
+                obj.insert("properties".to_string(), Value::Object(rewritten));
             }
 
-            if let Some(one_of) = obj.remove("oneOf") {
-                if let Value::Array(variants) = one_of {
-                    let sanitized: Vec<Value> = variants
-                        .into_iter()
-                        .map(sanitize_for_swagger2)
-                        .collect();
-                    obj.entry("type".to_string())
-                        .or_insert_with(|| Value::String("object".to_string()));
-                    obj.insert("x-oneOf".to_string(), Value::Array(sanitized));
-                }
+            if let Some(Value::Array(variants)) = obj.remove("oneOf") {
+                let sanitized: Vec<Value> =
+                    variants.into_iter().map(sanitize_for_swagger2).collect();
+                obj.entry("type".to_string())
+                    .or_insert_with(|| Value::String("object".to_string()));
+                obj.insert("x-oneOf".to_string(), Value::Array(sanitized));
             }
 
-            if let Some(disc) = obj.remove("discriminator") {
-                if let Value::Object(map) = disc {
-                    if let Some(name) = map.get("propertyName").and_then(|v| v.as_str()) {
-                        obj.insert(
-                            "discriminator".to_string(),
-                            Value::String(name.to_string()),
-                        );
-                    }
+            if let Some(Value::Object(map)) = obj.remove("discriminator") {
+                if let Some(name) = map.get("propertyName").and_then(|v| v.as_str()) {
+                    obj.insert("discriminator".to_string(), Value::String(name.to_string()));
                 }
             }
 
             Value::Object(obj)
         }
-        Value::Array(items) => {
-            Value::Array(items.into_iter().map(sanitize_for_swagger2).collect())
-        }
+        Value::Array(items) => Value::Array(items.into_iter().map(sanitize_for_swagger2).collect()),
         other => other,
     }
 }

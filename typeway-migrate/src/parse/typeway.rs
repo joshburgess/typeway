@@ -3,17 +3,14 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result};
-use syn::{
-    Expr, ExprCall, ExprPath, Item, ItemFn, ItemType, Type, TypePath, TypeTuple,
-};
+use syn::{Expr, ExprCall, ExprPath, Item, ItemFn, ItemType, Type, TypePath, TypeTuple};
 
 use crate::model::*;
 use crate::parse::common;
 
 /// Parse a Typeway source file into an `ApiModel`.
 pub fn parse_typeway_file(source: &str) -> Result<ApiModel> {
-    let file: syn::File =
-        syn::parse_str(source).context("failed to parse Rust source file")?;
+    let file: syn::File = syn::parse_str(source).context("failed to parse Rust source file")?;
 
     let mut handler_fns: HashMap<String, &ItemFn> = HashMap::new();
     let mut path_types: HashMap<String, PathModel> = HashMap::new();
@@ -47,10 +44,7 @@ pub fn parse_typeway_file(source: &str) -> Result<ApiModel> {
             Item::Macro(mac) => {
                 // Parse typeway_path! macro invocations.
                 if let Some(path_model) = parse_typeway_path_macro(mac) {
-                    path_types.insert(
-                        path_model.typeway_type_name.to_string(),
-                        path_model,
-                    );
+                    path_types.insert(path_model.typeway_type_name.to_string(), path_model);
                 } else {
                     passthrough_items.push(item.clone());
                 }
@@ -208,7 +202,8 @@ fn parse_path_segments(s: &str) -> Vec<PathSegment> {
                 PathSegment::Literal(literal)
             } else {
                 // Capture segment: the part is a type name.
-                let ty: Type = syn::parse_str(part).unwrap_or_else(|_| syn::parse_quote! { String });
+                let ty: Type =
+                    syn::parse_str(part).unwrap_or_else(|_| syn::parse_quote! { String });
                 PathSegment::Capture {
                     name: part.to_lowercase(),
                     ty: Some(Box::new(ty)),
@@ -256,10 +251,7 @@ fn parse_api_type_alias(
 
 /// Parse a single endpoint type like `GetEndpoint<UsersPath, Json<Vec<User>>>`,
 /// or a `Protected<AuthUser, GetEndpoint<...>>` wrapper.
-fn parse_endpoint_type(
-    ty: &Type,
-    path_types: &HashMap<String, PathModel>,
-) -> Option<RawEndpoint> {
+fn parse_endpoint_type(ty: &Type, path_types: &HashMap<String, PathModel>) -> Option<RawEndpoint> {
     let type_path = match ty {
         Type::Path(TypePath { path, .. }) => path,
         _ => return None,
@@ -389,20 +381,14 @@ fn parse_inner_endpoint_type(
 
     // First arg is the path type name.
     let path_type_name = type_to_ident_string(type_args[0])?;
-    let path = path_types
-        .get(&path_type_name)
-        .cloned()
-        .unwrap_or_else(|| {
-            // Fallback: create a placeholder path.
-            PathModel {
-                raw_pattern: format!("/{}", path_type_name.to_lowercase()),
-                segments: vec![PathSegment::Literal(path_type_name.to_lowercase())],
-                typeway_type_name: syn::Ident::new(
-                    &path_type_name,
-                    proc_macro2::Span::call_site(),
-                ),
-            }
-        });
+    let path = path_types.get(&path_type_name).cloned().unwrap_or_else(|| {
+        // Fallback: create a placeholder path.
+        PathModel {
+            raw_pattern: format!("/{}", path_type_name.to_lowercase()),
+            segments: vec![PathSegment::Literal(path_type_name.to_lowercase())],
+            typeway_type_name: syn::Ident::new(&path_type_name, proc_macro2::Span::call_site()),
+        }
+    });
 
     // For body-having methods (Post, Put, Patch): args are (Path, ReqBody, ResBody).
     // For other methods: args are (Path, ResBody).
@@ -430,9 +416,7 @@ fn parse_inner_endpoint_type(
 /// Extract a simple identifier string from a type.
 fn type_to_ident_string(ty: &Type) -> Option<String> {
     match ty {
-        Type::Path(TypePath { path, .. }) => {
-            Some(path.segments.last()?.ident.to_string())
-        }
+        Type::Path(TypePath { path, .. }) => Some(path.segments.last()?.ident.to_string()),
         _ => None,
     }
 }
@@ -632,13 +616,10 @@ fn fill_capture_types_from_handler(path: &mut PathModel, handler: &HandlerModel)
             let capture_types = common::extract_path_capture_types(inner);
 
             // Only fill if capture_types look like actual types (not path type names).
-            let all_filled = path
-                .segments
-                .iter()
-                .all(|s| match s {
-                    PathSegment::Capture { ty, .. } => ty.is_some(),
-                    _ => true,
-                });
+            let all_filled = path.segments.iter().all(|s| match s {
+                PathSegment::Capture { ty, .. } => ty.is_some(),
+                _ => true,
+            });
 
             if !all_filled {
                 let captures: Vec<_> = path
@@ -648,7 +629,10 @@ fn fill_capture_types_from_handler(path: &mut PathModel, handler: &HandlerModel)
                     .collect();
 
                 for (seg, ty) in captures.into_iter().zip(capture_types) {
-                    if let PathSegment::Capture { ty: ref mut slot, .. } = seg {
+                    if let PathSegment::Capture {
+                        ty: ref mut slot, ..
+                    } = seg
+                    {
                         if slot.is_none() {
                             *slot = Some(Box::new(ty));
                         }
