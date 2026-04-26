@@ -444,7 +444,7 @@ The gains over prost come from compile-time field layout knowledge: tag numbers,
 ### Remaining gaps
 
 - **Production use.** typeway-grpc has not been deployed in production. Tonic has. This matters.
-- **Official gRPC conformance suite.** The unary scenarios from the upstream `grpc.testing.TestService` interop suite (`empty_unary`, `large_unary`, `status_code_and_message`, `special_status_message`, `unimplemented_method`, `unimplemented_service`, `cacheable_unary` smoke) run as integration tests in the `interop/` crate, plus a binary entry point that the official `grpc-go` `interop_client` can drive directly. Streaming scenarios (`server_streaming`, `client_streaming`, `ping_pong`, `empty_stream`, etc.) still return `UNIMPLEMENTED` and are tracked as future work pending a streaming `DirectHandler` story.
+- **Official gRPC conformance suite.** Both the unary and streaming scenarios from the upstream `grpc.testing.TestService` interop suite run as integration tests in the `interop/` crate. Unary: `empty_unary`, `large_unary`, `status_code_and_message`, `special_status_message`, `unimplemented_method`, `unimplemented_service`, `cacheable_unary` smoke. Streaming: `server_streaming`, `client_streaming`, `ping_pong` (FullDuplexCall), `empty_stream`, `half_duplex` smoke. The crate also ships a binary entry point that the official `grpc-go` `interop_client` can drive directly.
 - **Load balancing.** Retry and circuit breaking exist, but there is no built-in load balancer or service discovery.
 
 ## Migration from Tonic

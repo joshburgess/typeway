@@ -34,7 +34,7 @@ trap 'kill ${SERVER_PID} 2>/dev/null || true' EXIT
 
 sleep 2
 
-UNARY_CASES=(
+CASES=(
     empty_unary
     large_unary
     status_code_and_message
@@ -42,9 +42,13 @@ UNARY_CASES=(
     unimplemented_method
     unimplemented_service
     cacheable_unary
+    server_streaming
+    client_streaming
+    ping_pong
+    empty_stream
 )
 
-for tc in "${UNARY_CASES[@]}"; do
+for tc in "${CASES[@]}"; do
     echo "=== ${tc} ==="
     "${CLIENT_BIN}" \
         --server_host="${HOST}" \
@@ -53,4 +57,4 @@ for tc in "${UNARY_CASES[@]}"; do
         --test_case="${tc}"
 done
 
-echo "all unary cases passed"
+echo "all cases passed"

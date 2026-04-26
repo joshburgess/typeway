@@ -13,11 +13,11 @@ the Rust unit tests.
 
 The suite is split across two layers:
 
-1. **Rust integration tests** (`tests/unary_interop.rs`). These run as
-   part of `cargo test` and exercise the same scenarios the official
-   `interop_client` exercises, encoding requests with `prost` exactly as
-   upstream does:
+1. **Rust integration tests.** These run as part of `cargo test` and
+   exercise the same scenarios the official `interop_client` exercises,
+   encoding requests with `prost` exactly as upstream does:
 
+   Unary (`tests/unary_interop.rs`):
    - `empty_unary`
    - `large_unary` (271,828-byte request, 314,159-byte response)
    - `status_code_and_message`
@@ -26,6 +26,15 @@ The suite is split across two layers:
    - `unimplemented_method`
    - `unimplemented_service`
    - `cacheable_unary` (smoke test, no GFE proxy)
+
+   Streaming (`tests/streaming_interop.rs`):
+   - `server_streaming` (StreamingOutputCall, sizes
+     31415/9/2653/58979)
+   - `client_streaming` (StreamingInputCall, sizes
+     27182/8/1828/45904)
+   - `ping_pong` (FullDuplexCall)
+   - `empty_stream` (FullDuplexCall, no input or output frames)
+   - `half_duplex` (smoke)
 
 2. **Standalone server binary** (`src/main.rs`). The
    `interop-server` binary listens on a TCP port and serves the same
@@ -42,18 +51,21 @@ The suite is split across two layers:
    `scripts/run-grpc-interop.sh` automates that pattern across all
    supported test cases.
 
-## What's not covered yet
+## What's not covered
 
-The streaming scenarios (`server_streaming`, `client_streaming`,
-`ping_pong`, `empty_stream`, `client_compressed_streaming`,
-`server_compressed_streaming`) currently return `UNIMPLEMENTED`.
-typeway-grpc's `DirectHandler` API is unary-only; streaming interop
-is tracked in the typeway-grpc design doc as future work.
-
-The TLS, OAuth, and JWT scenarios from the upstream description are
-also out of scope: they exercise auth integrations rather than gRPC
-wire compliance, and typeway-grpc's auth story is layered above the
-transport.
+- **Compression scenarios** (`client_compressed_streaming`,
+  `server_compressed_streaming`, `client_compressed_unary`,
+  `server_compressed_unary`). typeway-grpc's framing layer rejects
+  compressed frames at decode time; gRPC compression is on the
+  roadmap.
+- **TLS / OAuth / JWT scenarios.** These exercise auth integrations
+  rather than gRPC wire compliance, and typeway-grpc's auth story is
+  layered above the transport.
+- **Mid-stream error reporting on FullDuplexCall.** The bidi handler
+  currently emits OK trailers when the client sends `response_status`
+  with a non-OK code; reporting that error in trailers requires a
+  small extension to `GrpcStreamBody` and is not exercised by the
+  upstream interop test list.
 
 ## Running
 

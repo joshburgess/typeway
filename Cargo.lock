@@ -3435,6 +3435,7 @@ dependencies = [
  "prost",
  "prost-build",
  "tokio",
+ "tokio-stream",
  "tower-service",
  "tracing",
  "tracing-subscriber",

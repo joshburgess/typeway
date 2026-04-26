@@ -32,6 +32,7 @@ hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "service", "server-auto", "http2"] }
 tower-service = "0.3"
 tokio = { version = "1", features = ["full"] }
+tokio-stream = "0.1"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
