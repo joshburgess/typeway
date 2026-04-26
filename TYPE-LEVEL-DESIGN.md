@@ -101,7 +101,7 @@ typeway_path!(type UsersPath = "users" / u32);
 
 **Feature:** `adt_const_params`, allows `&'static str` as a const generic parameter.
 
-**What we do instead:** Each unique path literal generates a zero-sized marker type implementing `LitSegment`. The proc macro `typeway_path!` automates this. Without it, users would have to define marker types by hand.
+**The workaround:** Each unique path literal generates a zero-sized marker type implementing `LitSegment`. The proc macro `typeway_path!` automates this. Without it, users would have to define marker types by hand.
 
 **What it would enable:**
 
@@ -120,7 +120,7 @@ type UsersPath = HCons<Lit<"users">, HCons<Capture<u32>, HNil>>;
 - Simpler compiler error messages: `Lit<"users">` instead of `Lit<__wp_UsersPath::__lit_users>`
 - The `LitSegment` trait, all marker type generation, and the module-scoping machinery become unnecessary
 
-**Why we can't use it:** The `adt_const_params` feature has been unstable since 2021 with no clear stabilization timeline. Depending on it would require nightly Rust, which excludes most production users.
+**Why it's not used:** The `adt_const_params` feature has been unstable since 2021 with no clear stabilization timeline. Depending on it would require nightly Rust, which excludes most production users.
 
 **Adoption plan:** When stabilized, add a `const-generics` feature flag that enables `Lit<"string">` syntax alongside the existing macro approach. The macro approach remains the default for backward compatibility.
 
@@ -128,11 +128,11 @@ type UsersPath = HCons<Lit<"users">, HCons<Capture<u32>, HNil>>;
 
 **Feature:** `specialization` / `min_specialization`, allows overlapping trait impls where a more specific impl takes priority.
 
-**What we do instead:** Separate traits for different handler patterns (`Handler`, `AuthHandler`, `StrictHandler`) with marker types (`WithBody<Parts, Body>`, `AuthWithBody<Parts, Body>`) to disambiguate overlapping arities.
+**The workaround:** Separate traits for different handler patterns (`Handler`, `AuthHandler`, `StrictHandler`) with marker types (`WithBody<Parts, Body>`, `AuthWithBody<Parts, Body>`) to disambiguate overlapping arities.
 
 **What it would enable:** A single `Handler` trait with specialization for auth-required and strict-return-type variants. The `WithBody` marker disambiguation would be unnecessary.
 
-**Why we can't use it:** `specialization` has been unstable since 2016 and has known soundness issues. `min_specialization` is more conservative but still unstable.
+**Why it's not used:** `specialization` has been unstable since 2016 and has known soundness issues. `min_specialization` is more conservative but still unstable.
 
 **Impact if stabilized:** Moderate. Would reduce the number of handler traits from 3 to 1 and eliminate the marker types. The user-facing API wouldn't change much.
 
@@ -140,15 +140,15 @@ type UsersPath = HCons<Lit<"users">, HCons<Capture<u32>, HNil>>;
 
 **Feature:** The ability to say "this type does NOT implement trait X."
 
-**What we do instead:** The `NotUnset` marker trait in the experimental type-level builder (Option C), which had to be manually implemented for every user type.
+**The workaround:** The `NotUnset` marker trait in the experimental type-level builder (Option C), which had to be manually implemented for every user type.
 
 **What it would enable:** Blanket impl `impl<T: !Unset> NotUnset for T {}`, any type that isn't `Unset` automatically satisfies the bound. This would make the type-level builder pattern (Option C) viable.
 
-**Why we can't use it:** Negative impls have been discussed since 2015 but never stabilized. Coherence implications are complex.
+**Why it's not used:** Negative impls have been discussed since 2015 but never stabilized. Coherence implications are complex.
 
 **Impact if stabilized:** Would make the type-level builder ergonomic enough to recommend over the `endpoint!` macro. Currently, Option C is impractical precisely because of this limitation.
 
-## Features We Could Use But Choose Not To
+## Stable Features Typeway Doesn't Use
 
 ### GATs (Generic Associated Types): Stable Since 1.65
 
@@ -161,7 +161,7 @@ trait StreamingExtractor {
 }
 ```
 
-**Why we don't use them:** The core design (HList paths, endpoint tuples, trait-based dispatch) doesn't benefit from GATs. The patterns we use (flat tuple impls via macros, PhantomData markers) are simpler and produce better error messages. GATs would add complexity without improving the user-facing API.
+**Why typeway doesn't use them:** The core design (HList paths, endpoint tuples, trait-based dispatch) doesn't benefit from GATs. The patterns typeway uses (flat tuple impls via macros, PhantomData markers) are simpler and produce better error messages. GATs would add complexity without improving the user-facing API.
 
 **Where they could help:** Custom streaming extractors that borrow from the request. Currently, `FromRequest` returns owned data (`Bytes`). A GAT-based version could return borrowed data with a lifetime tied to the request. This is a potential future enhancement for advanced use cases, not a core framework change.
 
@@ -176,7 +176,7 @@ struct RateLimited<const MAX: u32, const WINDOW_SECS: u64, E>(PhantomData<E>);
 type Limited = RateLimited<100, 60, GetEndpoint<UsersPath, String>>;
 ```
 
-**Why we don't use them (much):** The trait-based approach is more readable in practice:
+**Why typeway doesn't use them (much):** The trait-based approach is more readable in practice:
 
 ```rust
 // Const generics: concise but opaque
@@ -193,7 +193,7 @@ type E = RateLimited<StandardRate, GetEndpoint<...>>;
 
 The trait approach names the configuration (`StandardRate`), making it reusable and readable. The const generic approach is terser but anonymous, you can't tell what `100, 60` means without context.
 
-**Where they could help:** For simple, well-understood constants (max body size, timeout duration) where a named type would be overkill. We may adopt this selectively for specific wrappers.
+**Where they could help:** For simple, well-understood constants (max body size, timeout duration) where a named type would be overkill. Typeway may adopt this selectively for specific wrappers.
 
 ## Summary
 

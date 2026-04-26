@@ -98,7 +98,7 @@ let slice = &bytes[offset..offset + str_len];
 
 **Invariant:** `str::from_utf8(slice)` validates UTF-8 on the line above. The `to_vec()` copies the same bytes, so they're still valid UTF-8.
 
-**Why unsafe:** `String::from_utf8(vec)` would re-validate the bytes we just validated. Using `from_utf8_unchecked` skips the redundant O(n) scan. This saves one full pass over the string data.
+**Why unsafe:** `String::from_utf8(vec)` would re-validate the bytes already validated above. Using `from_utf8_unchecked` skips the redundant O(n) scan. This saves one full pass over the string data.
 
 **Appears in:** LenString decode, optional string decode, repeated string decode, LenBytesStr decode.
 

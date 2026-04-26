@@ -86,7 +86,7 @@ This aligns with the "Typical" project's philosophy: use algebraic data types wi
 
 ### 3.2 Typestate Pattern for Message Construction
 
-Serde already uses typestates internally for its `Serializer` trait. We apply the same idea to message building, a message under construction carries compile-time proof of which required fields have been set:
+Serde already uses typestates internally for its `Serializer` trait. Typeway-protobuf applies the same idea to message building: a message under construction carries compile-time proof of which required fields have been set:
 
 ```rust
 // Generated builder with typestate tracking

@@ -444,7 +444,7 @@ The gains over prost come from compile-time field layout knowledge: tag numbers,
 ### Remaining gaps
 
 - **Production use.** typeway-grpc has not been deployed in production. Tonic has. This matters.
-- **Official gRPC conformance suite.** We have our own smoke tests but have not run the official gRPC interop test suite.
+- **Official gRPC conformance suite.** Smoke tests are in place but the official gRPC interop test suite has not been run.
 - **Load balancing.** Retry and circuit breaking exist, but there is no built-in load balancer or service discovery.
 
 ## Migration from Tonic

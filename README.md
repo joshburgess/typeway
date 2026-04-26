@@ -626,7 +626,7 @@ let swagger_json = typeway_openapi::to_swagger2_json(&spec_3x);
 
 ## Performance: The Cost of Type Safety
 
-Type-level frameworks invite skepticism about runtime cost. Typeway's type erasure and extractor machinery add overhead, but we've measured it, and it's negligible compared to real handler work.
+Type-level frameworks invite skepticism about runtime cost. Typeway's type erasure and extractor machinery add overhead, but it's negligible compared to real handler work.
 
 ### Dispatch Overhead
 
