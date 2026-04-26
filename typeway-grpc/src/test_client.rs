@@ -85,8 +85,8 @@ impl GrpcTestClient {
             .headers()
             .get("grpc-message")
             .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
+            .map(crate::status::decode_grpc_message)
+            .unwrap_or_default();
 
         let body_bytes = response.bytes().await.unwrap_or_default();
 
@@ -146,8 +146,8 @@ impl GrpcTestClient {
             .headers()
             .get("grpc-message")
             .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
+            .map(crate::status::decode_grpc_message)
+            .unwrap_or_default();
 
         let body_bytes = response.bytes().await.unwrap_or_default();
 

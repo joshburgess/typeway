@@ -282,13 +282,63 @@ impl GrpcStatus {
     /// Convert to gRPC response headers.
     ///
     /// Always includes `grpc-status`. Includes `grpc-message` only when
-    /// the message is non-empty.
+    /// the message is non-empty. The message is percent-encoded per the
+    /// gRPC spec so it can survive transport in an HTTP header value.
     pub fn to_headers(&self) -> Vec<(String, String)> {
         let mut headers = vec![("grpc-status".to_string(), self.code.as_i32().to_string())];
         if !self.message.is_empty() {
-            headers.push(("grpc-message".to_string(), self.message.clone()));
+            headers.push(("grpc-message".to_string(), encode_grpc_message(&self.message)));
         }
         headers
+    }
+}
+
+/// Percent-encode a `grpc-message` value for HTTP transport.
+///
+/// Per the gRPC HTTP/2 spec, `grpc-message` is conceptually a Unicode
+/// string but is physically encoded as UTF-8 then percent-escaped so that
+/// any byte outside the visible ASCII range (`0x20`–`0x7E`) plus `%`
+/// itself is replaced with `%XX` (uppercase hex). Without this, header
+/// libraries reject control characters and non-ASCII bytes.
+pub fn encode_grpc_message(message: &str) -> String {
+    let mut out = String::with_capacity(message.len());
+    for &b in message.as_bytes() {
+        if (0x20..=0x7E).contains(&b) && b != b'%' {
+            out.push(b as char);
+        } else {
+            out.push('%');
+            out.push_str(&format!("{:02X}", b));
+        }
+    }
+    out
+}
+
+/// Percent-decode a `grpc-message` header value.
+///
+/// Inverse of [`encode_grpc_message`]. Per spec, decoders MUST NOT error
+/// on invalid escapes: any malformed `%XX` sequence is left as-is in the
+/// output. The result is interpreted as UTF-8; invalid UTF-8 falls back
+/// to the raw input.
+pub fn decode_grpc_message(message: &str) -> String {
+    let bytes = message.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(hi), Some(lo)) = (hi, lo) {
+                out.push((hi * 16 + lo) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    match String::from_utf8(out) {
+        Ok(s) => s,
+        Err(_) => message.to_string(),
     }
 }
 
@@ -356,6 +406,45 @@ impl IntoGrpcStatus for http::StatusCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grpc_message_encode_passes_through_visible_ascii() {
+        assert_eq!(encode_grpc_message("hello world"), "hello world");
+        assert_eq!(encode_grpc_message("user not found"), "user not found");
+    }
+
+    #[test]
+    fn grpc_message_encode_escapes_special_bytes() {
+        assert_eq!(encode_grpc_message("\t"), "%09");
+        assert_eq!(encode_grpc_message("\n"), "%0A");
+        assert_eq!(encode_grpc_message("\r"), "%0D");
+        assert_eq!(encode_grpc_message("%"), "%25");
+        assert_eq!(encode_grpc_message("文"), "%E6%96%87");
+    }
+
+    #[test]
+    fn grpc_message_round_trips() {
+        let inputs = [
+            "",
+            "plain message",
+            "\t\n\r",
+            "unicode: 文字",
+            "100% safe",
+            "\t\n\r unicode: 文字",
+        ];
+        for s in &inputs {
+            let encoded = encode_grpc_message(s);
+            let decoded = decode_grpc_message(&encoded);
+            assert_eq!(decoded, *s, "round trip failed for {s:?}");
+        }
+    }
+
+    #[test]
+    fn grpc_message_decode_leaves_invalid_escapes_alone() {
+        assert_eq!(decode_grpc_message("%ZZ"), "%ZZ");
+        assert_eq!(decode_grpc_message("100%"), "100%");
+        assert_eq!(decode_grpc_message("%2"), "%2");
+    }
 
     #[test]
     fn success_codes_map_to_ok() {

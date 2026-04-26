@@ -18,7 +18,7 @@ use http::HeaderMap;
 use http_body::Frame;
 use pin_project_lite::pin_project;
 
-use crate::status::{GrpcCode, GrpcStatus};
+use crate::status::{encode_grpc_message, GrpcCode, GrpcStatus};
 
 /// Build a trailers `HeaderMap` from a [`GrpcStatus`].
 fn status_to_trailers(status: &GrpcStatus) -> HeaderMap {
@@ -33,7 +33,8 @@ fn status_to_trailers(status: &GrpcStatus) -> HeaderMap {
             .expect("valid grpc-status value"),
     );
     if !status.message.is_empty() {
-        if let Ok(val) = status.message.parse() {
+        let encoded = encode_grpc_message(&status.message);
+        if let Ok(val) = encoded.parse() {
             trailers.insert("grpc-message", val);
         }
     }

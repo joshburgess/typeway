@@ -590,8 +590,8 @@ impl GrpcClient {
             .headers()
             .get("grpc-message")
             .and_then(|v| v.to_str().ok())
-            .unwrap_or("")
-            .to_string();
+            .map(crate::status::decode_grpc_message)
+            .unwrap_or_default();
 
         if grpc_status != 0 {
             let body = response.bytes().await.unwrap_or_default();
