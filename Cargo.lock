@@ -3432,6 +3432,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "pin-project-lite",
  "prost",
  "prost-build",
  "tokio",

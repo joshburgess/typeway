@@ -27,7 +27,7 @@ use tokio::net::TcpListener;
 use typeway_grpc::framing::{decode_grpc_frames, encode_grpc_frame};
 use typeway_interop::server::TestService;
 use typeway_interop::testing::{
-    Payload, PayloadType, ResponseParameters, StreamingInputCallRequest,
+    EchoStatus, Payload, PayloadType, ResponseParameters, StreamingInputCallRequest,
     StreamingInputCallResponse, StreamingOutputCallRequest, StreamingOutputCallResponse,
 };
 
@@ -264,6 +264,75 @@ async fn empty_stream() {
 
     assert_eq!(code, 0, "expected OK; got grpc-status {code} ({msg:?})");
     assert!(frames.is_empty(), "empty_stream should yield no frames");
+}
+
+// ---------------------------------------------------------------------------
+// status_code_and_message on FullDuplexCall
+// ---------------------------------------------------------------------------
+//
+// > Verifies that a FullDuplexCall request can specify the EchoStatus it
+// > wants back, and that both the code and the message reach the client
+// > via the trailers frame at end-of-stream.
+
+#[tokio::test]
+async fn full_duplex_status_code_and_message() {
+    let addr = start_server().await;
+    let req = StreamingOutputCallRequest {
+        response_status: Some(EchoStatus {
+            code: 2,
+            message: "test status message".into(),
+        }),
+        ..Default::default()
+    };
+    let (code, frames, msg) = streaming_call(
+        addr,
+        "/grpc.testing.TestService/FullDuplexCall",
+        &[req.encode_to_vec()],
+    )
+    .await;
+
+    assert_eq!(code, 2, "expected UNKNOWN; got grpc-status {code}");
+    assert_eq!(msg, "test status message");
+    assert!(frames.is_empty(), "error responses have no data frames");
+}
+
+#[tokio::test]
+async fn full_duplex_status_after_data_frame() {
+    let addr = start_server().await;
+    // First request asks for one response of size 16; second request
+    // asks for a non-OK status. The server should emit one data frame
+    // and then trailers carrying the error.
+    let req1 = StreamingOutputCallRequest {
+        response_parameters: vec![ResponseParameters {
+            size: 16,
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let req2 = StreamingOutputCallRequest {
+        response_status: Some(EchoStatus {
+            code: 9, // FAILED_PRECONDITION
+            message: "stop after one".into(),
+        }),
+        ..Default::default()
+    };
+
+    let (code, frames, msg) = streaming_call(
+        addr,
+        "/grpc.testing.TestService/FullDuplexCall",
+        &[req1.encode_to_vec(), req2.encode_to_vec()],
+    )
+    .await;
+
+    assert_eq!(code, 9);
+    assert_eq!(msg, "stop after one");
+    assert_eq!(
+        frames.len(),
+        1,
+        "should have emitted exactly the one data frame before the error"
+    );
+    let resp = StreamingOutputCallResponse::decode(frames[0].clone()).expect("decodes");
+    assert_eq!(resp.payload.unwrap().body.len(), 16);
 }
 
 // ---------------------------------------------------------------------------

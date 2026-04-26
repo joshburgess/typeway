@@ -30,12 +30,20 @@ pub enum GrpcCode {
     PermissionDenied = 7,
     /// Some resource has been exhausted (e.g., rate limit).
     ResourceExhausted = 8,
+    /// The system is not in a state required for the operation.
+    FailedPrecondition = 9,
+    /// The operation was aborted (often due to a concurrency conflict).
+    Aborted = 10,
+    /// The operation was attempted past the valid range.
+    OutOfRange = 11,
     /// The operation is not implemented or not supported.
     Unimplemented = 12,
     /// Internal server error.
     Internal = 13,
     /// The service is currently unavailable.
     Unavailable = 14,
+    /// Unrecoverable data loss or corruption.
+    DataLoss = 15,
     /// The caller is not authenticated.
     Unauthenticated = 16,
 }
@@ -70,9 +78,13 @@ impl GrpcCode {
             6 => GrpcCode::AlreadyExists,
             7 => GrpcCode::PermissionDenied,
             8 => GrpcCode::ResourceExhausted,
+            9 => GrpcCode::FailedPrecondition,
+            10 => GrpcCode::Aborted,
+            11 => GrpcCode::OutOfRange,
             12 => GrpcCode::Unimplemented,
             13 => GrpcCode::Internal,
             14 => GrpcCode::Unavailable,
+            15 => GrpcCode::DataLoss,
             16 => GrpcCode::Unauthenticated,
             _ => GrpcCode::Unknown,
         }
@@ -91,9 +103,13 @@ impl std::fmt::Display for GrpcCode {
             GrpcCode::AlreadyExists => "ALREADY_EXISTS",
             GrpcCode::PermissionDenied => "PERMISSION_DENIED",
             GrpcCode::ResourceExhausted => "RESOURCE_EXHAUSTED",
+            GrpcCode::FailedPrecondition => "FAILED_PRECONDITION",
+            GrpcCode::Aborted => "ABORTED",
+            GrpcCode::OutOfRange => "OUT_OF_RANGE",
             GrpcCode::Unimplemented => "UNIMPLEMENTED",
             GrpcCode::Internal => "INTERNAL",
             GrpcCode::Unavailable => "UNAVAILABLE",
+            GrpcCode::DataLoss => "DATA_LOSS",
             GrpcCode::Unauthenticated => "UNAUTHENTICATED",
         };
         f.write_str(name)
@@ -539,9 +555,13 @@ mod tests {
         assert_eq!(GrpcCode::from_i32(6), GrpcCode::AlreadyExists);
         assert_eq!(GrpcCode::from_i32(7), GrpcCode::PermissionDenied);
         assert_eq!(GrpcCode::from_i32(8), GrpcCode::ResourceExhausted);
+        assert_eq!(GrpcCode::from_i32(9), GrpcCode::FailedPrecondition);
+        assert_eq!(GrpcCode::from_i32(10), GrpcCode::Aborted);
+        assert_eq!(GrpcCode::from_i32(11), GrpcCode::OutOfRange);
         assert_eq!(GrpcCode::from_i32(12), GrpcCode::Unimplemented);
         assert_eq!(GrpcCode::from_i32(13), GrpcCode::Internal);
         assert_eq!(GrpcCode::from_i32(14), GrpcCode::Unavailable);
+        assert_eq!(GrpcCode::from_i32(15), GrpcCode::DataLoss);
         assert_eq!(GrpcCode::from_i32(16), GrpcCode::Unauthenticated);
     }
 

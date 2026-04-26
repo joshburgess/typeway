@@ -20,8 +20,12 @@ use prost::Message;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 
+use http::HeaderMap;
+use http_body::Frame;
+use pin_project_lite::pin_project;
+
 use typeway_grpc::framing::{decode_grpc_frame, encode_grpc_frame};
-use typeway_grpc::status::{GrpcCode, GrpcStatus};
+use typeway_grpc::status::{encode_grpc_message, GrpcCode, GrpcStatus};
 use typeway_grpc::trailer_body::{GrpcBody, GrpcStreamBody};
 
 use crate::testing::{
@@ -282,7 +286,7 @@ where
     B: Body<Data = Bytes> + Send + Unpin + 'static,
     B::Error: std::fmt::Display + Send + 'static,
 {
-    let (tx, rx) = mpsc::channel::<Bytes>(8);
+    let (tx, rx) = mpsc::channel::<StreamItem>(8);
     tokio::spawn(async move {
         let mut reader = GrpcFrameReader::new(body);
         loop {
@@ -290,31 +294,71 @@ where
                 Some(Ok(frame)) => {
                     let req = match StreamingOutputCallRequest::decode(frame) {
                         Ok(r) => r,
-                        Err(_) => break,
+                        Err(e) => {
+                            let _ = tx
+                                .send(StreamItem::Status(GrpcStatus {
+                                    code: GrpcCode::InvalidArgument,
+                                    message: format!("decode error: {e}"),
+                                }))
+                                .await;
+                            return;
+                        }
                     };
                     if let Some(echo) = req.response_status.as_ref() {
                         if echo.code != 0 {
-                            // Drop tx so trailers carry the right status. The
-                            // status itself goes through the body's status
-                            // field, which GrpcStreamBody reads at close.
-                            // For now the test client only relies on the
-                            // status reaching it, so the simplest path is
-                            // to encode an error_response and bail. Bidi
-                            // error reporting mid-stream would require a
-                            // dedicated channel; we don't need it for the
-                            // upstream interop scenarios.
+                            let _ = tx
+                                .send(StreamItem::Status(GrpcStatus {
+                                    code: GrpcCode::from_i32(echo.code),
+                                    message: echo.message.clone(),
+                                }))
+                                .await;
                             return;
                         }
                     }
-                    emit_response_parameters(req.response_parameters, &tx).await;
+                    if !emit_response_parameters_dynamic(req.response_parameters, &tx).await {
+                        return;
+                    }
                 }
-                Some(Err(_)) => break,
+                Some(Err(e)) => {
+                    let _ = tx
+                        .send(StreamItem::Status(GrpcStatus {
+                            code: GrpcCode::Internal,
+                            message: e,
+                        }))
+                        .await;
+                    return;
+                }
                 None => break,
             }
         }
     });
 
-    stream_response(GrpcStreamBody::new(rx))
+    let mut res = http::Response::new(UnsyncBoxBody::new(StreamingResponseBody::new(rx)));
+    *res.status_mut() = http::StatusCode::OK;
+    res.headers_mut().insert(
+        http::header::CONTENT_TYPE,
+        http::HeaderValue::from_static("application/grpc+proto"),
+    );
+    res
+}
+
+async fn emit_response_parameters_dynamic(
+    params: Vec<ResponseParameters>,
+    tx: &mpsc::Sender<StreamItem>,
+) -> bool {
+    for p in params {
+        let size = p.size.max(0) as usize;
+        let resp = StreamingOutputCallResponse {
+            payload: Some(payload_of(size)),
+        };
+        let mut buf = Vec::with_capacity(resp.encoded_len());
+        resp.encode(&mut buf).expect("prost encode is infallible");
+        let frame = Bytes::from(encode_grpc_frame(&buf));
+        if tx.send(StreamItem::Data(frame)).await.is_err() {
+            return false;
+        }
+    }
+    true
 }
 
 async fn emit_response_parameters(params: Vec<ResponseParameters>, tx: &mpsc::Sender<Bytes>) {
@@ -440,4 +484,93 @@ where
         let payload = self.buf.split_to(len).freeze();
         Some(Ok(payload))
     }
+}
+
+/// Item type for the bidi response channel: either a data frame or a
+/// final status. The first `Status` item drains the channel and emits
+/// trailers; if the channel closes without one, trailers default to OK.
+enum StreamItem {
+    Data(Bytes),
+    Status(GrpcStatus),
+}
+
+pin_project! {
+    /// A response body for bidi streaming RPCs whose final
+    /// `grpc-status` is decided dynamically by the worker task.
+    ///
+    /// Unlike [`GrpcStreamBody`], whose final status is fixed at
+    /// construction time, this body lets the worker emit a [`StreamItem`]
+    /// of either `Data(Bytes)` (a gRPC-framed message) or
+    /// `Status(GrpcStatus)` (the trailers). The first `Status` ends the
+    /// stream; if the worker drops the sender without sending one,
+    /// trailers carry `grpc-status: 0` (OK).
+    struct StreamingResponseBody {
+        #[pin]
+        receiver: mpsc::Receiver<StreamItem>,
+        done: bool,
+    }
+}
+
+impl StreamingResponseBody {
+    fn new(receiver: mpsc::Receiver<StreamItem>) -> Self {
+        Self {
+            receiver,
+            done: false,
+        }
+    }
+}
+
+impl Body for StreamingResponseBody {
+    type Data = Bytes;
+    type Error = Infallible;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, Infallible>>> {
+        let mut this = self.project();
+        if *this.done {
+            return Poll::Ready(None);
+        }
+        match this.receiver.as_mut().poll_recv(cx) {
+            Poll::Ready(Some(StreamItem::Data(d))) => Poll::Ready(Some(Ok(Frame::data(d)))),
+            Poll::Ready(Some(StreamItem::Status(s))) => {
+                *this.done = true;
+                Poll::Ready(Some(Ok(Frame::trailers(build_status_trailers(&s)))))
+            }
+            Poll::Ready(None) => {
+                *this.done = true;
+                let ok = GrpcStatus {
+                    code: GrpcCode::Ok,
+                    message: String::new(),
+                };
+                Poll::Ready(Some(Ok(Frame::trailers(build_status_trailers(&ok)))))
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.done
+    }
+}
+
+fn build_status_trailers(status: &GrpcStatus) -> HeaderMap {
+    let mut trailers = HeaderMap::new();
+    trailers.insert(
+        "grpc-status",
+        status
+            .code
+            .as_i32()
+            .to_string()
+            .parse()
+            .expect("valid grpc-status value"),
+    );
+    if !status.message.is_empty() {
+        let encoded = encode_grpc_message(&status.message);
+        if let Ok(val) = encoded.parse() {
+            trailers.insert("grpc-message", val);
+        }
+    }
+    trailers
 }

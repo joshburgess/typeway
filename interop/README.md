@@ -61,11 +61,6 @@ The suite is split across two layers:
 - **TLS / OAuth / JWT scenarios.** These exercise auth integrations
   rather than gRPC wire compliance, and typeway-grpc's auth story is
   layered above the transport.
-- **Mid-stream error reporting on FullDuplexCall.** The bidi handler
-  currently emits OK trailers when the client sends `response_status`
-  with a non-OK code; reporting that error in trailers requires a
-  small extension to `GrpcStreamBody` and is not exercised by the
-  upstream interop test list.
 
 ## Running
 
