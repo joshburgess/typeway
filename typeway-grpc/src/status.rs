@@ -303,7 +303,10 @@ impl GrpcStatus {
     pub fn to_headers(&self) -> Vec<(String, String)> {
         let mut headers = vec![("grpc-status".to_string(), self.code.as_i32().to_string())];
         if !self.message.is_empty() {
-            headers.push(("grpc-message".to_string(), encode_grpc_message(&self.message)));
+            headers.push((
+                "grpc-message".to_string(),
+                encode_grpc_message(&self.message),
+            ));
         }
         headers
     }

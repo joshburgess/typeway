@@ -4,13 +4,14 @@
 //! Each upstream RPC is dispatched on `req.uri().path()`. Unary methods
 //! decode the prost request, run the handler, and emit a `GrpcBody`
 //! response. Streaming methods consume frames from the request body via
-//! [`GrpcFrameReader`] and emit frames through a [`GrpcStreamBody`]
-//! channel, with HTTP/2 trailers carrying `grpc-status` / `grpc-message`.
+//! a private framing reader and emit frames through a private streaming
+//! body, with HTTP/2 trailers carrying `grpc-status` / `grpc-message`.
 
 use std::convert::Infallible;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
 use http_body::Body;
@@ -18,15 +19,16 @@ use http_body_util::combinators::UnsyncBoxBody;
 use http_body_util::{BodyExt, BodyStream};
 use prost::Message;
 use tokio::sync::mpsc;
+use tokio::time::Instant;
 use tokio_stream::StreamExt;
 
-use http::HeaderMap;
+use http::{HeaderMap, HeaderName, HeaderValue};
 use http_body::Frame;
 use pin_project_lite::pin_project;
 
 use typeway_grpc::framing::{decode_grpc_frame, encode_grpc_frame};
-use typeway_grpc::status::{encode_grpc_message, GrpcCode, GrpcStatus};
-use typeway_grpc::trailer_body::{GrpcBody, GrpcStreamBody};
+use typeway_grpc::status::{encode_grpc_message, parse_grpc_timeout, GrpcCode, GrpcStatus};
+use typeway_grpc::trailer_body::GrpcBody;
 
 use crate::testing::{
     Empty, Payload, PayloadType, ResponseParameters, SimpleRequest, SimpleResponse,
@@ -34,12 +36,16 @@ use crate::testing::{
     StreamingOutputCallResponse,
 };
 
+const ECHO_INITIAL_HEADER: &str = "x-grpc-test-echo-initial";
+const ECHO_TRAILING_HEADER: &str = "x-grpc-test-echo-trailing-bin";
+
 /// Unified response body type for the interop service.
 ///
-/// Unary handlers return a [`GrpcBody`] (single data frame + trailers);
-/// streaming handlers return a [`GrpcStreamBody`] (multiple data frames
-/// + trailers). Both implement `http_body::Body<Data = Bytes, Error =
-/// Infallible>`, so they're erased into a single concrete body type.
+/// Unary handlers return a `GrpcBody` (single data frame + trailers);
+/// streaming handlers return a private streaming body (multiple data
+/// frames + dynamic trailers). Both implement `http_body::Body<Data =
+/// Bytes, Error = Infallible>`, so they're erased into a single concrete
+/// body type.
 pub type RespBody = UnsyncBoxBody<Bytes, Infallible>;
 
 /// Tower service for `grpc.testing.TestService`.
@@ -73,12 +79,43 @@ where
     }
 }
 
+/// Out-of-band call options parsed from request headers.
+///
+/// The upstream `interop` suite expects servers to honour:
+/// - `x-grpc-test-echo-initial`: copy verbatim into response headers
+/// - `x-grpc-test-echo-trailing-bin`: copy verbatim into response trailers
+/// - `grpc-timeout`: deadline for the entire call
+#[derive(Default, Clone)]
+struct CallExtras {
+    echo_initial: Option<HeaderValue>,
+    echo_trailing: Option<HeaderValue>,
+    deadline: Option<Instant>,
+}
+
+impl CallExtras {
+    fn from_headers(headers: &HeaderMap) -> Self {
+        let echo_initial = headers.get(ECHO_INITIAL_HEADER).cloned();
+        let echo_trailing = headers.get(ECHO_TRAILING_HEADER).cloned();
+        let deadline = headers
+            .get("grpc-timeout")
+            .and_then(|v| v.to_str().ok())
+            .and_then(parse_grpc_timeout)
+            .map(|d| Instant::now() + d);
+        Self {
+            echo_initial,
+            echo_trailing,
+            deadline,
+        }
+    }
+}
+
 async fn dispatch<B>(path: &str, req: http::Request<B>) -> http::Response<RespBody>
 where
     B: Body<Data = Bytes> + Send + Unpin + 'static,
     B::Error: std::fmt::Display + Send + 'static,
 {
-    match path {
+    let extras = CallExtras::from_headers(req.headers());
+    let resp = match path {
         "/grpc.testing.TestService/EmptyCall" => {
             let body = match collect_body(req).await {
                 Ok(b) => b,
@@ -86,20 +123,22 @@ where
             };
             unary::<Empty, Empty, _, _>(body, empty_call)
         }
-        "/grpc.testing.TestService/UnaryCall"
-        | "/grpc.testing.TestService/CacheableUnaryCall" => {
+        "/grpc.testing.TestService/UnaryCall" | "/grpc.testing.TestService/CacheableUnaryCall" => {
             let body = match collect_body(req).await {
                 Ok(b) => b,
                 Err(r) => return r,
             };
-            unary::<SimpleRequest, SimpleResponse, _, _>(body, simple_unary_call)
+            with_deadline_unary(extras.deadline, async move {
+                unary::<SimpleRequest, SimpleResponse, _, _>(body, simple_unary_call)
+            })
+            .await
         }
         "/grpc.testing.TestService/StreamingOutputCall" => {
             let body = match collect_body(req).await {
                 Ok(b) => b,
                 Err(r) => return r,
             };
-            streaming_output_call(body)
+            streaming_output_call(body, extras.deadline)
         }
         "/grpc.testing.TestService/StreamingInputCall" => {
             let body = match collect_body(req).await {
@@ -108,19 +147,58 @@ where
             };
             streaming_input_call(body)
         }
-        "/grpc.testing.TestService/FullDuplexCall"
-        | "/grpc.testing.TestService/HalfDuplexCall" => full_duplex_call(req.into_body()),
-        "/grpc.testing.TestService/UnimplementedCall"
-        | "/grpc.testing.UnimplementedService/UnimplementedCall" => {
-            error_response(GrpcStatus {
-                code: GrpcCode::Unimplemented,
-                message: String::new(),
-            })
+        "/grpc.testing.TestService/FullDuplexCall" | "/grpc.testing.TestService/HalfDuplexCall" => {
+            full_duplex_call(req.into_body(), extras.deadline)
         }
+        "/grpc.testing.TestService/UnimplementedCall"
+        | "/grpc.testing.UnimplementedService/UnimplementedCall" => error_response(GrpcStatus {
+            code: GrpcCode::Unimplemented,
+            message: String::new(),
+        }),
         _ => error_response(GrpcStatus {
             code: GrpcCode::Unimplemented,
             message: format!("unknown method: {path}"),
         }),
+    };
+    apply_extras(resp, extras)
+}
+
+/// Inject the echo-initial response header and wrap the body so the
+/// echo-trailing-bin header is appended to the trailers frame.
+fn apply_extras(
+    mut resp: http::Response<RespBody>,
+    extras: CallExtras,
+) -> http::Response<RespBody> {
+    if let Some(v) = extras.echo_initial.clone() {
+        resp.headers_mut()
+            .insert(HeaderName::from_static(ECHO_INITIAL_HEADER), v);
+    }
+    if extras.echo_trailing.is_some() {
+        let (parts, body) = resp.into_parts();
+        let wrapped = WithExtraTrailers {
+            inner: body,
+            extra: extras.echo_trailing,
+            extra_name: HeaderName::from_static(ECHO_TRAILING_HEADER),
+            sent_extra: false,
+        };
+        return http::Response::from_parts(parts, UnsyncBoxBody::new(wrapped));
+    }
+    resp
+}
+
+async fn with_deadline_unary<F>(deadline: Option<Instant>, fut: F) -> http::Response<RespBody>
+where
+    F: Future<Output = http::Response<RespBody>>,
+{
+    match deadline {
+        Some(d) => match tokio::time::timeout_at(d, fut).await {
+            Ok(r) => r,
+            Err(_) => error_response(GrpcStatus {
+                code: GrpcCode::DeadlineExceeded,
+                message: "deadline exceeded".into(),
+            }),
+        },
+        None => fut.await,
     }
 }
 
@@ -210,7 +288,7 @@ fn simple_unary_call(req: SimpleRequest) -> Result<SimpleResponse, GrpcStatus> {
     })
 }
 
-fn streaming_output_call(framed: Bytes) -> http::Response<RespBody> {
+fn streaming_output_call(framed: Bytes, deadline: Option<Instant>) -> http::Response<RespBody> {
     let payload = match decode_grpc_frame(&framed) {
         Ok(p) => p,
         Err(e) => {
@@ -239,12 +317,12 @@ fn streaming_output_call(framed: Bytes) -> http::Response<RespBody> {
         }
     }
 
-    let (tx, rx) = mpsc::channel::<Bytes>(8);
+    let (tx, rx) = mpsc::channel::<StreamItem>(8);
     tokio::spawn(async move {
-        emit_response_parameters(req.response_parameters, &tx).await;
+        emit_response_parameters_dynamic(req.response_parameters, &tx, deadline).await;
     });
 
-    stream_response(GrpcStreamBody::new(rx))
+    stream_response_dynamic(rx)
 }
 
 fn streaming_input_call(framed: Bytes) -> http::Response<RespBody> {
@@ -281,7 +359,7 @@ fn streaming_input_call(framed: Bytes) -> http::Response<RespBody> {
     })
 }
 
-fn full_duplex_call<B>(body: B) -> http::Response<RespBody>
+fn full_duplex_call<B>(body: B, deadline: Option<Instant>) -> http::Response<RespBody>
 where
     B: Body<Data = Bytes> + Send + Unpin + 'static,
     B::Error: std::fmt::Display + Send + 'static,
@@ -290,8 +368,8 @@ where
     tokio::spawn(async move {
         let mut reader = GrpcFrameReader::new(body);
         loop {
-            match reader.next_frame().await {
-                Some(Ok(frame)) => {
+            match read_next_frame_with_deadline(&mut reader, deadline).await {
+                FrameOutcome::Frame(frame) => {
                     let req = match StreamingOutputCallRequest::decode(frame) {
                         Ok(r) => r,
                         Err(e) => {
@@ -315,11 +393,13 @@ where
                             return;
                         }
                     }
-                    if !emit_response_parameters_dynamic(req.response_parameters, &tx).await {
+                    if !emit_response_parameters_dynamic(req.response_parameters, &tx, deadline)
+                        .await
+                    {
                         return;
                     }
                 }
-                Some(Err(e)) => {
+                FrameOutcome::Err(e) => {
                     let _ = tx
                         .send(StreamItem::Status(GrpcStatus {
                             code: GrpcCode::Internal,
@@ -328,25 +408,85 @@ where
                         .await;
                     return;
                 }
-                None => break,
+                FrameOutcome::Eof => break,
+                FrameOutcome::Deadline => {
+                    let _ = tx
+                        .send(StreamItem::Status(GrpcStatus {
+                            code: GrpcCode::DeadlineExceeded,
+                            message: "deadline exceeded".into(),
+                        }))
+                        .await;
+                    return;
+                }
             }
         }
     });
 
-    let mut res = http::Response::new(UnsyncBoxBody::new(StreamingResponseBody::new(rx)));
-    *res.status_mut() = http::StatusCode::OK;
-    res.headers_mut().insert(
-        http::header::CONTENT_TYPE,
-        http::HeaderValue::from_static("application/grpc+proto"),
-    );
-    res
+    stream_response_dynamic(rx)
+}
+
+enum FrameOutcome {
+    Frame(Bytes),
+    Err(String),
+    Eof,
+    Deadline,
+}
+
+async fn read_next_frame_with_deadline<B>(
+    reader: &mut GrpcFrameReader<B>,
+    deadline: Option<Instant>,
+) -> FrameOutcome
+where
+    B: Body<Data = Bytes> + Send + Unpin + 'static,
+    B::Error: std::fmt::Display,
+{
+    match deadline {
+        Some(d) => match tokio::time::timeout_at(d, reader.next_frame()).await {
+            Ok(Some(Ok(frame))) => FrameOutcome::Frame(frame),
+            Ok(Some(Err(e))) => FrameOutcome::Err(e),
+            Ok(None) => FrameOutcome::Eof,
+            Err(_) => FrameOutcome::Deadline,
+        },
+        None => match reader.next_frame().await {
+            Some(Ok(frame)) => FrameOutcome::Frame(frame),
+            Some(Err(e)) => FrameOutcome::Err(e),
+            None => FrameOutcome::Eof,
+        },
+    }
+}
+
+/// Sleep for the given duration, but bail out early if the deadline elapses.
+/// Returns `true` if the sleep completed normally, `false` on deadline.
+async fn sleep_with_deadline(dur: Duration, deadline: Option<Instant>) -> bool {
+    match deadline {
+        Some(d) => tokio::time::timeout_at(d, tokio::time::sleep(dur))
+            .await
+            .is_ok(),
+        None => {
+            tokio::time::sleep(dur).await;
+            true
+        }
+    }
 }
 
 async fn emit_response_parameters_dynamic(
     params: Vec<ResponseParameters>,
     tx: &mpsc::Sender<StreamItem>,
+    deadline: Option<Instant>,
 ) -> bool {
     for p in params {
+        if p.interval_us > 0 {
+            let dur = Duration::from_micros(p.interval_us as u64);
+            if !sleep_with_deadline(dur, deadline).await {
+                let _ = tx
+                    .send(StreamItem::Status(GrpcStatus {
+                        code: GrpcCode::DeadlineExceeded,
+                        message: "deadline exceeded".into(),
+                    }))
+                    .await;
+                return false;
+            }
+        }
         let size = p.size.max(0) as usize;
         let resp = StreamingOutputCallResponse {
             payload: Some(payload_of(size)),
@@ -359,21 +499,6 @@ async fn emit_response_parameters_dynamic(
         }
     }
     true
-}
-
-async fn emit_response_parameters(params: Vec<ResponseParameters>, tx: &mpsc::Sender<Bytes>) {
-    for p in params {
-        let size = p.size.max(0) as usize;
-        let resp = StreamingOutputCallResponse {
-            payload: Some(payload_of(size)),
-        };
-        let mut buf = Vec::with_capacity(resp.encoded_len());
-        resp.encode(&mut buf).expect("prost encode is infallible");
-        let frame = Bytes::from(encode_grpc_frame(&buf));
-        if tx.send(frame).await.is_err() {
-            return;
-        }
-    }
 }
 
 fn payload_of(size: usize) -> Payload {
@@ -406,8 +531,8 @@ fn error_response(status: GrpcStatus) -> http::Response<RespBody> {
     res
 }
 
-fn stream_response(body: GrpcStreamBody) -> http::Response<RespBody> {
-    let mut res = http::Response::new(UnsyncBoxBody::new(body));
+fn stream_response_dynamic(rx: mpsc::Receiver<StreamItem>) -> http::Response<RespBody> {
+    let mut res = http::Response::new(UnsyncBoxBody::new(StreamingResponseBody::new(rx)));
     *res.status_mut() = http::StatusCode::OK;
     res.headers_mut().insert(
         http::header::CONTENT_TYPE,
@@ -454,8 +579,6 @@ where
                     if let Ok(data) = frame.into_data() {
                         self.buf.extend_from_slice(&data);
                     }
-                    // Trailer frames don't matter on the request side; we
-                    // just keep pulling.
                 }
                 Some(Err(e)) => {
                     self.done = true;
@@ -495,15 +618,13 @@ enum StreamItem {
 }
 
 pin_project! {
-    /// A response body for bidi streaming RPCs whose final
+    /// A response body for streaming RPCs whose final
     /// `grpc-status` is decided dynamically by the worker task.
     ///
-    /// Unlike [`GrpcStreamBody`], whose final status is fixed at
-    /// construction time, this body lets the worker emit a [`StreamItem`]
-    /// of either `Data(Bytes)` (a gRPC-framed message) or
-    /// `Status(GrpcStatus)` (the trailers). The first `Status` ends the
-    /// stream; if the worker drops the sender without sending one,
-    /// trailers carry `grpc-status: 0` (OK).
+    /// The worker emits a `StreamItem` of either `Data(Bytes)` (a gRPC-
+    /// framed message) or `Status(GrpcStatus)` (the trailers). The first
+    /// `Status` ends the stream; if the worker drops the sender without
+    /// sending one, trailers carry `grpc-status: 0` (OK).
     struct StreamingResponseBody {
         #[pin]
         receiver: mpsc::Receiver<StreamItem>,
@@ -573,4 +694,68 @@ fn build_status_trailers(status: &GrpcStatus) -> HeaderMap {
         }
     }
     trailers
+}
+
+pin_project! {
+    /// Wraps any inner gRPC response body and appends an extra header to
+    /// whatever trailers frame the inner body emits.
+    ///
+    /// If the inner body never produces trailers (rare for gRPC, but
+    /// allowed by `http_body::Body`), this wrapper synthesises a final
+    /// trailers frame carrying just the extra header so the upstream
+    /// echo contract still holds.
+    struct WithExtraTrailers<B> {
+        #[pin]
+        inner: B,
+        extra: Option<HeaderValue>,
+        extra_name: HeaderName,
+        sent_extra: bool,
+    }
+}
+
+impl<B> Body for WithExtraTrailers<B>
+where
+    B: Body<Data = Bytes, Error = Infallible>,
+{
+    type Data = Bytes;
+    type Error = Infallible;
+
+    fn poll_frame(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Frame<Bytes>, Infallible>>> {
+        let mut this = self.project();
+        match this.inner.as_mut().poll_frame(cx) {
+            Poll::Ready(Some(Ok(frame))) => match frame.into_trailers() {
+                Ok(mut trailers) => {
+                    if !*this.sent_extra {
+                        if let Some(v) = this.extra.take() {
+                            trailers.insert(this.extra_name.clone(), v);
+                        }
+                        *this.sent_extra = true;
+                    }
+                    Poll::Ready(Some(Ok(Frame::trailers(trailers))))
+                }
+                Err(data_frame) => Poll::Ready(Some(Ok(data_frame))),
+            },
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
+            Poll::Ready(None) => {
+                if !*this.sent_extra {
+                    if let Some(v) = this.extra.take() {
+                        let mut trailers = HeaderMap::new();
+                        trailers.insert(this.extra_name.clone(), v);
+                        *this.sent_extra = true;
+                        return Poll::Ready(Some(Ok(Frame::trailers(trailers))));
+                    }
+                    *this.sent_extra = true;
+                }
+                Poll::Ready(None)
+            }
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn is_end_stream(&self) -> bool {
+        self.inner.is_end_stream() && self.sent_extra
+    }
 }

@@ -232,12 +232,8 @@ async fn ping_pong() {
         })
         .collect();
 
-    let (code, frames, msg) = streaming_call(
-        addr,
-        "/grpc.testing.TestService/FullDuplexCall",
-        &messages,
-    )
-    .await;
+    let (code, frames, msg) =
+        streaming_call(addr, "/grpc.testing.TestService/FullDuplexCall", &messages).await;
 
     assert_eq!(code, 0, "expected OK; got grpc-status {code} ({msg:?})");
     assert_eq!(frames.len(), PING_PONG_SIZES.len());

@@ -8,7 +8,7 @@
 //!
 //! 2. **gRPC dispatch** — direct handler dispatch with real HTTP/2 trailers,
 //!    real streaming via `tokio::sync::mpsc`, and codec abstraction
-//!    ([`JsonCodec`], [`BinaryCodec`], [`TypewayCodecAdapter`]).
+//!    ([`JsonCodec`], `BinaryCodec`, [`TypewayCodecAdapter`]).
 //!
 //! 3. **TypewayCodec** — compile-time specialized protobuf encode/decode via
 //!    `#[derive(TypewayCodec)]`, 3-8x faster than runtime codecs.

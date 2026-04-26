@@ -4,7 +4,7 @@
 //! messages. Two implementations:
 //!
 //! - [`JsonCodec`] — JSON encoding (always available, default)
-//! - [`BinaryCodec`] — protobuf binary encoding (behind `proto-binary` feature),
+//! - `BinaryCodec` — protobuf binary encoding (behind `proto-binary` feature),
 //!   enables standard gRPC clients (grpcurl, tonic, Postman) to interop
 
 use std::fmt;
