@@ -14,6 +14,7 @@ members = [
     "examples/versioned-api",
     "examples/iot-gateway",
     "examples/orderbook",
+    "interop",
 ]
 resolver = "2"
 

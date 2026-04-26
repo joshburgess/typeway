@@ -1,0 +1,11 @@
+// Vendored from grpc/grpc/src/proto/grpc/testing/empty.proto
+// (Apache 2.0 / BSD-3 licensed; see LICENSE-APACHE).
+//
+// An empty message used as a placeholder for "no input" or "no output" in
+// the official gRPC interoperability test suite.
+
+syntax = "proto3";
+
+package grpc.testing;
+
+message Empty {}

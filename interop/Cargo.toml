@@ -1,0 +1,50 @@
+[package]
+name = "typeway-interop"
+description = "gRPC interoperability test suite for typeway-grpc"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+publish = false
+
+[lib]
+name = "typeway_interop"
+path = "src/lib.rs"
+
+[[bin]]
+name = "interop-server"
+path = "src/main.rs"
+
+[dependencies]
+typeway = { path = "../typeway", features = ["grpc", "protobuf"] }
+typeway-core = { path = "../typeway-core" }
+typeway-grpc = { path = "../typeway-grpc", features = ["tonic-compat", "grpc-native"] }
+typeway-server = { path = "../typeway-server", features = ["grpc", "protobuf"] }
+typeway-protobuf = { path = "../typeway-protobuf" }
+
+prost = "0.13"
+bytes = "1"
+http = "1"
+http-body = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio", "service", "server-auto", "http2"] }
+tower-service = "0.3"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+[build-dependencies]
+prost-build = "0.13"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full", "test-util"] }
+http = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio", "service", "client", "client-legacy", "http2"] }
+tower-service = "0.3"
+
+[lints]
+workspace = true

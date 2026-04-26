@@ -3423,6 +3423,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "typeway-interop"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "http",
+ "http-body",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "prost",
+ "prost-build",
+ "tokio",
+ "tower-service",
+ "tracing",
+ "tracing-subscriber",
+ "typeway",
+ "typeway-core",
+ "typeway-grpc",
+ "typeway-protobuf",
+ "typeway-server",
+]
+
+[[package]]
 name = "typeway-iot-gateway"
 version = "0.1.0"
 dependencies = [
