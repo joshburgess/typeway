@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### changed:
 
-- **MSRV**: Rust 1.80
+- **MSRV**: Rust 1.88
 
 ### ci:
 
@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clippy with `-D warnings`
 - Format check
 - Documentation build
-- MSRV verification (Rust 1.80)
+- MSRV verification (Rust 1.88)
 - Dependency auditing (`cargo-deny` for advisories + licenses, `cargo-audit` for CVEs)
 - Compile-time tracking (`cargo build --timings` artifacts)
 
