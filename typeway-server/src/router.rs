@@ -485,9 +485,7 @@ impl Router {
                 // Tell `Path<T>` how many bytes of the URI path are prefix.
                 // Skipped when there's no prefix to keep the common path allocation-free.
                 if let Some(ref prefix_str) = inner.prefix_str {
-                    parts
-                        .extensions
-                        .insert(PathPrefixOffset(prefix_str.len()));
+                    parts.extensions.insert(PathPrefixOffset(prefix_str.len()));
                 }
                 if let Some(ref injector) = inner.state_injector {
                     injector(&mut parts.extensions);
@@ -522,10 +520,8 @@ impl Router {
     ///
     /// Used by adapters that have a different body type from `hyper::body::Incoming`
     /// (e.g. the Axum interop layer), and by anything that has already buffered
-    /// a body for an unrelated reason. Bypasses the [`max_body_size`] check;
+    /// a body for an unrelated reason. Bypasses the `max_body_size` check;
     /// the caller is responsible for any size limiting.
-    ///
-    /// [`max_body_size`]: Self::set_max_body_size
     pub fn route_with_bytes(
         self: &Arc<Self>,
         mut parts: http::request::Parts,
@@ -542,9 +538,7 @@ impl Router {
         match resolve(&inner, &parts.method, lookup_path) {
             LookupOutcome::Hit(i) => {
                 if let Some(ref prefix_str) = inner.prefix_str {
-                    parts
-                        .extensions
-                        .insert(PathPrefixOffset(prefix_str.len()));
+                    parts.extensions.insert(PathPrefixOffset(prefix_str.len()));
                 }
                 if let Some(ref injector) = inner.state_injector {
                     injector(&mut parts.extensions);
