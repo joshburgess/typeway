@@ -518,13 +518,15 @@ impl Router {
         }
     }
 
-    /// Route a request with pre-collected body bytes.
+    /// Route a request whose body has already been collected into [`bytes::Bytes`].
     ///
-    /// Used by the Axum interop adapter where the body is collected up front
-    /// to bridge from `axum::body::Body` to the bytes the handler dispatch
-    /// expects.
-    #[cfg(feature = "axum-interop")]
-    pub(crate) fn route_with_bytes(
+    /// Used by adapters that have a different body type from `hyper::body::Incoming`
+    /// (e.g. the Axum interop layer), and by anything that has already buffered
+    /// a body for an unrelated reason. Bypasses the [`max_body_size`] check;
+    /// the caller is responsible for any size limiting.
+    ///
+    /// [`max_body_size`]: Self::set_max_body_size
+    pub fn route_with_bytes(
         self: &Arc<Self>,
         mut parts: http::request::Parts,
         body_bytes: bytes::Bytes,

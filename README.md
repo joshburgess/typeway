@@ -652,20 +652,24 @@ The extractor costs are dominated by `TypeId`-keyed lookups in `http::Extensions
 
 Body bytes are reference-counted (`Bytes`), so passing the pre-collected body to handlers costs ~4 ns regardless of payload size. There is no copy.
 
-### Where Typeway Is Slower Than Axum
+### Routing Throughput vs Axum
 
-Typeway dispatches through a per-method radix trie (`matchit`, the same crate axum uses) with a linear fallback for patterns that conflict structurally. For 10 routes, typeway is roughly 11-18% slower than axum on hits:
+Typeway dispatches through a per-method radix trie (`matchit`, the same crate axum uses) with a linear fallback for patterns that conflict structurally. The `routing` bench compares typeway and axum through Tower's `Service::call` with a `Request<axum::body::Body>`, plus a third row for typeway nested inside `axum::Router`:
 
-| Scenario (10 routes) | Axum | Typeway | Ratio |
-|----------------------|------|---------|-------|
-| First route match | 451 ns | 532 ns | 1.18x |
-| Last route match | 455 ns | 535 ns | 1.18x |
-| Path with captures | 518 ns | 577 ns | 1.11x |
-| No match (404) | 317 ns | 439 ns | 1.39x |
+| Scenario (10 routes) | Axum | Typeway (Tower service) | Typeway nested in `axum::Router` |
+|----------------------|------|-------------------------|----------------------------------|
+| First route match | 441 ns | **301 ns** (0.68x) | 534 ns (1.21x) |
+| Last route match | 444 ns | **302 ns** (0.68x) | 541 ns (1.22x) |
+| Path with captures | 501 ns | **336 ns** (0.67x) | 582 ns (1.16x) |
+| No match (404) | 319 ns | **213 ns** (0.67x) | 443 ns (1.39x) |
 
-(Numbers from `cargo bench --bench routing -p typeway --features "server,axum-interop"` on the same machine. Rerun locally to compare on your hardware.)
+(Numbers from `cargo bench --bench routing -p typeway --features "server,axum-interop"` on an Apple Silicon laptop. Rerun locally to compare. Ratios are vs axum.)
 
-The remaining gap comes mostly from typeway's `RwLock`-guarded router (so config can be added after the router is shared) and from the per-route `match_fn` step that validates typed captures (e.g. confirming that `{}` parses as `u32`, which the trie alone can't check). Axum's matcher doesn't do typed validation, that work moves into the handler. For typical APIs the difference is invisible in end-to-end latency.
+Both frameworks support the same routing surface (multi-method per path, nesting, Tower layers, fallbacks); the interop boundary is just `Service<Request<Body>>`, and what each side does internally doesn't enter into it.
+
+The bench shows typeway is roughly 140 ns/request faster on this workload. I haven't profiled the call path closely enough to attribute that gap with confidence. Treat the table as an empirical observation, not a verdict on either matcher's quality. Both routers use matchit; the trie walks themselves are the same code.
+
+**Cost of nesting.** `typeway_in_axum` measures `Server::<API>::new(...).into_axum_router()`, which uses axum's `fallback_service`. Every request walks axum's outer router *and* typeway's inner router, plus the body has to be re-collected at the adapter boundary because the two layers use different body types. Net: about 120-200 ns over standalone typeway and modestly above axum alone. Use it when you specifically need typeway nested inside an axum tree; for new services, run typeway directly with `Server::serve(addr)` or embed axum inside typeway with `with_axum_fallback()`.
 
 ### The Trade-Off
 
