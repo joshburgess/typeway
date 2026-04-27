@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
-use crate::body::{body_from_string, BoxBody};
+use crate::body::{body_from_bytes, body_from_string, BoxBody};
 use crate::extract::PathPrefixOffset;
 use crate::handler::BoxedHandler;
 
@@ -57,6 +57,11 @@ struct RouterInner {
     /// collapsing onto an existing entry). When true, miss detection falls
     /// back to the per-bucket walk so we don't false-negative.
     any_method_has_fallback: bool,
+    /// Bitmap of which method buckets have routes registered. When the
+    /// request's method bit is the *only* one set, a miss in that bucket
+    /// is a definite 404 with no need to consult `any_method_trie` (saves
+    /// a trie walk on the miss path for single-method APIs).
+    methods_present: u8,
     state_injector: Option<StateInjector>,
     fallback: Option<FallbackService>,
     max_body_size: usize,
@@ -137,6 +142,20 @@ impl MethodIndex {
     }
 }
 
+/// Bit position for `RouterInner::methods_present` for a given HTTP method.
+fn method_bit(method: &http::Method) -> u8 {
+    match *method {
+        http::Method::GET => 1 << 0,
+        http::Method::POST => 1 << 1,
+        http::Method::PUT => 1 << 2,
+        http::Method::DELETE => 1 << 3,
+        http::Method::PATCH => 1 << 4,
+        http::Method::HEAD => 1 << 5,
+        http::Method::OPTIONS => 1 << 6,
+        _ => 1 << 7,
+    }
+}
+
 /// Convert a typeway pattern (`/users/{}/posts/{*rest}`) into the matchit
 /// pattern syntax (`/users/{p0}/posts/{*rest}`). matchit requires every
 /// capture to have a unique name; typeway emits empty `{}` for typed
@@ -189,41 +208,121 @@ fn strip_prefix<'a>(prefix_str: Option<&str>, path: &'a str) -> Option<&'a str> 
     }
 }
 
+/// Lazy holder for the path segments needed by `match_fn`.
+///
+/// Splitting `/a/b/c` into a `SmallVec<[&str; 8]>` is cheap but not free, and
+/// the most common 404 (path doesn't exist in any method) never needs the
+/// segments at all — the trie miss alone is conclusive. Building them on first
+/// `get()` saves the allocation in that case.
+struct LazySegments<'a> {
+    path: &'a str,
+    cache: Option<smallvec::SmallVec<[&'a str; 8]>>,
+}
+
+impl<'a> LazySegments<'a> {
+    fn new(path: &'a str) -> Self {
+        Self { path, cache: None }
+    }
+
+    fn get(&mut self) -> &[&'a str] {
+        self.cache
+            .get_or_insert_with(|| self.path.split('/').filter(|s| !s.is_empty()).collect())
+            .as_slice()
+    }
+}
+
 /// Find the matching route index for a given path within a method bucket.
 /// Tries the trie first, then falls back to a linear scan over conflicts.
+///
+/// Segments are produced lazily: on a clean trie miss with an empty fallback
+/// bucket, we never allocate them at all (the common 404 path).
 fn lookup_in_bucket(
     bucket: &MethodBucket,
     routes: &[RouteEntry],
     lookup_path: &str,
-    segments: &[&str],
+    segments: &mut LazySegments,
 ) -> Option<usize> {
     if let Ok(m) = bucket.trie.at(lookup_path) {
         let idx = *m.value;
-        if (routes[idx].match_fn)(segments) {
+        if (routes[idx].match_fn)(segments.get()) {
             return Some(idx);
         }
     }
+    if bucket.fallback.is_empty() {
+        return None;
+    }
+    let segs = segments.get();
     bucket
         .fallback
         .iter()
         .copied()
-        .find(|&i| (routes[i].match_fn)(segments))
+        .find(|&i| (routes[i].match_fn)(segs))
+}
+
+fn make_status_response(status: StatusCode, body: &'static [u8]) -> http::Response<BoxBody> {
+    let mut res = http::Response::new(body_from_bytes(bytes::Bytes::from_static(body)));
+    *res.status_mut() = status;
+    res
 }
 
 fn not_found_response() -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
-    Box::pin(async move {
-        let mut res = http::Response::new(body_from_string("Not Found".to_string()));
-        *res.status_mut() = StatusCode::NOT_FOUND;
-        res
-    })
+    Box::pin(std::future::ready(make_status_response(
+        StatusCode::NOT_FOUND,
+        b"Not Found",
+    )))
 }
 
 fn method_not_allowed_response() -> Pin<Box<dyn Future<Output = http::Response<BoxBody>> + Send>> {
-    Box::pin(async move {
-        let mut res = http::Response::new(body_from_string("Method Not Allowed".to_string()));
-        *res.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
-        res
-    })
+    Box::pin(std::future::ready(make_status_response(
+        StatusCode::METHOD_NOT_ALLOWED,
+        b"Method Not Allowed",
+    )))
+}
+
+/// Outcome of resolving a request against the routing table.
+enum LookupOutcome {
+    Hit(usize),
+    MethodNotAllowed,
+    NotFound,
+}
+
+/// Run the full lookup (per-method trie, fallback, then 404-vs-405 disambiguation)
+/// for `lookup_path` under `method`. Builds the segments slice lazily, so a clean
+/// 404 with no fallback never allocates one.
+fn resolve(inner: &RouterInner, method: &http::Method, lookup_path: &str) -> LookupOutcome {
+    let mut segments = LazySegments::new(lookup_path);
+
+    let bucket = inner.method_index.bucket(method);
+    if let Some(i) = lookup_in_bucket(bucket, &inner.routes, lookup_path, &mut segments) {
+        return LookupOutcome::Hit(i);
+    }
+
+    // Fast path: if our method bucket is the only populated one, no other
+    // method can possibly accept this path, so a bucket miss is a guaranteed
+    // 404. Skips the unified-trie lookup AND the per-bucket walk.
+    let bit = method_bit(method);
+    if inner.methods_present == bit {
+        return LookupOutcome::NotFound;
+    }
+
+    // General case: if no pattern in any method matches the path *shape*, it's
+    // definitely a 404. The unified `any_method_trie` lets us check this in one
+    // trie lookup. If a structural conflict was recorded at registration, the
+    // unified trie may have a false negative, so we skip the optimization.
+    let any_path_shape =
+        inner.any_method_has_fallback || inner.any_method_trie.at(lookup_path).is_ok();
+    let path_matched = any_path_shape
+        && inner
+            .method_index
+            .all_buckets()
+            .iter()
+            .any(|b| lookup_in_bucket(b, &inner.routes, lookup_path, &mut segments).is_some());
+
+    if path_matched {
+        LookupOutcome::MethodNotAllowed
+    } else {
+        LookupOutcome::NotFound
+    }
 }
 
 impl Router {
@@ -236,6 +335,7 @@ impl Router {
                 any_method_trie: matchit::Router::new(),
                 any_method_seen: HashSet::new(),
                 any_method_has_fallback: false,
+                methods_present: 0,
                 state_injector: None,
                 fallback: None,
                 max_body_size: DEFAULT_MAX_BODY_SIZE,
@@ -280,6 +380,8 @@ impl Router {
     ) {
         let mut inner = self.inner.write();
         let idx = inner.routes.len();
+
+        inner.methods_present |= method_bit(&method);
 
         let matchit_pattern = to_matchit_pattern(&pattern);
         let bucket = inner.method_index.bucket_mut(&method);
@@ -378,71 +480,49 @@ impl Router {
             }
         };
 
-        let segments: smallvec::SmallVec<[&str; 8]> =
-            lookup_path.split('/').filter(|s| !s.is_empty()).collect();
-
-        // Method-bucket trie lookup, then linear fallback for trie conflicts.
-        let bucket = inner.method_index.bucket(&parts.method);
-        if let Some(i) = lookup_in_bucket(bucket, &inner.routes, lookup_path, &segments) {
-            drop(segments);
-            // Tell `Path<T>` how many bytes of the URI path are prefix.
-            // Skipped when there's no prefix to keep the common path allocation-free.
-            if let Some(ref prefix_str) = inner.prefix_str {
-                parts
-                    .extensions
-                    .insert(PathPrefixOffset(prefix_str.len()));
+        match resolve(&inner, &parts.method, lookup_path) {
+            LookupOutcome::Hit(i) => {
+                // Tell `Path<T>` how many bytes of the URI path are prefix.
+                // Skipped when there's no prefix to keep the common path allocation-free.
+                if let Some(ref prefix_str) = inner.prefix_str {
+                    parts
+                        .extensions
+                        .insert(PathPrefixOffset(prefix_str.len()));
+                }
+                if let Some(ref injector) = inner.state_injector {
+                    injector(&mut parts.extensions);
+                }
+                let router = self.clone();
+                let max_body = inner.max_body_size;
+                drop(inner);
+                Box::pin(async move {
+                    let body_bytes = match collect_body_limited(body, max_body).await {
+                        Ok(bytes) => bytes,
+                        Err(resp) => return resp,
+                    };
+                    let fut = {
+                        let inner = router.inner.read();
+                        (inner.routes[i].handler)(parts, body_bytes)
+                    };
+                    fut.await
+                })
             }
-
-            if let Some(ref injector) = inner.state_injector {
-                injector(&mut parts.extensions);
+            LookupOutcome::MethodNotAllowed => method_not_allowed_response(),
+            LookupOutcome::NotFound => {
+                if let Some(ref fallback) = inner.fallback {
+                    fallback(http::Request::from_parts(parts, body))
+                } else {
+                    not_found_response()
+                }
             }
-
-            let router = self.clone();
-            let max_body = inner.max_body_size;
-            drop(inner);
-            return Box::pin(async move {
-                let body_bytes = match collect_body_limited(body, max_body).await {
-                    Ok(bytes) => bytes,
-                    Err(resp) => return resp,
-                };
-                let fut = {
-                    let inner = router.inner.read();
-                    (inner.routes[i].handler)(parts, body_bytes)
-                };
-                fut.await
-            });
-        }
-
-        // Method bucket missed. Determine whether this is a 404 or a 405.
-        //
-        // Fast path: if no pattern in any method matches the path *shape*,
-        // it's definitely a 404. The unified `any_method_trie` lets us check
-        // this in one trie lookup. When a structural conflict was recorded
-        // at registration, the unified trie may have a false negative, so we
-        // skip the optimization in that case.
-        let any_path_shape =
-            inner.any_method_has_fallback || inner.any_method_trie.at(lookup_path).is_ok();
-        let path_matched = any_path_shape
-            && inner
-                .method_index
-                .all_buckets()
-                .iter()
-                .any(|b| lookup_in_bucket(b, &inner.routes, lookup_path, &segments).is_some());
-        drop(segments);
-
-        if path_matched {
-            method_not_allowed_response()
-        } else if let Some(ref fallback) = inner.fallback {
-            fallback(http::Request::from_parts(parts, body))
-        } else {
-            not_found_response()
         }
     }
 
     /// Route a request with pre-collected body bytes.
     ///
-    /// Used by the Axum interop adapter and the gRPC multiplexer where
-    /// the body has already been collected (e.g., to strip gRPC framing).
+    /// Used by the Axum interop adapter where the body is collected up front
+    /// to bridge from `axum::body::Body` to the bytes the handler dispatch
+    /// expects.
     #[cfg(feature = "axum-interop")]
     pub(crate) fn route_with_bytes(
         self: &Arc<Self>,
@@ -457,40 +537,22 @@ impl Router {
             None => return not_found_response(),
         };
 
-        let segments: smallvec::SmallVec<[&str; 8]> =
-            lookup_path.split('/').filter(|s| !s.is_empty()).collect();
-
-        let bucket = inner.method_index.bucket(&parts.method);
-        if let Some(i) = lookup_in_bucket(bucket, &inner.routes, lookup_path, &segments) {
-            drop(segments);
-            if let Some(ref prefix_str) = inner.prefix_str {
-                parts
-                    .extensions
-                    .insert(PathPrefixOffset(prefix_str.len()));
+        match resolve(&inner, &parts.method, lookup_path) {
+            LookupOutcome::Hit(i) => {
+                if let Some(ref prefix_str) = inner.prefix_str {
+                    parts
+                        .extensions
+                        .insert(PathPrefixOffset(prefix_str.len()));
+                }
+                if let Some(ref injector) = inner.state_injector {
+                    injector(&mut parts.extensions);
+                }
+                let fut = (inner.routes[i].handler)(parts, body_bytes);
+                drop(inner);
+                fut
             }
-
-            if let Some(ref injector) = inner.state_injector {
-                injector(&mut parts.extensions);
-            }
-
-            let fut = (inner.routes[i].handler)(parts, body_bytes);
-            drop(inner);
-            return fut;
-        }
-
-        let any_path_shape =
-            inner.any_method_has_fallback || inner.any_method_trie.at(lookup_path).is_ok();
-        let path_matched = any_path_shape
-            && inner
-                .method_index
-                .all_buckets()
-                .iter()
-                .any(|b| lookup_in_bucket(b, &inner.routes, lookup_path, &segments).is_some());
-
-        if path_matched {
-            method_not_allowed_response()
-        } else {
-            not_found_response()
+            LookupOutcome::MethodNotAllowed => method_not_allowed_response(),
+            LookupOutcome::NotFound => not_found_response(),
         }
     }
 }

@@ -654,14 +654,14 @@ Body bytes are reference-counted (`Bytes`), so passing the pre-collected body to
 
 ### Where Typeway Is Slower Than Axum
 
-Typeway dispatches through a per-method radix trie (`matchit`, the same crate axum uses) with a linear fallback for patterns that conflict structurally. For 10 routes, typeway is roughly 12-17% slower than axum on hits:
+Typeway dispatches through a per-method radix trie (`matchit`, the same crate axum uses) with a linear fallback for patterns that conflict structurally. For 10 routes, typeway is roughly 11-18% slower than axum on hits:
 
 | Scenario (10 routes) | Axum | Typeway | Ratio |
 |----------------------|------|---------|-------|
-| First route match | 454 ns | 531 ns | 1.17x |
-| Last route match | 452 ns | 531 ns | 1.17x |
-| Path with captures | 512 ns | 572 ns | 1.12x |
-| No match (404) | 317 ns | 463 ns | 1.46x |
+| First route match | 451 ns | 532 ns | 1.18x |
+| Last route match | 455 ns | 535 ns | 1.18x |
+| Path with captures | 518 ns | 577 ns | 1.11x |
+| No match (404) | 317 ns | 439 ns | 1.39x |
 
 (Numbers from `cargo bench --bench routing -p typeway --features "server,axum-interop"` on the same machine. Rerun locally to compare on your hardware.)
 
