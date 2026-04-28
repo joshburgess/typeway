@@ -1,7 +1,5 @@
 # Typeway
 
-[![CI](https://github.com/joshburgess/typeway/actions/workflows/ci.yml/badge.svg)](https://github.com/joshburgess/typeway/actions/workflows/ci.yml)
-
 A type-level web framework for Rust where your entire API is described as a type.
 
 Servers, clients, and OpenAPI schemas are all derived from that single type definition. If the types compile, the pieces fit together.
