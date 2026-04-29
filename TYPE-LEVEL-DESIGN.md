@@ -46,7 +46,7 @@ GetEndpoint<UsersPath, Json<Vec<User>>, (), ()>
 
 ### Macro-Generated Flat Impls
 
-Instead of recursive trait resolution (which causes exponential compile times in Haskell's Servant), Typeway generates flat impls for tuple arities 1–20 via `macro_rules!`:
+Instead of leaning on recursive trait resolution (which can become a compile-time bottleneck in any sufficiently large type-level API), Typeway generates flat impls for tuple arities 1–20 via `macro_rules!`:
 
 ```rust
 macro_rules! impl_serves_for_tuple {

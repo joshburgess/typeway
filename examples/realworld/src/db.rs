@@ -221,8 +221,9 @@ pub async fn seed_data(pool: &Pool) {
              without nightly Rust features.\n\n\
              Servant's ecosystem is fragmented across 10+ packages. Typeway ships everything in \
              one workspace. Servant has no middleware story; typeway inherits Tower's entire \
-             ecosystem. Servant's compile times scale poorly; typeway uses flat tuple impls to \
-             stay linear.\n\n\
+             ecosystem. Servant's compile times were a sore spot in its early years and have \
+             improved meaningfully since; typeway leans on flat tuple impls from day one to \
+             stay linear in API surface.\n\n\
              The biggest difference: typeway integrates with Axum bidirectionally. You can adopt \
              it incrementally. Servant is all-or-nothing.",
             &["haskell", "rust", "servant", "comparison"],
